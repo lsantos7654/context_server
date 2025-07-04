@@ -14,8 +14,14 @@ Generate a concise commit message based on current changes and create a git comm
    - 3-7 bullet points summarizing key changes
    - Appropriate subheader if needed
 3. Commits the changes with the generated message
-4. Does NOT include Claude authorship attribution
+4. **IMPORTANT: Does NOT include Claude authorship attribution**
 5. Does NOT push to remote (manual push required)
+
+## ⚠️ Attribution Policy
+**Never include these lines in commit messages:**
+- `🤖 Generated with [Claude Code](https://claude.ai/code)`
+- `Co-Authored-By: Claude <noreply@anthropic.com>`
+- Any other Claude or AI attribution
 
 ## Example Output
 ```
