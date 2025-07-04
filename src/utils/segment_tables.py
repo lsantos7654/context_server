@@ -69,7 +69,7 @@ def detect_and_extract_tables(
         table_path = output_path.parent / table_filename
         table_region.save(table_path)
         saved_paths.append(table_path)
-        print(f"Table {i+1} saved to {table_path} (confidence: {score:.2f})")
+        print(f"Table {i + 1} saved to {table_path} (confidence: {score: .2f})")
 
     return saved_paths
 
@@ -157,16 +157,16 @@ def main() -> int:
         output_dir = Path(args.output_dir)
 
         if input_path.suffix.lower() == ".pdf":
-            table_paths = process_pdf(input_path, output_dir)
+            table_paths = extract_table_from_pdf(input_path, output_dir)
         else:
-            table_paths = process_image(input_path, output_dir)
+            table_paths = extract_table_from_image(input_path, output_dir)
 
         print(f"\nExtracted {len(table_paths)} tables:")
         for path in table_paths:
             print(f"- {path}")
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error: {e}")
         return 1
 
     return 0

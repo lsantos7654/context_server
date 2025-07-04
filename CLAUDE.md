@@ -285,7 +285,7 @@ repos:
 class Processor:
     def can_handle(self, content_type: str) -> bool:
         raise NotImplementedError
-    
+
     async def process(self, content: bytes, metadata: dict) -> ProcessedData:
         raise NotImplementedError
 
@@ -293,7 +293,7 @@ class Processor:
 class ProcessorFactory:
     def __init__(self, processors: list[Processor]):
         self.processors = processors
-    
+
     def get_processor(self, content_type: str) -> Processor:
         for processor in self.processors:
             if processor.can_handle(content_type):
@@ -306,11 +306,11 @@ class ProcessorFactory:
 class Repository:
     def __init__(self, db: Database):
         self.db = db
-    
+
     async def create(self, item: CreateRequest) -> Item:
         # Database operations
         pass
-    
+
     async def get(self, item_id: str) -> Item | None:
         # Database operations
         pass
@@ -319,7 +319,7 @@ class Repository:
 class Service:
     def __init__(self, repository: Repository):
         self.repository = repository
-    
+
     async def create_item(self, request: CreateRequest) -> Item:
         # Business logic, validation, etc.
         return await self.repository.create(request)
@@ -331,7 +331,7 @@ from dependency_injector import containers, providers
 
 class Container(containers.DeclarativeContainer):
     config = providers.Configuration()
-    
+
     database = providers.Singleton(Database, url=config.database_url)
     repository = providers.Factory(Repository, db=database)
     service = providers.Factory(Service, repository=repository)
@@ -359,9 +359,9 @@ tests/
 async def test_async_function():
     mock_service = AsyncMock()
     mock_service.fetch_data.return_value = {"data": "test"}
-    
+
     result = await your_async_function(mock_service)
-    
+
     assert result == {"data": "test"}
     mock_service.fetch_data.assert_called_once()
 
@@ -420,7 +420,7 @@ make lint               # Run linters
 
 - Use **modern tools**: uv, pre-commit, pytest
 - **Standardize with Makefiles** for consistent development experience
-- **Always work in virtual environments** 
+- **Always work in virtual environments**
 - **Test everything** with proper async patterns
 - **Format automatically** with black and isort
 - **Refactor aggressively** to avoid code duplication
@@ -428,3 +428,108 @@ make lint               # Run linters
 - **Create plugin architectures** for extensibility
 
 This setup provides a solid foundation for any Python project while keeping complexity manageable.
+
+## Project Setup
+
+### .gitignore
+```gitignore
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.tox/
+.nox/
+.coverage
+.pytest_cache/
+cover/
+htmlcov/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Linting and type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Output directories
+output/
+extracted/
+temp/
+tmp/
+
+# Environment variables
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation builds
+docs/_build/
+site/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Pre-commit
+.pre-commit-cache/
+```

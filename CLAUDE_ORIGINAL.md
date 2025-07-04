@@ -71,15 +71,15 @@ import structlog
 logger = structlog.get_logger()
 
 async def extract_document(url: str, context_id: str):
-    logger.info("Starting document extraction", 
+    logger.info("Starting document extraction",
                 url=url, context_id=context_id)
     try:
         result = await extractor.extract(url)
-        logger.info("Document extraction completed", 
+        logger.info("Document extraction completed",
                     url=url, document_count=len(result.documents))
         return result
     except Exception as e:
-        logger.error("Document extraction failed", 
+        logger.error("Document extraction failed",
                      url=url, error=str(e))
         raise
 ```
@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     database_url: str
     openai_api_key: str
     log_level: str = "INFO"
-    
+
     class Config:
         env_file = ".env"
 
@@ -112,7 +112,7 @@ class DocumentProcessor:
     def can_handle(self, content_type: str, url: str = None) -> bool:
         """Check if this processor can handle the content type"""
         raise NotImplementedError
-    
+
     async def process(self, content: bytes, metadata: dict) -> ProcessedDocument:
         """Process document content into structured format"""
         raise NotImplementedError
@@ -121,7 +121,7 @@ class DocumentProcessor:
 class PDFProcessor(DocumentProcessor):
     def can_handle(self, content_type: str, url: str = None) -> bool:
         return content_type == "application/pdf"
-    
+
     async def process(self, content: bytes, metadata: dict) -> ProcessedDocument:
         # PDF-specific processing with table extraction
         pass
@@ -129,7 +129,7 @@ class PDFProcessor(DocumentProcessor):
 class URLProcessor(DocumentProcessor):
     def can_handle(self, content_type: str, url: str = None) -> bool:
         return content_type == "text/html"
-    
+
     async def process(self, content: bytes, metadata: dict) -> ProcessedDocument:
         # Web scraping and cleaning
         pass
@@ -138,7 +138,7 @@ class URLProcessor(DocumentProcessor):
 class ProcessorFactory:
     def __init__(self, processors: list[DocumentProcessor]):
         self.processors = processors
-    
+
     def get_processor(self, content_type: str, url: str = None) -> DocumentProcessor:
         for processor in self.processors:
             if processor.can_handle(content_type, url):
@@ -152,15 +152,15 @@ class ProcessorFactory:
 class ContextRepository:
     def __init__(self, db: Database):
         self.db = db
-    
+
     async def create_context(self, context: CreateContextRequest) -> Context:
         # Database operations
         pass
-    
+
     async def get_context(self, context_id: str) -> Context | None:
         # Database operations
         pass
-    
+
     async def list_contexts(self) -> list[Context]:
         # Database operations
         pass
@@ -169,7 +169,7 @@ class ContextRepository:
 class ContextService:
     def __init__(self, repository: ContextRepository):
         self.repository = repository
-    
+
     async def create_context(self, request: CreateContextRequest) -> Context:
         # Business logic, validation, etc.
         return await self.repository.create_context(request)
@@ -183,29 +183,29 @@ from dependency_injector import containers, providers
 class Container(containers.DeclarativeContainer):
     # Configuration
     config = providers.Configuration()
-    
+
     # Database
     database = providers.Singleton(
         Database,
         url=config.database_url
     )
-    
+
     # Repositories
     context_repository = providers.Factory(
         ContextRepository,
         db=database
     )
-    
+
     # Services
     context_service = providers.Factory(
         ContextService,
         repository=context_repository
     )
-    
+
     # Processors
     pdf_processor = providers.Factory(PDFProcessor)
     url_processor = providers.Factory(URLProcessor)
-    
+
     processor_factory = providers.Factory(
         ProcessorFactory,
         processors=providers.List(
@@ -263,7 +263,7 @@ class Context(BaseModel):
     created_at: datetime
     document_count: int
     size_mb: float
-    
+
     class Config:
         from_attributes = True
 ```
@@ -288,10 +288,10 @@ CREATE TABLE context_{context_id}.documents (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_documents_embedding ON context_{context_id}.documents 
+CREATE INDEX idx_documents_embedding ON context_{context_id}.documents
 USING ivfflat (embedding vector_cosine_ops);
 
-CREATE INDEX idx_documents_metadata ON context_{context_id}.documents 
+CREATE INDEX idx_documents_metadata ON context_{context_id}.documents
 USING gin (metadata);
 ```
 
@@ -323,20 +323,20 @@ class TestContextService:
     @pytest.fixture
     def mock_repository(self):
         return AsyncMock(spec=ContextRepository)
-    
+
     @pytest.fixture
     def service(self, mock_repository):
         return ContextService(mock_repository)
-    
+
     async def test_create_context(self, service, mock_repository):
         # Arrange
         request = CreateContextRequest(name="test", description="test context")
         expected_context = Context(id="ctx_123", name="test", ...)
         mock_repository.create_context.return_value = expected_context
-        
+
         # Act
         result = await service.create_context(request)
-        
+
         # Assert
         assert result == expected_context
         mock_repository.create_context.assert_called_once_with(request)
@@ -353,7 +353,7 @@ class TestContextAPI:
     @pytest.fixture
     def client(self):
         return TestClient(app)
-    
+
     def test_create_and_retrieve_context(self, client):
         # Create context
         response = client.post("/api/contexts", json={
@@ -362,7 +362,7 @@ class TestContextAPI:
         })
         assert response.status_code == 201
         context = response.json()
-        
+
         # Retrieve context
         response = client.get(f"/api/contexts/{context['id']}")
         assert response.status_code == 200
@@ -406,12 +406,12 @@ import asyncio
 class EmbeddingService:
     def __init__(self):
         self._cache = {}
-    
+
     @lru_cache(maxsize=1000)
     def get_embedding_sync(self, text: str) -> list[float]:
         # Expensive embedding calculation
         pass
-    
+
     async def get_embedding(self, text: str) -> list[float]:
         # Run in thread pool to avoid blocking
         return await asyncio.get_event_loop().run_in_executor(
@@ -429,7 +429,7 @@ from pydantic import BaseModel, validator, HttpUrl
 class ExtractRequest(BaseModel):
     url: HttpUrl
     max_depth: int = Field(default=3, ge=1, le=10)
-    
+
     @validator('url')
     def validate_url(cls, v):
         # Only allow certain domains for security
@@ -483,10 +483,10 @@ async def health_check():
         "embedding_service": await check_embedding_service(),
         "storage": await check_storage_health()
     }
-    
+
     all_healthy = all(checks.values())
     status_code = 200 if all_healthy else 503
-    
+
     return JSONResponse(
         status_code=status_code,
         content={"status": "healthy" if all_healthy else "unhealthy", "checks": checks}
@@ -508,7 +508,7 @@ make test    # pytest with coverage
 # ✅ DO: Use conventional commit messages (without git commands)
 # Examples of good commit messages:
 # "feat: add PDF table extraction support"
-# "fix: handle malformed URLs in extraction" 
+# "fix: handle malformed URLs in extraction"
 # "refactor: extract common processor interface"
 ```
 
@@ -540,7 +540,7 @@ class DocumentProcessorFactory:
             'text/html': URLProcessor,
             'text/plain': TextProcessor
         }
-    
+
     def create_processor(self, content_type: str) -> DocumentProcessor:
         processor_class = self.processors.get(content_type)
         if not processor_class:
@@ -566,11 +566,11 @@ class FullTextSearchStrategy(SearchStrategy):
         pass
 
 class HybridSearchStrategy(SearchStrategy):
-    def __init__(self, vector_strategy: VectorSearchStrategy, 
+    def __init__(self, vector_strategy: VectorSearchStrategy,
                  fulltext_strategy: FullTextSearchStrategy):
         self.vector_strategy = vector_strategy
         self.fulltext_strategy = fulltext_strategy
-    
+
     def search(self, query: str, context_id: str) -> list[SearchResult]:
         # Combine both strategies
         pass
@@ -928,9 +928,9 @@ from unittest.mock import AsyncMock
 async def test_async_function():
     mock_service = AsyncMock()
     mock_service.fetch_data.return_value = {"data": "test"}
-    
+
     result = await your_async_function(mock_service)
-    
+
     assert result == {"data": "test"}
     mock_service.fetch_data.assert_called_once()
 ```
@@ -983,11 +983,11 @@ async def test_create_context_endpoint(client, test_database):
         "name": "test-context",
         "description": "Test context"
     })
-    
+
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "test-context"
-    
+
     # Verify in database
     context = await test_database.get_context(data["id"])
     assert context is not None
@@ -1050,22 +1050,22 @@ jobs:
     strategy:
       matrix:
         python-version: [3.9, 3.10, 3.11]
-    
+
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-    
+
     - name: Install uv
       run: curl -LsSf https://astral.sh/uv/install.sh | sh
-    
+
     - name: Create venv and install dependencies
       run: |
         python -m venv .venv
         source .venv/bin/activate
         uv pip install -e ".[dev,test]"
-    
+
     - name: Run quality checks
       run: |
         source .venv/bin/activate
@@ -1143,7 +1143,7 @@ repos:
       - id: flake8
         additional_dependencies: [
           "flake8-docstrings",
-          "flake8-bugbear", 
+          "flake8-bugbear",
           "flake8-comprehensions",
           "flake8-simplify"
         ]
@@ -1196,7 +1196,7 @@ repos:
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0", 
+    "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "black>=23.9.0",
     "isort>=5.12.0",
@@ -1270,7 +1270,7 @@ max-line-length = 88
 extend-ignore = E203, W503
 max-complexity = 10
 docstring-convention = google
-exclude = 
+exclude =
     .git,
     __pycache__,
     .pytest_cache,

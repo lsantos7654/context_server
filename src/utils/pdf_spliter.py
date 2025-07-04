@@ -69,7 +69,7 @@ def split_pdf_vertically(input_path: Path, output_dir: Path) -> Tuple[Path, Path
         return left_path, right_path
 
     except Exception as e:
-        raise ValueError(f"Failed to process PDF {input_path}: {str(e)}")
+        raise ValueError(f"Failed to process PDF {input_path}: {e}")
 
 
 def main() -> int:
@@ -92,13 +92,13 @@ def main() -> int:
         args.output.mkdir(parents=True, exist_ok=True)
 
         left_path, right_path = split_pdf_vertically(args.input_pdf, args.output)
-        print(f"Successfully created:")
+        print("Successfully created:")
         print(f"- Left half: {left_path}")
         print(f"- Right half: {right_path}")
         return 0
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error: {e}")
         return 1
 
 
