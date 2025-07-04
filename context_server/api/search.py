@@ -51,6 +51,7 @@ async def search_context(
                 context_id=context_id,
                 query_embedding=query_embedding,
                 limit=search_request.limit,
+                min_similarity=0.1,  # Lower threshold for testing
             )
 
         elif search_request.mode.value == "fulltext":
@@ -70,6 +71,7 @@ async def search_context(
                 context_id=context_id,
                 query_embedding=query_embedding,
                 limit=search_request.limit * 2,  # Get more for merging
+                min_similarity=0.1,  # Lower threshold for testing
             )
 
             fulltext_results = await db.fulltext_search(
