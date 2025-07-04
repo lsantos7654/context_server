@@ -15,6 +15,7 @@ console = Console()
 
 
 @click.group()
+@click.help_option("-h", "--help")
 def context():
     """Context management commands.
 
@@ -30,6 +31,7 @@ def context():
 @click.option(
     "--embedding-model", default="text-embedding-3-small", help="Embedding model to use"
 )
+@click.help_option("-h", "--help")
 def create(name, description, embedding_model):
     """Create a new context.
 
@@ -91,6 +93,7 @@ def create(name, description, embedding_model):
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
+@click.help_option("-h", "--help")
 def list(output_format):
     """List all contexts.
 
@@ -217,6 +220,7 @@ def info(name, output_format):
 @context.command()
 @click.argument("name")
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
+@click.help_option("-h", "--help")
 def delete(name, force):
     """Delete a context and all its data.
 

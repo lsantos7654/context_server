@@ -15,6 +15,7 @@ console = Console()
 @click.option(
     "--config-file", type=click.Path(exists=True), help="Path to configuration file"
 )
+@click.help_option("-h", "--help")
 @click.pass_context
 def cli(ctx, verbose, no_color, config_file):
     """Context Server - Modern CLI for documentation RAG system.
@@ -124,6 +125,13 @@ def register_commands():
         cli.add_command(examples)
     except ImportError as e:
         echo_error(f"Failed to load examples commands: {e}")
+
+    try:
+        from .commands.completion import completion
+
+        cli.add_command(completion)
+    except ImportError as e:
+        echo_error(f"Failed to load completion commands: {e}")
 
 
 # Register commands when module is imported

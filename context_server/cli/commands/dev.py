@@ -23,6 +23,7 @@ console = Console()
 
 
 @click.group()
+@click.help_option("-h", "--help")
 def dev():
     """Development commands for Context Server.
 
@@ -34,6 +35,7 @@ def dev():
 
 @dev.command()
 @click.option("--force", is_flag=True, help="Force reinstallation even if venv exists")
+@click.help_option("-h", "--help")
 def init(force):
     """Initialize the development environment.
 
@@ -87,6 +89,7 @@ def init(force):
 @click.option("--watch", is_flag=True, help="Run tests in watch mode")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose test output")
 @click.argument("path", required=False)
+@click.help_option("-h", "--help")
 def test(coverage, watch, verbose, path):
     """Run tests with optional coverage and watch mode.
 
@@ -131,6 +134,7 @@ def test(coverage, watch, verbose, path):
 
 @dev.command()
 @click.option("--check", is_flag=True, help="Only check formatting, don't modify files")
+@click.help_option("-h", "--help")
 def format(check):
     """Format code with black and isort.
 

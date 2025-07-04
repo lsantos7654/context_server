@@ -27,6 +27,7 @@ console = Console()
 
 
 @click.group()
+@click.help_option("-h", "--help")
 def server():
     """Server management commands.
 
@@ -41,6 +42,7 @@ def server():
 @click.option(
     "--detach/--no-detach", default=True, help="Run in detached mode (default: True)"
 )
+@click.help_option("-h", "--help")
 def up(build, detach):
     """Start the Context Server services.
 
@@ -82,6 +84,7 @@ def up(build, detach):
 
 @server.command()
 @click.option("--volumes", is_flag=True, help="Remove volumes as well")
+@click.help_option("-h", "--help")
 def down(volumes):
     """Stop the Context Server services.
 
@@ -102,6 +105,7 @@ def down(volumes):
 
 
 @server.command()
+@click.help_option("-h", "--help")
 def restart():
     """Restart the Context Server services.
 
@@ -136,6 +140,7 @@ def restart():
 @click.option(
     "--tail", default=100, help="Number of lines to show from the end of logs"
 )
+@click.help_option("-h", "--help")
 def logs(service, follow, tail):
     """Show service logs.
 
@@ -166,6 +171,7 @@ def logs(service, follow, tail):
 
 @server.command()
 @click.option("--wait", is_flag=True, help="Wait for services to be ready")
+@click.help_option("-h", "--help")
 def status(wait):
     """Check server status and health.
 

@@ -18,6 +18,7 @@ console = Console()
 
 
 @click.group()
+@click.help_option("-h", "--help")
 def search():
     """Search commands for Context Server.
 
@@ -49,6 +50,7 @@ def search():
     default=True,
     help="Show result content snippets",
 )
+@click.help_option("-h", "--help")
 def query(query, context_name, mode, limit, output_format, show_content):
     """Search for documents in a context.
 
@@ -133,6 +135,7 @@ def suggest(context_name, limit):
 @search.command()
 @click.argument("context_name")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive search mode")
+@click.help_option("-h", "--help")
 def interactive(context_name, interactive):
     """Start an interactive search session.
 

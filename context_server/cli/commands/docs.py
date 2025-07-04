@@ -18,6 +18,7 @@ console = Console()
 
 
 @click.group()
+@click.help_option("-h", "--help")
 def docs():
     """Document management commands.
 
@@ -31,20 +32,48 @@ def docs():
 @click.argument("context_name")
 @click.option(
     "--source-type",
-    type=click.Choice(["url", "file", "git"]),
+    type=click.Choice(["url", "file", "git", "local"]),
     help="Source type (auto-detected if not specified)",
 )
 @click.option("--max-pages", default=50, help="Maximum pages to extract for URLs")
 @click.option("--wait/--no-wait", default=True, help="Wait for extraction to complete")
-def extract(source, context_name, source_type, max_pages, wait):
+@click.option(
+    "--output-path",
+    type=click.Path(),
+    help="Local directory to extract files to (for local extraction)",
+)
+@click.option(
+    "--include-patterns",
+    multiple=True,
+    help="File patterns to include (e.g., '*.md', '*.py')",
+)
+@click.option(
+    "--exclude-patterns",
+    multiple=True,
+    help="File patterns to exclude (e.g., '*.pyc', '__pycache__')",
+)
+@click.help_option("-h", "--help")
+def extract(
+    source,
+    context_name,
+    source_type,
+    max_pages,
+    wait,
+    output_path,
+    include_patterns,
+    exclude_patterns,
+):
     """Extract documents from a source into a context.
 
     Args:
-        source: URL, file path, or git repository
+        source: URL, file path, git repository, or local directory
         context_name: Target context name
-        source_type: Source type (url, file, git)
+        source_type: Source type (url, file, git, local)
         max_pages: Maximum pages to extract for URLs
         wait: Wait for extraction to complete
+        output_path: Local directory to save extracted files (for local mode)
+        include_patterns: File patterns to include
+        exclude_patterns: File patterns to exclude
     """
     # Auto-detect source type if not specified
     if not source_type:
@@ -55,12 +84,24 @@ def extract(source, context_name, source_type, max_pages, wait):
         ):
             source_type = "git"
         elif Path(source).exists():
-            source_type = "file"
+            if Path(source).is_dir():
+                source_type = "local"
+            else:
+                source_type = "file"
         else:
             echo_error(
                 "Could not auto-detect source type. Please specify --source-type"
             )
             return
+
+    # Handle local extraction
+    if source_type == "local":
+        asyncio.run(
+            handle_local_extraction(
+                source, context_name, output_path, include_patterns, exclude_patterns
+            )
+        )
+        return
 
     async def extract_document():
         try:
@@ -120,6 +161,7 @@ def extract(source, context_name, source_type, max_pages, wait):
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
+@click.help_option("-h", "--help")
 def list(context_name, offset, limit, output_format):
     """List documents in a context.
 
@@ -368,3 +410,173 @@ async def wait_for_extraction(
 
         echo_warning("Extraction may still be running in the background")
         echo_info("Check server logs for progress")
+
+
+async def handle_local_extraction(
+    source_dir: str,
+    context_name: str,
+    output_path: str = None,
+    include_patterns: tuple = None,
+    exclude_patterns: tuple = None,
+):
+    """Handle local directory extraction.
+
+    Args:
+        source_dir: Source directory to extract from
+        context_name: Target context name
+        output_path: Optional output directory to save files
+        include_patterns: File patterns to include
+        exclude_patterns: File patterns to exclude
+    """
+    import fnmatch
+    import shutil
+
+    source_path = Path(source_dir)
+    if not source_path.exists():
+        echo_error(f"Source directory does not exist: {source_dir}")
+        return
+
+    if not source_path.is_dir():
+        echo_error(f"Source is not a directory: {source_dir}")
+        return
+
+    # Set default patterns if none provided
+    if not include_patterns:
+        include_patterns = [
+            "*.md",
+            "*.txt",
+            "*.rst",
+            "*.py",
+            "*.js",
+            "*.ts",
+            "*.html",
+            "*.json",
+        ]
+
+    if not exclude_patterns:
+        exclude_patterns = [
+            "*.pyc",
+            "__pycache__",
+            ".git",
+            ".venv",
+            "node_modules",
+            "*.log",
+            ".DS_Store",
+            "*.tmp",
+            "dist",
+            "build",
+        ]
+
+    echo_info(f"Scanning directory: {source_path}")
+    echo_info(f"Include patterns: {', '.join(include_patterns)}")
+    echo_info(f"Exclude patterns: {', '.join(exclude_patterns)}")
+
+    # Collect files to process
+    files_to_process = []
+
+    for file_path in source_path.rglob("*"):
+        if file_path.is_file():
+            # Check exclude patterns first
+            excluded = False
+            for pattern in exclude_patterns:
+                if fnmatch.fnmatch(file_path.name, pattern) or fnmatch.fnmatch(
+                    str(file_path.relative_to(source_path)), pattern
+                ):
+                    excluded = True
+                    break
+
+            if excluded:
+                continue
+
+            # Check include patterns
+            included = False
+            for pattern in include_patterns:
+                if fnmatch.fnmatch(file_path.name, pattern):
+                    included = True
+                    break
+
+            if included:
+                files_to_process.append(file_path)
+
+    if not files_to_process:
+        echo_warning("No files found matching the criteria")
+        return
+
+    echo_info(f"Found {len(files_to_process)} files to process")
+
+    # Copy files to output directory if specified
+    if output_path:
+        output_dir = Path(output_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        echo_info(f"Copying files to: {output_dir}")
+
+        for file_path in files_to_process:
+            relative_path = file_path.relative_to(source_path)
+            dest_path = output_dir / relative_path
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+            try:
+                shutil.copy2(file_path, dest_path)
+            except Exception as e:
+                echo_warning(f"Failed to copy {file_path}: {e}")
+
+        echo_success(f"Files copied to {output_dir}")
+
+    # Process files through the API
+    echo_info("Processing files through Context Server...")
+
+    total_processed = 0
+    total_errors = 0
+
+    for file_path in files_to_process:
+        try:
+            # Read file content
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                # Try with different encoding for binary-like files
+                try:
+                    content = file_path.read_text(encoding="latin-1")
+                except:
+                    echo_warning(f"Skipping binary file: {file_path}")
+                    continue
+
+            # Send to API for processing
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    get_api_url(f"contexts/{context_name}/documents"),
+                    json={
+                        "source_type": "file",
+                        "source": str(file_path),
+                        "content": content,
+                        "options": {
+                            "filename": file_path.name,
+                            "relative_path": str(file_path.relative_to(source_path)),
+                        },
+                    },
+                    timeout=300.0,
+                )
+
+                if response.status_code == 202:
+                    total_processed += 1
+                    if total_processed % 10 == 0:
+                        echo_info(
+                            f"Processed {total_processed}/{len(files_to_process)} files..."
+                        )
+                else:
+                    total_errors += 1
+                    echo_warning(
+                        f"Failed to process {file_path}: {response.status_code}"
+                    )
+
+        except Exception as e:
+            total_errors += 1
+            echo_warning(f"Error processing {file_path}: {e}")
+
+    echo_success(f"Local extraction completed!")
+    echo_info(f"Processed: {total_processed} files")
+    if total_errors > 0:
+        echo_warning(f"Errors: {total_errors} files")
+
+    echo_info(f"Files added to context '{context_name}'")
+    echo_info(f"Try: context-server search query '<your-query>' {context_name}")

@@ -62,7 +62,7 @@ pip install ./dist/context_server-0.1.0-py3-none-any.whl
 - `delete` - Delete contexts
 
 ### Document Management (`docs`)
-- `extract` - Extract from URLs/files
+- `extract` - Extract from URLs/files/directories
 - `list` - List documents in context
 - `delete` - Delete documents
 - `count` - Count documents
@@ -85,6 +85,12 @@ pip install ./dist/context_server-0.1.0-py3-none-any.whl
 - `textual` - Textual TUI framework docs
 - `django` - Django framework docs
 - `custom` - Interactive custom setup
+
+### Shell Completion (`completion`)
+- `install` - Install shell completion
+- `uninstall` - Remove shell completion
+- `status` - Show installation status
+- `show` - Display completion script
 
 ## Configuration
 
@@ -109,8 +115,11 @@ context-server server up
 # Create context
 context-server context create rust-docs "Rust documentation"
 
-# Extract documentation
+# Extract documentation from URL
 context-server docs extract https://doc.rust-lang.org/std/ rust-docs --max-pages 20
+
+# Extract local directory
+context-server docs extract ./my-project my-project --source-type local --include-patterns "*.py" "*.md"
 
 # Search
 context-server search query "HashMap" rust-docs --mode hybrid
@@ -132,6 +141,37 @@ context-server dev format
 
 # Full quality check
 context-server dev quality
+```
+
+### Local Directory Extraction
+```bash
+# Extract Python project with default patterns
+context-server docs extract ./my-python-project my-code --source-type local
+
+# Extract with custom patterns
+context-server docs extract ./docs doc-site \
+  --include-patterns "*.md" "*.rst" \
+  --exclude-patterns "build/*" "_site/*"
+
+# Extract and save locally
+context-server docs extract ./source my-backup \
+  --output-path ./extracted-docs \
+  --include-patterns "*.py" "*.md"
+```
+
+### Shell Completion Setup
+```bash
+# Install completion for your shell
+context-server completion install
+
+# Install for specific shell
+context-server completion install --shell zsh
+
+# Check installation status
+context-server completion status
+
+# Show completion script (for manual setup)
+context-server completion show --shell bash
 ```
 
 ### Quick Examples
@@ -174,6 +214,28 @@ ctx context create my-docs
 ctx search query "async" my-docs
 ```
 
+## Getting Help
+
+Help is available throughout the CLI with both `-h` and `--help`:
+
+```bash
+# Main help
+context-server -h
+context-server --help
+ctx -h
+
+# Command group help
+context-server server -h
+context-server docs -h
+context-server examples -h
+
+# Individual command help
+context-server docs extract -h
+context-server search query -h
+context-server context create -h
+context-server server up -h
+```
+
 ## Server Requirements
 
 - Docker and Docker Compose
@@ -189,6 +251,8 @@ ctx search query "async" my-docs
 - ✅ Comprehensive development commands
 - ✅ Pre-configured examples for popular frameworks
 - ✅ Interactive search sessions
+- ✅ Local directory extraction with file patterns
+- ✅ Shell completion for bash, zsh, and fish
 - ✅ Configurable via files and environment variables
 - ✅ Cross-platform compatibility
 - ✅ Built with modern Python tooling
