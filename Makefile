@@ -10,7 +10,7 @@ GREEN := \033[0;32m
 YELLOW := \033[0;33m
 NC := \033[0m
 
-.PHONY: help init test format lint quality-check clean
+.PHONY: help init test format lint quality-check clean extract
 
 help: ## Show available commands
 	@echo "Context Server - Development Commands"
@@ -57,3 +57,17 @@ clean-venv: ## Remove virtual environment
 	rm -rf $(VENV_NAME)
 
 reset: clean-venv init ## Reset environment
+
+# Extraction commands
+extract: ## Extract from URL (usage: make extract URL=https://example.com)
+	@if [ -z "$(URL)" ]; then \
+		echo "Usage: make extract URL=https://example.com"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make extract URL=https://textual.textualize.io/sitemap.xml"; \
+		echo "  make extract URL=https://textual.textualize.io/api/app/"; \
+		echo "  make extract URL=https://docs.rs/ratatui/latest/ratatui/"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)Extracting from: $(URL)$(NC)"
+	$(VENV_ACTIVATE) && python -m src.smart_extract "$(URL)" --output-dir output --verbose
