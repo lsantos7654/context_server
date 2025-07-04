@@ -61,13 +61,13 @@ reset: clean-venv init ## Reset environment
 # Extraction commands
 extract: ## Extract from URL (usage: make extract URL=https://example.com)
 	@if [ -z "$(URL)" ]; then \
-		echo "Usage: make extract URL=https://example.com"; \
+		echo "Usage: make extract URL=https://example.com [MAX_PAGES=50]"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  make extract URL=https://textual.textualize.io/sitemap.xml"; \
-		echo "  make extract URL=https://textual.textualize.io/api/app/"; \
+		echo "  make extract URL=https://ratatui.rs/"; \
+		echo "  make extract URL=https://ratatui.rs/concepts/ MAX_PAGES=10"; \
 		echo "  make extract URL=https://docs.rs/ratatui/latest/ratatui/"; \
 		exit 1; \
 	fi
 	@echo "$(GREEN)Extracting from: $(URL)$(NC)"
-	$(VENV_ACTIVATE) && python -m src.smart_extract "$(URL)" --output-dir output --verbose
+	$(VENV_ACTIVATE) && python -m src.smart_extract "$(URL)" --output-dir output --max-pages $(or $(MAX_PAGES),50) --verbose

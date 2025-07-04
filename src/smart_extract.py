@@ -1,84 +1,85 @@
 #!/usr/bin/env python3
 """
-Smart Document Extractor - Automatically determines the best extraction method
-Refactored to use consolidated core utilities following CLAUDE.md principles.
+Smart Document Extractor - Now using crawl4ai for all URL extraction
+Simplified to use crawl4ai instead of complex tiered extraction system.
 """
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
 from .core.cleaning import MarkdownCleaner
-from .core.extraction import UnifiedDocumentExtractor
+from .core.crawl4ai_extraction import Crawl4aiExtractor
 from .core.logging import get_logger, setup_logging
 
 
 class SmartExtractor:
     """
-    Intelligent extractor that automatically determines the best extraction method.
+    Simplified extractor using crawl4ai for all URL-based extraction.
 
-    Refactored to use consolidated utilities and follow CLAUDE.md principles:
-    - Uses dependency injection for extractor and cleaner
-    - Simplified interface with clear responsibilities
-    - Structured logging instead of custom print statements
-    - Delegates extraction logic to UnifiedDocumentExtractor
+    Much simpler than the previous tiered system - just uses crawl4ai
+    which handles all the complexity of modern websites.
     """
 
-    def __init__(self, output_dir: str = "output", clean: bool = True):
+    def __init__(
+        self, output_dir: str = "output", clean: bool = True, max_pages: int = 50
+    ):
         self.output_dir = Path(output_dir)
         self.clean = clean
+        self.max_pages = max_pages
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Use consolidated utilities via dependency injection
-        self.extractor = UnifiedDocumentExtractor(self.output_dir)
+        # Use simplified crawl4ai-based extractor
+        self.extractor = Crawl4aiExtractor(self.output_dir)
         self.cleaner = MarkdownCleaner() if clean else None
         self.logger = get_logger(__name__)
 
-    def extract(self, url: str) -> bool:
-        """
-        Main extraction method using unified extraction system.
+    async def extract(self, url: str) -> bool:
+        """Main extraction method using crawl4ai."""
+        self.logger.info(
+            "Starting crawl4ai extraction", url=url, max_pages=self.max_pages
+        )
 
-        Simplified to delegate to UnifiedDocumentExtractor, removing duplication.
-        """
-        self.logger.info("Starting smart extraction", url=url)
-
-        # Use unified extractor for all extraction logic
-        result = self.extractor.extract_from_url(url)
+        # Use crawl4ai for all URL extraction
+        result = await self.extractor.extract_from_url(url, max_pages=self.max_pages)
 
         if not result.success:
             self.logger.error("Extraction failed", url=url, error=result.error)
             return False
 
-        # Apply cleaning if requested
+        # Apply cleaning if requested and we have combined content
         if self.clean and self.cleaner and result.content:
             self.logger.info("Applying markdown cleaning")
             cleaned_content = self.cleaner.clean_content(result.content)
 
-            # Save cleaned content if it was sitemap extraction
-            # (individual files already saved)
-            if result.metadata.get("source_type") != "sitemap":
-                output_file = self.output_dir / "extracted_content.md"
-                output_file.write_text(cleaned_content, encoding="utf-8")
-                self.logger.info("Saved cleaned content", file_path=str(output_file))
+            # Save cleaned combined content
+            output_file = self.output_dir / "extracted_content.md"
+            output_file.write_text(cleaned_content, encoding="utf-8")
+            self.logger.info("Saved cleaned content", file_path=str(output_file))
 
         self.logger.info(
             "Extraction completed successfully",
             source_type=result.metadata.get("source_type"),
-            processed_urls=result.metadata.get("processed_urls", 1),
+            successful_extractions=result.metadata.get("successful_extractions", 1),
         )
         return True
+
+    def extract_sync(self, url: str) -> bool:
+        """Synchronous wrapper for async extract method."""
+        return asyncio.run(self.extract(url))
 
 
 def main():
     """CLI interface for smart extraction."""
     parser = argparse.ArgumentParser(
-        description="Smart document extractor with automatic method detection",
+        description="Smart document extractor using crawl4ai",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python smart_extract.py https://docs.rs/tokio/latest/tokio/
-  python smart_extract.py https://example.com --output-dir my_docs
-  python smart_extract.py https://site.com --no-clean --verbose
+  python smart_extract.py https://ratatui.rs/
+  python smart_extract.py https://docs.rs/tokio/latest/tokio/ --max-pages 30
+  python smart_extract.py https://example.com --output-dir my_docs --no-clean
         """,
     )
 
@@ -88,6 +89,13 @@ Examples:
         "--output-dir",
         default="output",
         help="Output directory for extracted files (default: output)",
+    )
+
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=50,
+        help="Maximum number of pages to extract (default: 50)",
     )
 
     parser.add_argument(
@@ -103,10 +111,12 @@ Examples:
     setup_logging(log_level)
 
     # Create extractor and run
-    extractor = SmartExtractor(output_dir=args.output_dir, clean=not args.no_clean)
+    extractor = SmartExtractor(
+        output_dir=args.output_dir, clean=not args.no_clean, max_pages=args.max_pages
+    )
 
     try:
-        success = extractor.extract(args.url)
+        success = extractor.extract_sync(args.url)
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\nExtraction cancelled by user")
