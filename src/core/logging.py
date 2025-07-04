@@ -11,7 +11,10 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+
+from .utils import FileUtils
+
+# No typing imports needed for Python 3.12+
 
 
 class ContextServerFormatter(logging.Formatter):
@@ -109,7 +112,7 @@ class StructuredLogger:
         """Log critical message with optional structured data."""
         self._log(logging.CRITICAL, message, kwargs)
 
-    def _log(self, level: int, message: str, extra_data: Dict[str, Any]) -> None:
+    def _log(self, level: int, message: str, extra_data: dict[str, any]) -> None:
         """Internal method to log with structured data."""
         # Create log record with extra data
         record = self.logger.makeRecord(
@@ -119,7 +122,7 @@ class StructuredLogger:
         self.logger.handle(record)
 
 
-def setup_logging(level: str = "INFO", log_file: Optional[Path] = None) -> None:
+def setup_logging(level: str = "INFO", log_file: Path | None = None) -> None:
     """
     Setup application-wide logging configuration.
 
@@ -142,7 +145,7 @@ def setup_logging(level: str = "INFO", log_file: Optional[Path] = None) -> None:
 
     # File handler if specified
     if log_file:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
+        FileUtils.ensure_directory(log_file.parent)
         file_handler = logging.FileHandler(log_file)
         file_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

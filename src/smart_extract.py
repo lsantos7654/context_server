@@ -7,11 +7,11 @@ Simplified to use crawl4ai instead of complex tiered extraction system.
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
 from .core.cleaning import MarkdownCleaner
 from .core.crawl4ai_extraction import Crawl4aiExtractor
 from .core.logging import get_logger, setup_logging
+from .core.utils import FileUtils
 
 
 class SmartExtractor:
@@ -25,10 +25,9 @@ class SmartExtractor:
     def __init__(
         self, output_dir: str = "output", clean: bool = True, max_pages: int = 50
     ):
-        self.output_dir = Path(output_dir)
+        self.output_dir = FileUtils.ensure_directory(output_dir)
         self.clean = clean
         self.max_pages = max_pages
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Use simplified crawl4ai-based extractor
         self.extractor = Crawl4aiExtractor(self.output_dir)

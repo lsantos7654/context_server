@@ -8,11 +8,14 @@ using crawl4ai for all URL-based extraction.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+
+# No typing imports needed for Python 3.12+
 from urllib.parse import urlparse
 
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
 from docling.document_converter import DocumentConverter
+
+from .utils import FileUtils, URLUtils
 
 # Configure structured logging
 logger = logging.getLogger(__name__)
@@ -25,8 +28,8 @@ class ExtractionResult:
         self,
         success: bool = True,
         content: str = "",
-        metadata: Optional[Dict] = None,
-        error: Optional[str] = None,
+        metadata: dict | None = None,
+        error: str | None = None,
     ):
         self.success = success
         self.content = content
@@ -50,10 +53,9 @@ class Crawl4aiExtractor:
     - Navigation-based discovery
     """
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Path | None = None):
         """Initialize extractor with optional output directory."""
-        self.output_dir = output_dir or Path("output")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = FileUtils.ensure_directory(output_dir or Path("output"))
 
         # Keep Docling for non-URL document processing (PDFs, etc.)
         self.docling_converter = DocumentConverter()
@@ -202,7 +204,7 @@ class Crawl4aiExtractor:
             )
             return ExtractionResult.error(f"Crawl4ai extraction failed: {e}")
 
-    def extract_from_pdf(self, file_path: Union[str, Path]) -> ExtractionResult:
+    def extract_from_pdf(self, file_path: str | Path) -> ExtractionResult:
         """Extract content from PDF file using Docling."""
         try:
             path = Path(file_path).absolute()
@@ -227,8 +229,8 @@ class Crawl4aiExtractor:
             return ExtractionResult.error(f"Failed to extract PDF: {e}")
 
     def _filter_documentation_links(
-        self, links: List, base_url: str, max_pages: int
-    ) -> List:
+        self, links: list, base_url: str, max_pages: int
+    ) -> list:
         """Filter links to focus on documentation content."""
         if not links:
             return []
@@ -243,7 +245,6 @@ class Crawl4aiExtractor:
 
         # Parse the base URL to understand what section we're targeting
         parsed_base = urlparse(base_url)
-        base_domain = parsed_base.netloc
         base_path = parsed_base.path.rstrip("/")
 
         # Filter and prioritize URLs
@@ -255,7 +256,7 @@ class Crawl4aiExtractor:
                 continue
 
             # Skip external links (double-check)
-            if base_domain not in url:
+            if not URLUtils.is_same_domain(base_url, url):
                 continue
 
             parsed_url = urlparse(url)
@@ -422,15 +423,13 @@ class Crawl4aiExtractor:
 
     def _create_filename_from_url(self, url: str) -> str:
         """Create safe filename from URL."""
-        import re
-
         parsed = urlparse(url)
 
         # Use path for filename, fallback to domain
         path_part = parsed.path.strip("/") or parsed.netloc
 
-        # Clean up the filename
-        filename = re.sub(r"[^\w\-_.]", "_", path_part)
+        # Use FileUtils for safe filename creation
+        filename = FileUtils.create_safe_filename(path_part)
 
         # Ensure it ends with .md
         if not filename.endswith(".md"):

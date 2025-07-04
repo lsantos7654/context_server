@@ -30,7 +30,10 @@ init: ## Initialize project (create venv, install deps)
 	fi
 	@echo "$(GREEN)Ready! Run: source $(VENV_NAME)/bin/activate$(NC)"
 
-test: ## Run tests
+test: ## Run tests with coverage
+	$(VENV_ACTIVATE) && pytest tests/ --cov=src --cov-report=html --cov-report=term-missing -v
+
+test-no-cov: ## Run tests without coverage
 	$(VENV_ACTIVATE) && pytest tests/ -v
 
 test-watch: ## Run tests in watch mode

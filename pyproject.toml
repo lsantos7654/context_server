@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "context-server"
 version = "0.1.0"
 description = "Local, containerized documentation RAG system with MCP integration"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
@@ -58,7 +58,7 @@ packages = ["src"]
 
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py312']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -76,7 +76,7 @@ profile = "black"
 line_length = 88
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

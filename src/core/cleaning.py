@@ -8,7 +8,8 @@ following CLAUDE.md principles.
 import re
 import shutil
 from pathlib import Path
-from typing import Dict
+
+# No typing imports needed for Python 3.12+
 
 
 class MarkdownCleaner:
@@ -71,7 +72,7 @@ class MarkdownCleaner:
 
         return content
 
-    def clean_file(self, file_path: Path, create_backup: bool = True) -> Dict:
+    def clean_file(self, file_path: Path, create_backup: bool = True) -> dict:
         """
         Clean a single markdown file.
 
@@ -99,7 +100,7 @@ class MarkdownCleaner:
         except Exception as e:
             return {"success": False, "file": str(file_path), "error": str(e)}
 
-    def clean_directory(self, directory: Path, create_backups: bool = True) -> Dict:
+    def clean_directory(self, directory: Path, create_backups: bool = True) -> dict:
         """
         Clean all markdown files in a directory.
 

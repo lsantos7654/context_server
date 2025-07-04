@@ -5,17 +5,18 @@ Consolidates common patterns from across the codebase into reusable utilities
 following CLAUDE.md principles.
 """
 
+# Use standard logging to avoid circular import
+import logging
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+
+# No typing imports needed for Python 3.12+
 from urllib.parse import urlparse
 
 import requests
 
-from .logging import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class URLUtils:
@@ -160,7 +161,7 @@ class FileUtils:
         return path.stem, path.suffix.lstrip(".")
 
     @staticmethod
-    def ensure_directory(path: Union[str, Path]) -> Path:
+    def ensure_directory(path: str | Path) -> Path:
         """
         Ensure directory exists, creating it if necessary.
 
@@ -175,7 +176,7 @@ class FileUtils:
         return dir_path
 
     @staticmethod
-    def backup_file(file_path: Path, backup_suffix: str = ".backup") -> Optional[Path]:
+    def backup_file(file_path: Path, backup_suffix: str = ".backup") -> Path | None:
         """
         Create backup of file.
 
@@ -281,7 +282,7 @@ class TextUtils:
         return text[:truncate_length] + suffix
 
     @staticmethod
-    def extract_title_from_content(content: str) -> Optional[str]:
+    def extract_title_from_content(content: str) -> str | None:
         """
         Extract title from markdown content.
 
@@ -339,7 +340,7 @@ class ValidationUtils:
     """
 
     @staticmethod
-    def validate_file_path(path: Union[str, Path], must_exist: bool = True) -> Path:
+    def validate_file_path(path: str | Path, must_exist: bool = True) -> Path:
         """
         Validate and normalize file path.
 
@@ -399,9 +400,7 @@ class ValidationUtils:
             raise ValueError(f"Invalid URL: {e}")
 
     @staticmethod
-    def validate_directory(
-        path: Union[str, Path], create_if_missing: bool = False
-    ) -> Path:
+    def validate_directory(path: str | Path, create_if_missing: bool = False) -> Path:
         """
         Validate directory path.
 
@@ -440,9 +439,7 @@ class MetadataUtils:
     """
 
     @staticmethod
-    def create_base_metadata(
-        source: Union[str, Path], source_type: str
-    ) -> Dict[str, Any]:
+    def create_base_metadata(source: str | Path, source_type: str) -> dict[str, any]:
         """
         Create base metadata structure.
 
@@ -475,8 +472,8 @@ class MetadataUtils:
 
     @staticmethod
     def merge_metadata(
-        base: Dict[str, Any], additional: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        base: dict[str, any], additional: dict[str, any]
+    ) -> dict[str, any]:
         """
         Merge metadata dictionaries.
 
