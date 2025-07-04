@@ -30,6 +30,9 @@ dependencies = [
     "openai>=1.0.0",
     "numpy>=1.24.0",
     "python-multipart>=0.0.6",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+    "docker>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +57,10 @@ test = [
     "httpx>=0.25.0",
     "factory-boy>=3.3.0",
 ]
+
+[project.scripts]
+context-server = "context_server.cli.main:cli"
+ctx = "context_server.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["context_server", "src"]
