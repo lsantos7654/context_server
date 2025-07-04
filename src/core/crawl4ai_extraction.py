@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
 from docling.document_converter import DocumentConverter
 
+from .cleaning import MarkdownCleaner
 from .utils import FileUtils, URLUtils
 
 # Configure structured logging
@@ -59,6 +60,9 @@ class Crawl4aiExtractor:
 
         # Keep Docling for non-URL document processing (PDFs, etc.)
         self.docling_converter = DocumentConverter()
+
+        # Initialize markdown cleaner for enhanced content processing
+        self.cleaner = MarkdownCleaner()
 
     async def extract_from_url(self, url: str, max_pages: int = 50) -> ExtractionResult:
         """Extract content from URL using crawl4ai."""
@@ -134,8 +138,8 @@ class Crawl4aiExtractor:
                             else doc_links[i]
                         )
 
-                        # Clean and validate content
-                        cleaned_content = self._clean_content(content)
+                        # Clean and validate content using enhanced cleaner
+                        cleaned_content = self.cleaner.clean_content(content)
 
                         if len(cleaned_content.strip()) < 100:  # Skip tiny pages
                             logger.debug(f"Skipping {page_url} - content too short")
@@ -323,103 +327,6 @@ class Crawl4aiExtractor:
         )
 
         return limited_urls
-
-    def _clean_content(self, content: str) -> str:
-        """Enhanced content cleaning to remove navigation and UI elements."""
-        if not content:
-            return ""
-
-        lines = content.split("\n")
-        cleaned_lines = []
-
-        # State tracking for cleaning
-        in_navigation = False
-        in_toc = False
-        skip_until_content = True
-
-        for line in lines:
-            line = line.strip()
-
-            # Skip initial navigation elements
-            if skip_until_content:
-                # Look for actual content markers (headings)
-                if line.startswith("# ") and not any(
-                    nav in line.lower()
-                    for nav in ["skip to", "search", "cancel", "clear"]
-                ):
-                    skip_until_content = False
-                    cleaned_lines.append(line)
-                continue
-
-            # Skip common navigation/UI patterns
-            skip_patterns = [
-                "Skip to content",
-                "Search ` `⌘``K`",
-                "Cancel",
-                "Clear",
-                "Select theme DarkLightAuto",
-                "Discourse",
-                "On this page",
-                "## On this page",
-            ]
-
-            if any(pattern in line for pattern in skip_patterns):
-                continue
-
-            # Skip navigation lists (detect by bullet point + link pattern)
-            if line.startswith("* [") and "](" in line:
-                # Check if this looks like navigation (common nav terms)
-                nav_terms = [
-                    "Installation",
-                    "Tutorials",
-                    "Examples",
-                    "Concepts",
-                    "Recipes",
-                    "Highlights",
-                    "Showcase",
-                    "Templates",
-                    "References",
-                    "Developer Guide",
-                ]
-                if any(term in line for term in nav_terms):
-                    in_navigation = True
-                    continue
-
-            # Exit navigation when we hit content
-            if in_navigation:
-                if line.startswith("#") or (line and not line.startswith("*")):
-                    in_navigation = False
-                else:
-                    continue
-
-            # Skip table of contents sections that are just navigation
-            if line == "## On this page" or "On this page" in line:
-                in_toc = True
-                continue
-
-            if in_toc:
-                if line.startswith("*") or line.startswith("-"):
-                    continue
-                elif line.startswith("#") or (line and len(line) > 10):
-                    in_toc = False
-                else:
-                    continue
-
-            # Skip footer navigation
-            if line.startswith("[ Previous ") or line.startswith("[ Next "):
-                continue
-
-            # Skip empty lines at the start
-            if not cleaned_lines and not line:
-                continue
-
-            cleaned_lines.append(line)
-
-        # Remove trailing empty lines
-        while cleaned_lines and not cleaned_lines[-1]:
-            cleaned_lines.pop()
-
-        return "\n".join(cleaned_lines)
 
     def _create_filename_from_url(self, url: str) -> str:
         """Create safe filename from URL."""

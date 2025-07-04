@@ -27,6 +27,9 @@ class MarkdownCleaner:
             "files_backed_up": 0,
             "html_entities_fixed": 0,
             "navigation_sections_removed": 0,
+            "permalink_fragments_removed": 0,
+            "code_line_numbers_removed": 0,
+            "encoded_data_blobs_removed": 0,
             "paragraph_symbols_fixed": 0,
             "whitespace_normalized": 0,
             "duplicate_headings_removed": 0,
@@ -65,6 +68,9 @@ class MarkdownCleaner:
         # Apply all cleaning methods in sequence
         content = self.fix_html_entities(content)
         content = self.remove_navigation_sections(content)
+        content = self.remove_permalink_fragments(content)
+        content = self.remove_code_line_numbers(content)
+        content = self.remove_encoded_data_blobs(content)
         content = self.fix_paragraph_symbols(content)
         content = self.normalize_whitespace(content)
         content = self.remove_duplicate_headings(content)
@@ -146,35 +152,129 @@ class MarkdownCleaner:
         original_content = content
         lines = content.split("\n")
         cleaned_lines = []
-        skip_mode = False
+        in_navigation = False
+        in_toc = False
+        skip_until_content = True
 
-        i = 0
-        while i < len(lines):
-            line = lines[i]
+        for line in lines:
+            line_stripped = line.strip()
 
-            # Check if we're starting a navigation section
-            if line.strip() == "<!-- image -->" or (
-                line.strip() == "- Home" and i < 200
-            ):
-                skip_mode = True
-
-            # Look for the end of navigation section
-            if skip_mode:
-                # End navigation when we hit a proper heading or significant content
-                if line.startswith("#") or (
-                    line.strip()
-                    and not line.startswith("-")
-                    and not line.startswith(" ")
-                    and len(line.strip()) > 50
-                    and "Table of contents" not in line
+            # Skip initial navigation elements until we find content
+            if skip_until_content:
+                # Look for actual content markers (headings that aren't navigation)
+                if line_stripped.startswith("# ") and not any(
+                    nav in line_stripped.lower()
+                    for nav in [
+                        "skip to",
+                        "search",
+                        "cancel",
+                        "clear",
+                        "home",
+                        "navigation",
+                    ]
                 ):
-                    skip_mode = False
+                    skip_until_content = False
                     cleaned_lines.append(line)
-                # Skip this line if still in navigation
-            else:
-                cleaned_lines.append(line)
+                continue
 
-            i += 1
+            # Skip common navigation/UI patterns
+            skip_patterns = [
+                "Skip to content",
+                "Type to start searching",
+                "Search ` `⌘``K`",
+                "Cancel",
+                "Clear",
+                "Select theme DarkLightAuto",
+                "Discourse",
+                "On this page",
+                "## On this page",
+                "Table of contents",
+                "Home",
+                "Textual",
+                "![logo]",
+            ]
+
+            if any(pattern in line_stripped for pattern in skip_patterns):
+                continue
+
+            # Skip navigation lists (detect by bullet point + link pattern)
+            if line_stripped.startswith("* [") and "](" in line_stripped:
+                # Check if this looks like navigation (common nav terms)
+                nav_terms = [
+                    "Home",
+                    "Introduction",
+                    "Tutorial",
+                    "Guide",
+                    "Widgets",
+                    "Reference",
+                    "API",
+                    "How To",
+                    "FAQ",
+                    "Roadmap",
+                    "Blog",
+                    "Installation",
+                    "Tutorials",
+                    "Examples",
+                    "Concepts",
+                    "Recipes",
+                    "Highlights",
+                    "Showcase",
+                    "Templates",
+                    "Developer Guide",
+                    "Getting started",
+                    "Help",
+                ]
+                if any(term in line_stripped for term in nav_terms):
+                    in_navigation = True
+                    continue
+
+            # Exit navigation when we hit content
+            if in_navigation:
+                if line_stripped.startswith("#") or (
+                    line_stripped
+                    and not line_stripped.startswith("*")
+                    and not line_stripped.startswith(" ")
+                    and len(line_stripped) > 30
+                ):
+                    in_navigation = False
+                    cleaned_lines.append(line)
+                else:
+                    continue
+
+            # Skip table of contents sections that are just navigation
+            if (
+                "table of contents" in line_stripped.lower()
+                or line_stripped == "## On this page"
+            ):
+                in_toc = True
+                continue
+
+            if in_toc:
+                if line_stripped.startswith("*") or line_stripped.startswith("-"):
+                    continue
+                elif line_stripped.startswith("#") or (
+                    line_stripped and len(line_stripped) > 20
+                ):
+                    in_toc = False
+                    cleaned_lines.append(line)
+                else:
+                    continue
+
+            # Skip footer navigation
+            if line_stripped.startswith("[ Previous ") or line_stripped.startswith(
+                "[ Next "
+            ):
+                continue
+
+            # Skip lines that are just site navigation repetition
+            if line_stripped in ["Home", "Textual", "Guide", "Reference"]:
+                continue
+
+            # Skip empty lines at the start
+            if not cleaned_lines and not line_stripped:
+                continue
+
+            cleaned_lines.append(line)
 
         result = "\n".join(cleaned_lines)
         if result != original_content:
@@ -258,3 +358,58 @@ class MarkdownCleaner:
             self.stats["empty_sections_removed"] += 1
 
         return content
+
+    def remove_permalink_fragments(self, content: str) -> str:
+        """Remove permalink fragments like [¶](url "Permanent link")."""
+        original_content = content
+
+        # Remove permalink fragments (¶ symbol with links)
+        content = re.sub(r'\[¶\]\([^)]+\s+"Permanent link"\)', "", content)
+
+        if content != original_content:
+            self.stats["permalink_fragments_removed"] += 1
+
+        return content
+
+    def remove_code_line_numbers(self, content: str) -> str:
+        """Remove code line number links like [](__codelineno-X-Y)."""
+        original_content = content
+
+        # Remove code line number references
+        content = re.sub(r"\[\]\([^)]*__codelineno-[^)]*\)", "", content)
+
+        if content != original_content:
+            self.stats["code_line_numbers_removed"] += 1
+
+        return content
+
+    def remove_encoded_data_blobs(self, content: str) -> str:
+        """Remove large encoded data blobs (base64-like strings)."""
+        original_content = content
+
+        # Remove very long encoded strings (likely base64 or similar)
+        # Look for lines with mostly base64 characters that are very long
+        lines = content.split("\n")
+        cleaned_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            # Check if line is very long and contains encoded data patterns
+            # Pattern 1: Pure base64 (letters, numbers, +, /, =)
+            # Pattern 2: Base64 with unicode escape sequences (like \u0001)
+            is_encoded_blob = len(stripped) > 200 and (
+                re.match(r"^[A-Za-z0-9+/=]+$", stripped)
+                or re.match(r"^[A-Za-z0-9+/=\\xu0-9]+$", stripped)
+                or ("eyJ" in stripped and len(stripped) > 500)  # JSON-like base64
+            )
+
+            if is_encoded_blob:
+                # Skip this line as it's likely an encoded data blob
+                continue
+            cleaned_lines.append(line)
+
+        result = "\n".join(cleaned_lines)
+        if result != original_content:
+            self.stats["encoded_data_blobs_removed"] += 1
+
+        return result
