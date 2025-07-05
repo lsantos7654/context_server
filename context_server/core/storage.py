@@ -433,7 +433,7 @@ class DatabaseManager:
                 """
                 SELECT
                     c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
-                    c.metadata as chunk_metadata, c.chunk_index,
+                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                     1 - (c.embedding <=> $2::vector) as similarity
                 FROM chunks c
                 JOIN documents d ON c.document_id = d.id
@@ -451,6 +451,7 @@ class DatabaseManager:
             return [
                 {
                     "id": str(row["id"]),
+                    "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "title": row["title"],
                     "url": row["url"],
@@ -481,7 +482,7 @@ class DatabaseManager:
                 """
                 SELECT
                     c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
-                    c.metadata as chunk_metadata, c.chunk_index,
+                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                     ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
                 FROM chunks c
                 JOIN documents d ON c.document_id = d.id
@@ -498,6 +499,7 @@ class DatabaseManager:
             return [
                 {
                     "id": str(row["id"]),
+                    "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "title": row["title"],
                     "url": row["url"],

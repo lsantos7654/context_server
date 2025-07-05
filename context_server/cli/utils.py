@@ -160,3 +160,30 @@ def echo_warning(message: str) -> None:
 def echo_info(message: str) -> None:
     """Print info message."""
     console.print(f"[blue]ℹ {message}[/blue]")
+
+
+async def get_context_names() -> List[str]:
+    """Get list of available context names from the server."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                get_api_url("contexts"),
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                contexts = response.json()
+                return [ctx["name"] for ctx in contexts]
+            else:
+                return []
+    except httpx.RequestError:
+        return []
+
+
+def get_context_names_sync() -> List[str]:
+    """Synchronous wrapper for getting context names."""
+    try:
+        import asyncio
+
+        return asyncio.run(get_context_names())
+    except Exception:
+        return []

@@ -12,9 +12,15 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from ..config import get_api_url
-from ..utils import echo_error, echo_info, echo_success
+from ..utils import echo_error, echo_info, echo_success, get_context_names_sync
 
 console = Console()
+
+
+def complete_context_name(ctx, param, incomplete):
+    """Complete context names by fetching from server."""
+    context_names = get_context_names_sync()
+    return [name for name in context_names if name.startswith(incomplete)]
 
 
 @click.group()
@@ -30,7 +36,7 @@ def search():
 
 @search.command()
 @click.argument("query")
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.option(
     "--mode",
     default="hybrid",
@@ -118,7 +124,7 @@ def query(query, context_name, mode, limit, output_format, show_content):
 
 
 @search.command()
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--limit", default=10, help="Maximum number of suggestions")
 def suggest(context_name, limit):
     """Get search query suggestions for a context.
@@ -133,7 +139,7 @@ def suggest(context_name, limit):
 
 
 @search.command()
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--interactive", "-i", is_flag=True, help="Interactive search mode")
 @click.help_option("-h", "--help")
 def interactive(context_name, interactive):
@@ -160,12 +166,45 @@ def interactive(context_name, interactive):
             if not query.strip():
                 continue
 
-            # Use the query command to perform the search
-            from click.testing import CliRunner
+            # Perform search directly using the async function
+            async def search_documents():
+                try:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(
+                            get_api_url(f"contexts/{context_name}/search"),
+                            json={
+                                "query": query,
+                                "mode": "hybrid",
+                                "limit": 5,
+                            },
+                            timeout=60.0,
+                        )
 
-            runner = CliRunner()
-            result = runner.invoke(query_cmd, [query, context_name, "--format", "rich"])
+                        if response.status_code == 200:
+                            result = response.json()
+                            results = result["results"]
+                            total = result["total"]
+                            execution_time = result["execution_time_ms"]
 
+                            if not results:
+                                echo_info("No results found")
+                                return
+
+                            echo_success(
+                                f"Found {total} result(s) in {execution_time}ms"
+                            )
+                            console.print()
+                            display_results_rich(results, query, True)
+
+                        elif response.status_code == 404:
+                            echo_error(f"Context '{context_name}' not found")
+                        else:
+                            echo_error(f"Search failed: {response.status_code}")
+
+                except httpx.RequestError as e:
+                    echo_error(f"Connection error: {e}")
+
+            asyncio.run(search_documents())
             console.print()  # Empty line between searches
 
         except KeyboardInterrupt:
@@ -180,6 +219,7 @@ def display_results_table(results: list, show_content: bool = True):
     """Display search results in table format."""
     table = Table(title="Search Results")
     table.add_column("Score", style="bold green", width=8)
+    table.add_column("Doc ID", style="cyan", width=12)
     table.add_column("Title", style="bold")
     table.add_column("URL", style="blue")
 
@@ -188,6 +228,11 @@ def display_results_table(results: list, show_content: bool = True):
 
     for result in results:
         score = f"{result['score']:.3f}"
+        doc_id = result.get("document_id", "N/A")
+        # Truncate document ID if too long
+        if len(str(doc_id)) > 10:
+            doc_id = str(doc_id)[:8] + ".."
+
         title = result["title"][:50] + ("..." if len(result["title"]) > 50 else "")
 
         # Truncate URL
@@ -195,7 +240,7 @@ def display_results_table(results: list, show_content: bool = True):
         if len(url) > 30:
             url = url[:27] + "..."
 
-        row = [score, title, url]
+        row = [score, str(doc_id), title, url]
 
         if show_content:
             content = result["content"][:200] + (
@@ -215,14 +260,18 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
         title = result["title"]
         url = result.get("url", "")
         content = result["content"]
+        doc_id = result.get("document_id", "N/A")
 
-        # Create header with score
-        header = f"Result {i} (Score: {score:.3f})"
+        # Create header with score and document ID
+        header = f"Result {i} (Score: {score:.3f}, Doc ID: {doc_id})"
 
         # Create title section
         title_text = f"[bold blue]{title}[/bold blue]"
         if url:
             title_text += f"\n[dim blue]{url}[/dim blue]"
+
+        # Add document ID as a separate line
+        title_text += f"\n[dim cyan]Document ID: {doc_id}[/dim cyan]"
 
         if show_content:
             # Highlight query terms in content (simple highlighting)

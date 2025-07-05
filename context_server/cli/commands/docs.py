@@ -12,9 +12,22 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from ..config import get_api_url
-from ..utils import confirm_action, echo_error, echo_info, echo_success, echo_warning
+from ..utils import (
+    confirm_action,
+    echo_error,
+    echo_info,
+    echo_success,
+    echo_warning,
+    get_context_names_sync,
+)
 
 console = Console()
+
+
+def complete_context_name(ctx, param, incomplete):
+    """Complete context names by fetching from server."""
+    context_names = get_context_names_sync()
+    return [name for name in context_names if name.startswith(incomplete)]
 
 
 @click.group()
@@ -29,7 +42,7 @@ def docs():
 
 @docs.command()
 @click.argument("source")
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.option(
     "--source-type",
     type=click.Choice(["url", "file", "git", "local"]),
@@ -151,7 +164,7 @@ def extract(
 
 
 @docs.command()
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--offset", default=0, help="Number of documents to skip")
 @click.option("--limit", default=50, help="Maximum number of documents to show")
 @click.option(
@@ -241,7 +254,7 @@ def list(context_name, offset, limit, output_format):
 
 
 @docs.command()
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.argument("document_ids", nargs=-1, required=True)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 def delete(context_name, document_ids, force):
@@ -300,7 +313,7 @@ def status(job_id):
 
 
 @docs.command()
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.argument("document_id")
 @click.option("--output-file", help="Save content to file instead of displaying")
 def show(context_name, document_id, output_file):
@@ -317,7 +330,7 @@ def show(context_name, document_id, output_file):
 
 
 @docs.command()
-@click.argument("context_name")
+@click.argument("context_name", shell_complete=complete_context_name)
 @click.option(
     "--source-type",
     type=click.Choice(["url", "file", "git"]),

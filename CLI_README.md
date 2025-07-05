@@ -174,6 +174,23 @@ context-server completion status
 context-server completion show --shell bash
 ```
 
+The completion system includes several advanced features:
+
+- **Dynamic Context Completion**: Context names are fetched from the server in real-time
+- **Command Availability Checks**: Completion scripts only activate if commands are available
+- **Smart Filtering**: Completions are filtered based on what you've already typed
+- **Multi-shell Support**: Works seamlessly across bash, zsh, and fish shells
+
+Example of context name completion:
+```bash
+# Type and press TAB to see available contexts
+ctx search query "async" <TAB>
+# Shows: fastapi  python-std  rust-std  my-docs
+
+ctx context delete <TAB>
+# Shows all your existing contexts for safe deletion
+```
+
 ### Quick Examples
 ```bash
 # Set up Rust documentation
@@ -250,9 +267,11 @@ context-server server up -h
 - ✅ Context isolation for organizing documentation
 - ✅ Comprehensive development commands
 - ✅ Pre-configured examples for popular frameworks
-- ✅ Interactive search sessions
+- ✅ Interactive search sessions with real-time results
 - ✅ Local directory extraction with file patterns
-- ✅ Shell completion for bash, zsh, and fish
+- ✅ Smart shell completion for bash, zsh, and fish
+- ✅ Dynamic context name completion from server
+- ✅ Robust completion scripts with command availability checks
 - ✅ Configurable via files and environment variables
 - ✅ Cross-platform compatibility
 - ✅ Built with modern Python tooling

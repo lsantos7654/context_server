@@ -95,6 +95,7 @@ async def search_context(
         formatted_results = [
             {
                 "id": result["id"],
+                "document_id": result.get("document_id"),
                 "title": result["title"],
                 "content": result["content"],
                 "score": result["score"],

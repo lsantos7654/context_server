@@ -117,6 +117,7 @@ class SearchResult(BaseModel):
     """Individual search result."""
 
     id: str
+    document_id: str | None = None
     title: str
     content: str
     score: float

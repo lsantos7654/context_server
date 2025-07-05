@@ -287,23 +287,37 @@ def uninstall_fish_completion():
 
 def generate_bash_completion() -> str:
     """Generate bash completion script."""
-    return '''# Enable bash completion for context-server and ctx
-eval "$(_CONTEXT_SERVER_COMPLETE=bash_source context-server)"
-eval "$(_CTX_COMPLETE=bash_source ctx)"'''
+    return """# Enable bash completion for context-server and ctx
+if command -v context-server &> /dev/null; then
+    eval "$(_CONTEXT_SERVER_COMPLETE=bash_source context-server)"
+fi
+if command -v ctx &> /dev/null; then
+    eval "$(_CTX_COMPLETE=bash_source ctx)"
+fi"""
 
 
 def generate_zsh_completion() -> str:
     """Generate zsh completion script."""
-    return '''# Enable zsh completion for context-server and ctx
-eval "$(_CONTEXT_SERVER_COMPLETE=zsh_source context-server)"
-eval "$(_CTX_COMPLETE=zsh_source ctx)"'''
+    return """# Enable zsh completion for context-server and ctx
+if command -v context-server &> /dev/null; then
+    eval "$(_CONTEXT_SERVER_COMPLETE=zsh_source context-server)"
+fi
+if command -v ctx &> /dev/null; then
+    eval "$(_CTX_COMPLETE=zsh_source ctx)"
+fi"""
 
 
 def generate_fish_completion() -> str:
     """Generate fish completion script."""
     return """# Fish completion for context-server
-complete -c context-server -f
-eval (env _CONTEXT_SERVER_COMPLETE=fish_source context-server)"""
+if command -v context-server > /dev/null
+    complete -c context-server -f
+    eval (env _CONTEXT_SERVER_COMPLETE=fish_source context-server)
+end
+if command -v ctx > /dev/null
+    complete -c ctx -f
+    eval (env _CTX_COMPLETE=fish_source ctx)
+end"""
 
 
 @completion.command()

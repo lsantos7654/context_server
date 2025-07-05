@@ -9,9 +9,22 @@ from rich.console import Console
 from rich.table import Table
 
 from ..config import get_api_url
-from ..utils import confirm_action, echo_error, echo_info, echo_success, print_table
+from ..utils import (
+    confirm_action,
+    echo_error,
+    echo_info,
+    echo_success,
+    get_context_names_sync,
+    print_table,
+)
 
 console = Console()
+
+
+def complete_context_name(ctx, param, incomplete):
+    """Complete context names by fetching from server."""
+    context_names = get_context_names_sync()
+    return [name for name in context_names if name.startswith(incomplete)]
 
 
 @click.group()
@@ -152,7 +165,7 @@ def list(output_format):
 
 
 @context.command()
-@click.argument("name")
+@click.argument("name", shell_complete=complete_context_name)
 @click.option(
     "--format",
     "output_format",
@@ -218,7 +231,7 @@ def info(name, output_format):
 
 
 @context.command()
-@click.argument("name")
+@click.argument("name", shell_complete=complete_context_name)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 @click.help_option("-h", "--help")
 def delete(name, force):
@@ -260,7 +273,7 @@ def delete(name, force):
 
 
 @context.command()
-@click.argument("old_name")
+@click.argument("old_name", shell_complete=complete_context_name)
 @click.argument("new_name")
 def rename(old_name, new_name):
     """Rename a context.
@@ -275,7 +288,7 @@ def rename(old_name, new_name):
 
 
 @context.command()
-@click.argument("name")
+@click.argument("name", shell_complete=complete_context_name)
 @click.option("--new-description", help="New description for the context")
 @click.option(
     "--new-embedding-model",
