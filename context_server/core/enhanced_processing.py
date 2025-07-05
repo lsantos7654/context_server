@@ -2,10 +2,10 @@
 
 import asyncio
 import logging
-import uuid
 
 # Import existing extraction functionality
 import sys
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -69,7 +69,7 @@ class EnhancedDocumentProcessor:
     def __init__(
         self,
         multi_embedding_service: MultiEmbeddingService | None = None,
-        database_manager = None,
+        database_manager=None,
         enable_multi_embedding: bool = False,
         enable_graph_building: bool = True,
     ):
@@ -87,11 +87,24 @@ class EnhancedDocumentProcessor:
         )
         self.enable_multi_embedding = enable_multi_embedding
         self.enable_graph_building = enable_graph_building
-        
+
         self.chunker = TextChunker()
         self.extractor = Crawl4aiExtractor()
-        self.content_analyzer = ContentAnalyzer()
-        
+
+        # Initialize content analyzer with LLM support
+        try:
+            from .simple_llm_service import SimpleLLMService
+
+            llm_service = SimpleLLMService()
+            self.content_analyzer = ContentAnalyzer(
+                llm_service=llm_service, use_llm_analysis=True
+            )
+            logger.info("ContentAnalyzer initialized with LLM support")
+        except Exception as e:
+            logger.warning(f"Failed to initialize LLM service: {e}")
+            self.content_analyzer = ContentAnalyzer(use_llm_analysis=False)
+            logger.info("ContentAnalyzer initialized with fallback analysis")
+
         # Initialize graph builder if database manager is provided
         self.graph_builder = None
         if database_manager and enable_graph_building:
@@ -101,7 +114,7 @@ class EnhancedDocumentProcessor:
             f"Enhanced processor initialized (multi-embedding: {enable_multi_embedding}, "
             f"graph-building: {enable_graph_building})"
         )
-    
+
     async def initialize_graph_schema(self):
         """Initialize the hierarchical graph schema."""
         if self.graph_builder:
@@ -149,8 +162,8 @@ class EnhancedDocumentProcessor:
 
                     # Perform content analysis first
                     try:
-                        content_analysis = self.content_analyzer.analyze_content(
-                            page_content
+                        content_analysis = await self.content_analyzer.analyze_content(
+                            page_content, page_url
                         )
                         processing_stats["content_types_detected"].add(
                             content_analysis.content_type
@@ -191,8 +204,8 @@ class EnhancedDocumentProcessor:
 
                 # Analyze combined content
                 try:
-                    content_analysis = self.content_analyzer.analyze_content(
-                        result.content
+                    content_analysis = await self.content_analyzer.analyze_content(
+                        result.content, url
                     )
                     processing_stats["content_types_detected"].add(
                         content_analysis.content_type
@@ -315,38 +328,42 @@ class EnhancedDocumentProcessor:
                     # Prepare chunk data for graph builder
                     chunk_data_for_graph = []
                     for chunk in processed_chunks:
-                        chunk_data_for_graph.append({
-                            'id': str(uuid.uuid4()),  # Generate chunk ID for graph
-                            'document_id': metadata.get('document_id', url),
-                            'content': chunk.content,
-                            'chunk_index': len(chunk_data_for_graph),
-                            'metadata': chunk.metadata
-                        })
-                    
+                        chunk_data_for_graph.append(
+                            {
+                                "id": str(uuid.uuid4()),  # Generate chunk ID for graph
+                                "document_id": metadata.get("document_id", url),
+                                "content": chunk.content,
+                                "chunk_index": len(chunk_data_for_graph),
+                                "metadata": chunk.metadata,
+                            }
+                        )
+
                     # Build document hierarchy in graph
                     graph_result = await self.graph_builder.build_document_hierarchy(
-                        document_id=metadata.get('document_id', url),
+                        document_id=metadata.get("document_id", url),
                         title=title,
                         content=content,
                         chunks=chunk_data_for_graph,
-                        content_analysis=content_analysis
+                        content_analysis=content_analysis,
                     )
-                    
+
                     # Add graph statistics to metadata
-                    metadata['graph_nodes_created'] = graph_result['total_nodes']
-                    metadata['graph_relationships_created'] = graph_result['total_relationships']
-                    metadata['hierarchical_graph_built'] = True
-                    
+                    metadata["graph_nodes_created"] = graph_result["total_nodes"]
+                    metadata["graph_relationships_created"] = graph_result[
+                        "total_relationships"
+                    ]
+                    metadata["hierarchical_graph_built"] = True
+
                     logger.info(
                         f"Built knowledge graph for {title}: "
                         f"{graph_result['total_nodes']} nodes, "
                         f"{graph_result['total_relationships']} relationships"
                     )
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to build knowledge graph for {title}: {e}")
-                    metadata['hierarchical_graph_built'] = False
-                    metadata['graph_error'] = str(e)
+                    metadata["hierarchical_graph_built"] = False
+                    metadata["graph_error"] = str(e)
 
             return document
 

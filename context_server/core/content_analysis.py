@@ -78,7 +78,25 @@ class ContentAnalysis:
 class ContentAnalyzer:
     """Analyzes content to extract metadata for LLM optimization."""
 
-    def __init__(self):
+    def __init__(self, llm_service=None, use_llm_analysis=True):
+        """Initialize ContentAnalyzer with optional LLM-based analysis."""
+        self.use_llm_analysis = use_llm_analysis
+        self.llm_service = llm_service
+
+        # Initialize LLM analysis service if available
+        if self.use_llm_analysis:
+            try:
+                from .llm_analysis_service import LLMAnalysisService
+
+                self.llm_analyzer = LLMAnalysisService(llm_service)
+                logger.info("LLM-based content analysis enabled")
+            except ImportError as e:
+                logger.warning(f"LLM analysis service not available: {e}")
+                self.llm_analyzer = None
+                self.use_llm_analysis = False
+        else:
+            self.llm_analyzer = None
+
         # Content type patterns
         self.content_type_patterns = {
             "tutorial": [
@@ -179,39 +197,21 @@ class ContentAnalyzer:
             r"https?://[^\s]+/api/",  # API URLs
         ]
 
-    def analyze_content(self, content: str) -> ContentAnalysis:
-        """Perform comprehensive content analysis."""
+    async def analyze_content(
+        self, content: str, url: Optional[str] = None
+    ) -> ContentAnalysis:
+        """Perform comprehensive content analysis using LLM when available."""
         try:
-            # Extract code blocks first
-            code_blocks = self._extract_code_blocks(content)
+            # Use LLM-based analysis if available
+            if self.use_llm_analysis and self.llm_analyzer:
+                logger.info("Using LLM-based content analysis")
+                return await self.llm_analyzer.analyze_content_intelligently(
+                    content, url
+                )
 
-            # Calculate code percentage
-            code_percentage = self._calculate_code_percentage(content, code_blocks)
-
-            # Classify content type
-            content_type = self._classify_content_type(content, code_percentage)
-
-            # Detect primary programming language
-            primary_language = self._detect_primary_language(content, code_blocks)
-
-            # Generate summary
-            summary = self._generate_summary(content, content_type)
-
-            # Extract patterns and concepts
-            detected_patterns = self._extract_programming_patterns(content, code_blocks)
-            key_concepts = self._extract_key_concepts(content)
-            api_references = self._extract_api_references(content)
-
-            return ContentAnalysis(
-                content_type=content_type,
-                primary_language=primary_language,
-                summary=summary,
-                code_percentage=code_percentage,
-                code_blocks=code_blocks,
-                detected_patterns=detected_patterns,
-                key_concepts=key_concepts,
-                api_references=api_references,
-            )
+            # Fallback to legacy pattern-based analysis
+            logger.info("Using legacy pattern-based content analysis")
+            return self._analyze_content_legacy(content)
 
         except Exception as e:
             logger.error(f"Content analysis failed: {e}")
@@ -226,6 +226,39 @@ class ContentAnalyzer:
                 key_concepts=[],
                 api_references=[],
             )
+
+    def _analyze_content_legacy(self, content: str) -> ContentAnalysis:
+        """Legacy pattern-based content analysis (for backward compatibility)."""
+        # Extract code blocks first
+        code_blocks = self._extract_code_blocks(content)
+
+        # Calculate code percentage
+        code_percentage = self._calculate_code_percentage(content, code_blocks)
+
+        # Classify content type
+        content_type = self._classify_content_type(content, code_percentage)
+
+        # Detect primary programming language
+        primary_language = self._detect_primary_language(content, code_blocks)
+
+        # Generate summary
+        summary = self._generate_summary(content, content_type)
+
+        # Extract patterns and concepts
+        detected_patterns = self._extract_programming_patterns(content, code_blocks)
+        key_concepts = self._extract_key_concepts(content)
+        api_references = self._extract_api_references(content)
+
+        return ContentAnalysis(
+            content_type=content_type,
+            primary_language=primary_language,
+            summary=summary,
+            code_percentage=code_percentage,
+            code_blocks=code_blocks,
+            detected_patterns=detected_patterns,
+            key_concepts=key_concepts,
+            api_references=api_references,
+        )
 
     def _extract_code_blocks(self, content: str) -> List[CodeBlock]:
         """Extract and analyze code blocks from markdown content."""
