@@ -444,21 +444,22 @@ class DatabaseManager:
                         LIMIT $4
                     ),
                     expanded_chunks AS (
-                        SELECT DISTINCT c2.id, c2.content, d.title, d.url,
+                        SELECT c2.id, c2.content, d.title, d.url,
                                d.metadata as doc_metadata, c2.metadata as chunk_metadata,
                                c2.chunk_index, d.id as document_id, mc.similarity,
-                               ROW_NUMBER() OVER (PARTITION BY mc.id ORDER BY c2.chunk_index) as context_order
+                               mc.id as original_chunk_id
                         FROM matched_chunks mc
                         JOIN chunks c2 ON c2.document_id = mc.document_id
                         JOIN documents d ON c2.document_id = d.id
                         WHERE c2.chunk_index BETWEEN (mc.chunk_index - $5) AND (mc.chunk_index + $5)
                     )
-                    SELECT id,
+                    SELECT original_chunk_id as id,
                            string_agg(content, '\n\n' ORDER BY chunk_index) as content,
-                           title, url, doc_metadata, chunk_metadata, chunk_index,
+                           title, url, doc_metadata, chunk_metadata,
+                           MIN(chunk_index) as chunk_index,
                            document_id, similarity
                     FROM expanded_chunks
-                    GROUP BY id, title, url, doc_metadata, chunk_metadata, chunk_index, document_id, similarity
+                    GROUP BY original_chunk_id, title, url, doc_metadata, chunk_metadata, document_id, similarity
                     ORDER BY similarity DESC
                 """,
                     uuid.UUID(context_id),
@@ -533,18 +534,20 @@ class DatabaseManager:
                     expanded_chunks AS (
                         SELECT c2.id, c2.content, d.title, d.url,
                                d.metadata as doc_metadata, c2.metadata as chunk_metadata,
-                               c2.chunk_index, d.id as document_id, mc.score
+                               c2.chunk_index, d.id as document_id, mc.score,
+                               mc.id as original_chunk_id
                         FROM matched_chunks mc
                         JOIN chunks c2 ON c2.document_id = mc.document_id
                         JOIN documents d ON c2.document_id = d.id
                         WHERE c2.chunk_index BETWEEN (mc.chunk_index - $4) AND (mc.chunk_index + $4)
                     )
-                    SELECT id,
+                    SELECT original_chunk_id as id,
                            string_agg(content, '\n\n' ORDER BY chunk_index) as content,
-                           title, url, doc_metadata, chunk_metadata, chunk_index,
+                           title, url, doc_metadata, chunk_metadata,
+                           MIN(chunk_index) as chunk_index,
                            document_id, score
                     FROM expanded_chunks
-                    GROUP BY id, title, url, doc_metadata, chunk_metadata, chunk_index, document_id, score
+                    GROUP BY original_chunk_id, title, url, doc_metadata, chunk_metadata, document_id, score
                     ORDER BY score DESC
                 """,
                     uuid.UUID(context_id),

@@ -12,6 +12,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from ..config import get_api_url
+from ..help_formatter import rich_help_option
 from ..utils import echo_error, echo_info, echo_success, get_context_names_sync
 
 console = Console()
@@ -24,12 +25,18 @@ def complete_context_name(ctx, param, incomplete):
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def search():
-    """Search commands for Context Server.
+    """🔍 Search commands for Context Server.
 
     Commands for searching documents within contexts using different
     search modes: vector similarity, full-text, and hybrid search.
+
+    Examples:
+        ctx search query "async patterns" my-docs          # Basic search
+        ctx search query "rendering" docs --mode vector    # Vector search only
+        ctx search query "widgets" docs --expand-context 2 # Expand surrounding chunks
+        ctx search query "concepts" docs --load-full-doc   # Load complete documents
     """
     pass
 
@@ -67,7 +74,7 @@ def search():
     is_flag=True,
     help="Load full document content instead of chunks",
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def query(
     query,
     context_name,
@@ -163,7 +170,7 @@ def suggest(context_name, limit):
 @search.command()
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--interactive", "-i", is_flag=True, help="Interactive search mode")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def interactive(context_name, interactive):
     """Start an interactive search session.
 

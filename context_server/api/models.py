@@ -130,6 +130,7 @@ class SearchResult(BaseModel):
     metadata: dict
     url: str | None = None
     chunk_index: int | None = None
+    content_type: str = "chunk"
 
 
 class SearchResponse(BaseModel):

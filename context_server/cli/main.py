@@ -4,6 +4,7 @@ import click
 from rich.console import Console
 
 from .config import get_config, set_config
+from .help_formatter import rich_help_option
 from .utils import echo_error, echo_info
 
 console = Console()
@@ -15,20 +16,21 @@ console = Console()
 @click.option(
     "--config-file", type=click.Path(exists=True), help="Path to configuration file"
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 @click.pass_context
 def cli(ctx, verbose, no_color, config_file):
-    """Context Server - Modern CLI for documentation RAG system.
+    """🚀 Context Server - Modern CLI for documentation RAG system.
 
     A powerful command-line interface for managing your local documentation
     extraction and search system. Extract docs from URLs, manage contexts,
     and perform semantic search across your documentation.
 
     Examples:
-        context-server server up                    # Start the server
-        context-server context create my-docs       # Create a new context
-        context-server docs extract https://... my-docs  # Extract documentation
-        context-server search query "async" my-docs # Search documentation
+        🔧 ctx server up                           # Start the server
+        📁 ctx context create my-docs              # Create a new context
+        📄 ctx docs extract https://... my-docs    # Extract documentation
+        🔍 ctx search query "async patterns" docs  # Search documentation
+        📊 ctx docs list my-docs                   # List documents
     """
     # Ensure context object exists
     ctx.ensure_object(dict)

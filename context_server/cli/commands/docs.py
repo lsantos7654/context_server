@@ -12,6 +12,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from ..config import get_api_url
+from ..help_formatter import rich_help_option
 from ..utils import (
     confirm_action,
     echo_error,
@@ -31,11 +32,17 @@ def complete_context_name(ctx, param, incomplete):
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def docs():
-    """Document management commands.
+    """📚 Document management commands.
 
     Commands for extracting, listing, and managing documents within contexts.
+
+    Examples:
+        ctx docs extract https://docs.rust-lang.org rust-docs    # Extract from URL
+        ctx docs extract ./my-project my-code --source-type local # Extract local files
+        ctx docs list my-docs                                     # List documents
+        ctx docs show my-docs doc-id-123                          # Show document content
     """
     pass
 
@@ -65,7 +72,7 @@ def docs():
     multiple=True,
     help="File patterns to exclude (e.g., '*.pyc', '__pycache__')",
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def extract(
     source,
     context_name,
@@ -174,7 +181,7 @@ def extract(
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def list(context_name, offset, limit, output_format):
     """List documents in a context.
 
@@ -316,7 +323,7 @@ def status(job_id):
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.argument("document_id")
 @click.option("--output-file", help="Save content to file instead of displaying")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def show(context_name, document_id, output_file):
     """Show raw document content.
 
