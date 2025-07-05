@@ -187,6 +187,55 @@ class EnhancedDatabaseManager:
                 """
             )
 
+            # Create knowledge graph tables
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS content_relationships (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    source_url TEXT NOT NULL,
+                    target_url TEXT NOT NULL,
+                    relationship_type VARCHAR(50) NOT NULL,
+                    strength FLOAT NOT NULL,
+                    confidence FLOAT NOT NULL,
+                    metadata JSONB DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE(source_url, target_url, relationship_type)
+                )
+                """
+            )
+
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS topic_clusters (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    cluster_id VARCHAR(100) UNIQUE NOT NULL,
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    content_urls JSONB DEFAULT '[]',
+                    metadata JSONB DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS graph_statistics (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    total_nodes INTEGER NOT NULL,
+                    total_edges INTEGER NOT NULL,
+                    cluster_count INTEGER NOT NULL,
+                    average_node_degree FLOAT NOT NULL,
+                    graph_density FLOAT NOT NULL,
+                    modularity_score FLOAT NOT NULL,
+                    coverage_ratio FLOAT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+
             # Create indexes for performance
 
             # Original indexes
@@ -233,6 +282,23 @@ class EnhancedDatabaseManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_documents_content_fts ON documents USING gin(to_tsvector('english', content))"
+            )
+
+            # Knowledge graph indexes
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_content_relationships_source ON content_relationships(source_url)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_content_relationships_target ON content_relationships(target_url)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_content_relationships_type ON content_relationships(relationship_type)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_topic_clusters_cluster_id ON topic_clusters(cluster_id)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_graph_statistics_created_at ON graph_statistics(created_at)"
             )
 
             logger.info("Enhanced database schema created successfully")
@@ -838,3 +904,359 @@ class EnhancedDatabaseManager:
                 results.append(result)
 
             return results
+
+    # Knowledge Graph Storage Methods
+
+    async def store_content_relationship(
+        self,
+        source_url: str,
+        target_url: str,
+        relationship_type: str,
+        strength: float,
+        confidence: float,
+        metadata: Dict[str, Any] = None,
+    ) -> bool:
+        """Store a content relationship in the knowledge graph."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO content_relationships (
+                        source_url, target_url, relationship_type, strength, confidence, metadata, created_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                    ON CONFLICT (source_url, target_url, relationship_type) DO UPDATE SET
+                        strength = EXCLUDED.strength,
+                        confidence = EXCLUDED.confidence,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                    """,
+                    source_url,
+                    target_url,
+                    relationship_type,
+                    strength,
+                    confidence,
+                    json.dumps(metadata or {}),
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store content relationship: {e}")
+            return False
+
+    async def store_topic_cluster(
+        self,
+        cluster_id: str,
+        name: str,
+        description: str,
+        content_urls: List[str],
+        metadata: Dict[str, Any] = None,
+    ) -> bool:
+        """Store a topic cluster in the knowledge graph."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO topic_clusters (
+                        cluster_id, name, description, content_urls, metadata, created_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT (cluster_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        description = EXCLUDED.description,
+                        content_urls = EXCLUDED.content_urls,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                    """,
+                    cluster_id,
+                    name,
+                    description,
+                    json.dumps(content_urls),
+                    json.dumps(metadata or {}),
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store topic cluster: {e}")
+            return False
+
+    async def store_graph_statistics(
+        self,
+        total_nodes: int,
+        total_edges: int,
+        cluster_count: int,
+        average_node_degree: float,
+        graph_density: float,
+        modularity_score: float,
+        coverage_ratio: float,
+    ) -> bool:
+        """Store knowledge graph statistics."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO graph_statistics (
+                        total_nodes, total_edges, cluster_count, average_node_degree,
+                        graph_density, modularity_score, coverage_ratio, created_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                    """,
+                    total_nodes,
+                    total_edges,
+                    cluster_count,
+                    average_node_degree,
+                    graph_density,
+                    modularity_score,
+                    coverage_ratio,
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store graph statistics: {e}")
+            return False
+
+    async def load_content_relationships(self) -> List[Any]:
+        """Load all content relationships from the knowledge graph."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT source_url, target_url, relationship_type, strength, confidence, metadata
+                    FROM content_relationships
+                    ORDER BY created_at DESC
+                    """
+                )
+
+                relationships = []
+                for row in rows:
+                    # Create ContentRelationship objects
+                    import asyncio
+
+                    from .relationship_mapping import (
+                        ContentRelationship,
+                        RelationshipType,
+                    )
+
+                    relationship = ContentRelationship(
+                        source_url=row["source_url"],
+                        target_url=row["target_url"],
+                        relationship_type=RelationshipType(row["relationship_type"]),
+                        strength=row["strength"],
+                        confidence=row["confidence"],
+                        discovered_method=json.loads(row["metadata"] or "{}").get(
+                            "discovered_method", "unknown"
+                        ),
+                        supporting_evidence=json.loads(row["metadata"] or "{}").get(
+                            "supporting_evidence", []
+                        ),
+                        context_elements=json.loads(row["metadata"] or "{}").get(
+                            "context_elements", []
+                        ),
+                        discovery_timestamp=asyncio.get_event_loop().time(),
+                    )
+                    relationships.append(relationship)
+
+                return relationships
+
+        except Exception as e:
+            logger.error(f"Failed to load content relationships: {e}")
+            return []
+
+    async def load_topic_clusters(self) -> List[Any]:
+        """Load all topic clusters from the knowledge graph."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT cluster_id, name, description, content_urls, metadata
+                    FROM topic_clusters
+                    ORDER BY created_at DESC
+                    """
+                )
+
+                clusters = []
+                for row in rows:
+                    # Create TopicCluster objects
+                    from .relationship_mapping import TopicCluster
+
+                    metadata = json.loads(row["metadata"] or "{}")
+
+                    cluster = TopicCluster(
+                        cluster_id=row["cluster_id"],
+                        name=row["name"],
+                        description=row["description"],
+                        content_urls=json.loads(row["content_urls"]),
+                        topic_keywords=metadata.get("topic_keywords", []),
+                        programming_languages=metadata.get("programming_languages", []),
+                        content_types=metadata.get("content_types", []),
+                        difficulty_level=metadata.get("difficulty_level"),
+                        coherence_score=metadata.get("coherence_score", 0.0),
+                        coverage_score=metadata.get("coverage_score", 0.0),
+                        quality_score=metadata.get("quality_score", 0.0),
+                        related_clusters=metadata.get("related_clusters", []),
+                        parent_cluster=metadata.get("parent_cluster"),
+                        child_clusters=metadata.get("child_clusters", []),
+                    )
+                    clusters.append(cluster)
+
+                return clusters
+
+        except Exception as e:
+            logger.error(f"Failed to load topic clusters: {e}")
+            return []
+
+    async def load_graph_statistics(self) -> Optional[Dict[str, Any]]:
+        """Load the latest knowledge graph statistics."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT total_nodes, total_edges, cluster_count, average_node_degree,
+                           graph_density, modularity_score, coverage_ratio
+                    FROM graph_statistics
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                )
+
+                if row:
+                    return {
+                        "total_nodes": row["total_nodes"],
+                        "total_edges": row["total_edges"],
+                        "cluster_count": row["cluster_count"],
+                        "average_node_degree": row["average_node_degree"],
+                        "graph_density": row["graph_density"],
+                        "modularity_score": row["modularity_score"],
+                        "coverage_ratio": row["coverage_ratio"],
+                    }
+
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to load graph statistics: {e}")
+            return None
+
+    # Additional search methods for LLM endpoints
+
+    async def keyword_search(
+        self, query: str, context_id: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Search content by keyword using full-text search."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                query_sql = """
+                    SELECT
+                        c.id, c.content, d.title, d.url, d.content as full_content,
+                        ca.content_type, ca.primary_language, ca.summary, ca.code_percentage,
+                        ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score,
+                        d.metadata, c.metadata as chunk_metadata
+                    FROM chunks c
+                    JOIN documents d ON c.document_id = d.id
+                    LEFT JOIN content_analyses ca ON d.id = ca.document_id
+                    WHERE c.context_id = $1
+                        AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
+                    ORDER BY score DESC
+                    LIMIT $3
+                """
+
+                rows = await conn.fetch(query_sql, uuid.UUID(context_id), query, limit)
+
+                results = []
+                for row in rows:
+                    result = {
+                        "id": str(row["id"]),
+                        "content": row["content"],
+                        "title": row["title"],
+                        "url": row["url"] or row["source_url"]
+                        if "source_url" in row
+                        else row["url"],
+                        "source_url": row["url"],
+                        "score": float(row["score"]),
+                        "similarity": float(row["score"]),  # Alias for compatibility
+                        "content_type": row["content_type"] or "general",
+                        "primary_language": row["primary_language"],
+                        "summary": row["summary"] or "",
+                        "metadata": json.loads(row["metadata"])
+                        if row["metadata"]
+                        else {},
+                    }
+                    results.append(result)
+
+                return results
+
+        except Exception as e:
+            logger.error(f"Failed to perform keyword search: {e}")
+            return []
+
+    async def search_by_content_type(
+        self, content_types: List[str], context_id: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Search content by content type."""
+        if not self.pool:
+            raise RuntimeError("Database not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                query_sql = """
+                    SELECT
+                        c.id, c.content, d.title, d.url, d.content as full_content,
+                        ca.content_type, ca.primary_language, ca.summary, ca.code_percentage,
+                        0.8 as score,  -- Default score for type-based search
+                        d.metadata, c.metadata as chunk_metadata
+                    FROM chunks c
+                    JOIN documents d ON c.document_id = d.id
+                    LEFT JOIN content_analyses ca ON d.id = ca.document_id
+                    WHERE c.context_id = $1
+                        AND ca.content_type = ANY($2)
+                    ORDER BY d.indexed_at DESC
+                    LIMIT $3
+                """
+
+                rows = await conn.fetch(
+                    query_sql, uuid.UUID(context_id), content_types, limit
+                )
+
+                results = []
+                for row in rows:
+                    result = {
+                        "id": str(row["id"]),
+                        "content": row["content"],
+                        "title": row["title"],
+                        "url": row["url"] or row["source_url"]
+                        if "source_url" in row
+                        else row["url"],
+                        "source_url": row["url"],
+                        "score": float(row["score"]),
+                        "similarity": float(row["score"]),  # Alias for compatibility
+                        "content_type": row["content_type"] or "general",
+                        "primary_language": row["primary_language"],
+                        "summary": row["summary"] or "",
+                        "metadata": json.loads(row["metadata"])
+                        if row["metadata"]
+                        else {},
+                    }
+                    results.append(result)
+
+                return results
+
+        except Exception as e:
+            logger.error(f"Failed to search by content type: {e}")
+            return []

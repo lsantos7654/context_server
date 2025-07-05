@@ -43,3 +43,5 @@ Currently they can semantic search, get more context around the result, and retr
 
 
 Can we just have `ctx claude` which will setup claude with a proper claude.md in the current directory, and allow claude to know how to use this mcp server. It would also know how to scrape pages and list all of the docs and even manage different contexts
+
+update audit to check claude.md enforce style guide and remove/consolidate old logic

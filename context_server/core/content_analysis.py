@@ -25,14 +25,54 @@ class CodeBlock:
 class ContentAnalysis:
     """Complete analysis of page content."""
 
-    content_type: str
-    primary_language: Optional[str]
-    summary: str
-    code_percentage: float
-    code_blocks: List[CodeBlock]
-    detected_patterns: Dict[str, List[str]]
-    key_concepts: List[str]
-    api_references: List[str]
+    # Core content metadata (with defaults for backwards compatibility)
+    content_type: str = "general"
+    primary_language: Optional[str] = None
+    summary: str = ""
+    code_percentage: float = 0.0
+    code_blocks: List[CodeBlock] = None
+    detected_patterns: Dict[str, List[str]] = None
+    key_concepts: List[str] = None  # Legacy field, use topic_keywords for new code
+    api_references: List[str] = None
+
+    # Extended fields for relationship mapping and knowledge graph
+    url: Optional[str] = None
+    title: Optional[str] = None
+    topic_keywords: Optional[List[str]] = None  # Replaces key_concepts
+    code_elements: Optional[List[str]] = None
+    complexity_indicators: Optional[List[str]] = None
+    readability_score: Optional[float] = None
+    quality_indicators: Optional[Dict[str, any]] = None
+    raw_content: Optional[str] = None
+    embedding: Optional[List[float]] = None
+
+    def __post_init__(self):
+        """Post-initialization to ensure backward compatibility."""
+        # Handle mutable default values
+        if self.code_blocks is None:
+            self.code_blocks = []
+        if self.detected_patterns is None:
+            self.detected_patterns = {}
+        if self.key_concepts is None:
+            self.key_concepts = []
+        if self.api_references is None:
+            self.api_references = []
+
+        # Ensure topic_keywords defaults to key_concepts if not provided
+        if self.topic_keywords is None and self.key_concepts:
+            self.topic_keywords = self.key_concepts
+        elif self.topic_keywords is None:
+            self.topic_keywords = []
+
+        # Set default values for optional fields
+        if self.code_elements is None:
+            self.code_elements = []
+        if self.complexity_indicators is None:
+            self.complexity_indicators = []
+        if self.quality_indicators is None:
+            self.quality_indicators = {}
+        if self.readability_score is None:
+            self.readability_score = 0.8
 
 
 class ContentAnalyzer:
