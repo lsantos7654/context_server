@@ -13,11 +13,17 @@ console = Console()
 @click.group()
 @click.help_option("-h", "--help")
 def examples():
-    """Example workflows and setups.
+    """📚 Example workflows and setups.
 
     Pre-configured examples for common documentation sources.
     These commands will create contexts and extract documentation
     from popular sources to get you started quickly.
+
+    Examples:
+        🦀 ctx examples rust            # Setup Rust documentation
+        ⚡ ctx examples fastapi        # Setup FastAPI documentation
+        🐍 ctx examples python         # Setup Python documentation
+        📜 ctx examples list-all       # Show all available examples
     """
     pass
 
@@ -26,7 +32,7 @@ def examples():
 @click.option("--max-pages", default=20, help="Maximum pages to extract")
 @click.help_option("-h", "--help")
 def rust(max_pages):
-    """Set up Rust standard library documentation.
+    """🦀 Set up Rust standard library documentation.
 
     Creates a 'rust-std' context and extracts Rust documentation.
 
@@ -71,7 +77,7 @@ def rust(max_pages):
 @click.option("--max-pages", default=30, help="Maximum pages to extract")
 @click.help_option("-h", "--help")
 def fastapi(max_pages):
-    """Set up FastAPI documentation.
+    """⚡ Set up FastAPI documentation.
 
     Creates a 'fastapi' context and extracts FastAPI documentation.
 
@@ -117,7 +123,7 @@ def fastapi(max_pages):
 @examples.command()
 @click.option("--max-pages", default=25, help="Maximum pages to extract")
 def textual(max_pages):
-    """Set up Textual TUI framework documentation.
+    """🖥️ Set up Textual TUI framework documentation.
 
     Creates a 'textual' context and extracts Textual documentation.
 
@@ -161,7 +167,7 @@ def textual(max_pages):
 @examples.command()
 @click.option("--max-pages", default=40, help="Maximum pages to extract")
 def python(max_pages):
-    """Set up Python standard library documentation.
+    """🐍 Set up Python standard library documentation.
 
     Creates a 'python-std' context and extracts Python documentation.
 
@@ -205,7 +211,7 @@ def python(max_pages):
 @examples.command()
 @click.option("--max-pages", default=35, help="Maximum pages to extract")
 def django(max_pages):
-    """Set up Django web framework documentation.
+    """🎆 Set up Django web framework documentation.
 
     Creates a 'django' context and extracts Django documentation.
 
@@ -249,7 +255,7 @@ def django(max_pages):
 @examples.command()
 @click.help_option("-h", "--help")
 def list_all():
-    """List all available example setups."""
+    """📜 List all available example setups."""
     echo_info("Available example setups:")
     console.print()
 
@@ -278,7 +284,7 @@ def list_all():
 
 @examples.command()
 def custom():
-    """Create a custom example setup.
+    """🎨 Create a custom example setup.
 
     Interactive command to create a custom documentation extraction setup.
     """

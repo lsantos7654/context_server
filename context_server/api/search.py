@@ -27,18 +27,26 @@ def get_embedding_service(request: Request) -> EmbeddingService:
     return request.app.state.embedding_service
 
 
-def get_cache_service(request: Request) -> DocumentCacheService:
+async def get_cache_service(request: Request) -> DocumentCacheService:
     """Dependency to get cache service."""
     if not hasattr(request.app.state, "cache_service"):
-        request.app.state.cache_service = DocumentCacheService()
+        cache_service = DocumentCacheService()
+        try:
+            await cache_service.initialize()
+            request.app.state.cache_service = cache_service
+            logger.info("Cache service initialized successfully")
+        except Exception as e:
+            logger.warning(f"Cache service initialization failed: {e}")
+            # Create a dummy cache service that doesn't actually cache
+            request.app.state.cache_service = DocumentCacheService()
     return request.app.state.cache_service
 
 
-def get_expansion_service(request: Request) -> ContextExpansionService:
+async def get_expansion_service(request: Request) -> ContextExpansionService:
     """Dependency to get expansion service."""
     if not hasattr(request.app.state, "expansion_service"):
         db = get_db_manager(request)
-        cache = get_cache_service(request)
+        cache = await get_cache_service(request)
         request.app.state.expansion_service = ContextExpansionService(db, cache)
     return request.app.state.expansion_service
 
@@ -49,12 +57,21 @@ async def search_context(
     search_request: SearchRequest,
     db: DatabaseManager = Depends(get_db_manager),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
-    expansion_service: ContextExpansionService = Depends(get_expansion_service),
 ):
     """Search documents within a context."""
     start_time = time.time()
 
     try:
+        # Get expansion service - initialize cache service directly
+        cache_service = DocumentCacheService()
+        try:
+            await cache_service.initialize()
+            logger.info("Cache service initialized for search")
+        except Exception as e:
+            logger.warning(f"Cache service initialization failed: {e}")
+
+        expansion_service = ContextExpansionService(db, cache_service)
+
         # Verify context exists
         context = await db.get_context_by_name(context_name)
         if not context:

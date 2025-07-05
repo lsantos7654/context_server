@@ -83,7 +83,7 @@ def extract(
     include_patterns,
     exclude_patterns,
 ):
-    """Extract documents from a source into a context.
+    """📎 Extract documents from a source into a context.
 
     Args:
         source: URL, file path, git repository, or local directory
@@ -183,7 +183,7 @@ def extract(
 )
 @rich_help_option("-h", "--help")
 def list(context_name, offset, limit, output_format):
-    """List documents in a context.
+    """📝 List documents in a context.
 
     Args:
         context_name: Context name
@@ -265,7 +265,7 @@ def list(context_name, offset, limit, output_format):
 @click.argument("document_ids", nargs=-1, required=True)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 def delete(context_name, document_ids, force):
-    """Delete documents from a context.
+    """🗚️ Delete documents from a context.
 
     Args:
         context_name: Context name
@@ -309,7 +309,7 @@ def delete(context_name, document_ids, force):
 @docs.command()
 @click.argument("job_id")
 def status(job_id):
-    """Check the status of a document extraction job.
+    """🕰️ Check the status of a document extraction job.
 
     Args:
         job_id: Extraction job ID
@@ -325,7 +325,7 @@ def status(job_id):
 @click.option("--output-file", help="Save content to file instead of displaying")
 @rich_help_option("-h", "--help")
 def show(context_name, document_id, output_file):
-    """Show raw document content.
+    """📄 Show raw document content.
 
     Args:
         context_name: Context name
@@ -430,7 +430,7 @@ def show(context_name, document_id, output_file):
 )
 @click.option("--since", help="Show documents indexed since date (YYYY-MM-DD)")
 def count(context_name, source_type, since):
-    """Count documents in a context.
+    """📊 Count documents in a context.
 
     Args:
         context_name: Context name

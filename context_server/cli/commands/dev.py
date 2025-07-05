@@ -25,10 +25,17 @@ console = Console()
 @click.group()
 @click.help_option("-h", "--help")
 def dev():
-    """Development commands for Context Server.
+    """🔧 Development commands for Context Server.
 
     Commands for setting up the development environment, running tests,
     formatting code, and performing quality checks.
+
+    Examples:
+        🚀 ctx dev init               # Initialize dev environment
+        ✅ ctx dev test               # Run tests
+        📏 ctx dev format             # Format code
+        🔍 ctx dev lint               # Run linting
+        🏆 ctx dev quality            # Full quality check
     """
     pass
 
@@ -37,7 +44,7 @@ def dev():
 @click.option("--force", is_flag=True, help="Force reinstallation even if venv exists")
 @click.help_option("-h", "--help")
 def init(force):
-    """Initialize the development environment.
+    """🚀 Initialize the development environment.
 
     Creates a virtual environment, installs dependencies, and sets up
     pre-commit hooks.
@@ -91,7 +98,7 @@ def init(force):
 @click.argument("path", required=False)
 @click.help_option("-h", "--help")
 def test(coverage, watch, verbose, path):
-    """Run tests with optional coverage and watch mode.
+    """✅ Run tests with optional coverage and watch mode.
 
     Args:
         path: Optional path to specific test file or directory
@@ -136,7 +143,7 @@ def test(coverage, watch, verbose, path):
 @click.option("--check", is_flag=True, help="Only check formatting, don't modify files")
 @click.help_option("-h", "--help")
 def format(check):
-    """Format code with black and isort.
+    """📏 Format code with black and isort.
 
     Args:
         check: Only check formatting without making changes
@@ -173,7 +180,7 @@ def format(check):
 @dev.command()
 @click.option("--fix", is_flag=True, help="Automatically fix issues where possible")
 def lint(fix):
-    """Run linting with flake8, mypy, and bandit.
+    """🔍 Run linting with flake8, mypy, and bandit.
 
     Args:
         fix: Automatically fix issues where possible
@@ -216,7 +223,7 @@ def lint(fix):
 
 @dev.command()
 def quality():
-    """Run full quality check: format, lint, and test.
+    """🏆 Run full quality check: format, lint, and test.
 
     This command runs formatting, linting, and tests in sequence.
     """
@@ -264,7 +271,7 @@ def quality():
 @dev.command()
 @click.option("--all", is_flag=True, help="Clean all caches and build artifacts")
 def clean(all):
-    """Clean up development artifacts.
+    """🧼 Clean up development artifacts.
 
     Args:
         all: Clean all caches and build artifacts
@@ -312,7 +319,7 @@ def clean(all):
 
 @dev.command()
 def reset():
-    """Reset the development environment.
+    """🔄 Reset the development environment.
 
     Removes the virtual environment and recreates it.
     """

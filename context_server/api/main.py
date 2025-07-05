@@ -102,6 +102,22 @@ async def root():
     return {"message": "Context Server API", "version": "0.1.0", "docs": "/docs"}
 
 
+@app.post("/admin/reinitialize-db")
+async def reinitialize_database():
+    """Reinitialize database schema (admin endpoint)."""
+    try:
+        if hasattr(app.state, "db_manager"):
+            await app.state.db_manager.initialize()
+            return {"message": "Database reinitialized successfully"}
+        else:
+            raise HTTPException(
+                status_code=503, detail="Database manager not available"
+            )
+    except Exception as e:
+        logger.error(f"Database reinitialization failed: {e}")
+        raise HTTPException(status_code=500, detail="Database reinitialization failed")
+
+
 # Include routers after app creation
 def setup_routers():
     from .contexts import router as contexts_router

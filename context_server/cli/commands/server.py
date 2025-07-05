@@ -29,10 +29,17 @@ console = Console()
 @click.group()
 @click.help_option("-h", "--help")
 def server():
-    """Server management commands.
+    """🚀 Server management commands.
 
     Commands for starting, stopping, and managing the Context Server
     Docker containers and services.
+
+    Examples:
+        🟢 ctx server up                    # Start all services
+        🔴 ctx server down                  # Stop all services
+        🔎 ctx server status                # Check service health
+        📈 ctx server logs --follow api    # Follow API logs
+        🗺️ ctx server reset-db --force      # Reset database
     """
     pass
 
@@ -44,7 +51,7 @@ def server():
 )
 @click.help_option("-h", "--help")
 def up(build, detach):
-    """Start the Context Server services.
+    """🚀 Start the Context Server services.
 
     Starts PostgreSQL database and FastAPI server using Docker Compose.
     """
@@ -86,7 +93,7 @@ def up(build, detach):
 @click.option("--volumes", is_flag=True, help="Remove volumes as well")
 @click.help_option("-h", "--help")
 def down(volumes):
-    """Stop the Context Server services.
+    """🔴 Stop the Context Server services.
 
     Stops all running Docker containers for the Context Server.
     """
@@ -107,7 +114,7 @@ def down(volumes):
 @server.command()
 @click.help_option("-h", "--help")
 def restart():
-    """Restart the Context Server services.
+    """🔄 Restart the Context Server services.
 
     Stops and then starts all services.
     """
@@ -142,7 +149,7 @@ def restart():
 )
 @click.help_option("-h", "--help")
 def logs(service, follow, tail):
-    """Show service logs.
+    """📈 Show service logs.
 
     Args:
         service: Service name (api, postgres)
@@ -173,7 +180,7 @@ def logs(service, follow, tail):
 @click.option("--wait", is_flag=True, help="Wait for services to be ready")
 @click.help_option("-h", "--help")
 def status(wait):
-    """Check server status and health.
+    """🔎 Check server status and health.
 
     Args:
         wait: Wait for services to be ready
@@ -218,7 +225,7 @@ def status(wait):
 @click.option("--database", default="context_server", help="Database name")
 @click.option("--user", default="context_user", help="Database user")
 def shell(database, user):
-    """Connect to the PostgreSQL database shell.
+    """🐚 Connect to the PostgreSQL database shell.
 
     Args:
         database: Database name to connect to
@@ -241,7 +248,7 @@ def shell(database, user):
 @server.command()
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 def reset_db(force):
-    """Reset the database (WARNING: destroys all data).
+    """🗺️ Reset the database (WARNING: destroys all data).
 
     Args:
         force: Skip confirmation prompt
@@ -273,7 +280,37 @@ def reset_db(force):
 
     try:
         run_command(cmd)
-        echo_success("Database reset completed!")
+        echo_success("Database schema reset!")
+
+        # Reinitialize database tables through API
+        echo_info("Reinitializing database tables...")
+
+        async def reinitialize():
+            try:
+                async with httpx.AsyncClient() as client:
+                    # Use base URL directly for admin endpoints (not through /api/ prefix)
+                    admin_url = f"{get_api_base_url()}/admin/reinitialize-db"
+                    response = await client.post(admin_url, timeout=30.0)
+                    if response.status_code == 200:
+                        echo_success("Database reinitialization completed!")
+                        return True
+                    else:
+                        echo_error(
+                            f"Failed to reinitialize database: {response.status_code} - {response.text}"
+                        )
+                        return False
+            except Exception as e:
+                echo_error(f"Failed to call reinitialize API: {e}")
+                return False
+
+        success = asyncio.run(reinitialize())
+        if success:
+            echo_success("Database reset completed!")
+        else:
+            echo_warning(
+                "Database reset completed, but reinitialization may have failed. You may need to restart the API server."
+            )
+
     except Exception as e:
         echo_error(f"Failed to reset database: {e}")
 
@@ -287,7 +324,7 @@ def reset_db(force):
     help="Output format",
 )
 def ps(output_format):
-    """Show running containers.
+    """📊 Show running containers.
 
     Args:
         output_format: Output format (table, json)

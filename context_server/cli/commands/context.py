@@ -30,10 +30,16 @@ def complete_context_name(ctx, param, incomplete):
 @click.group()
 @click.help_option("-h", "--help")
 def context():
-    """Context management commands.
+    """📁 Context management commands.
 
     Commands for creating, listing, and managing contexts.
     Contexts are isolated namespaces for organizing your documentation.
+
+    Examples:
+        ➕ ctx context create my-docs                # Create new context
+        📊 ctx context list                      # List all contexts
+        🔍 ctx context info my-docs              # Show context details
+        🗚️ ctx context delete my-docs --force     # Delete context
     """
     pass
 
@@ -46,7 +52,7 @@ def context():
 )
 @click.help_option("-h", "--help")
 def create(name, description, embedding_model):
-    """Create a new context.
+    """➕ Create a new context.
 
     Args:
         name: Context name (must be unique)
@@ -67,7 +73,10 @@ def create(name, description, embedding_model):
                     timeout=30.0,
                 )
 
-                if response.status_code == 200:
+                if response.status_code in [
+                    200,
+                    201,
+                ]:  # Accept both 200 OK and 201 Created
                     context_data = response.json()
                     echo_success(f"Context '{name}' created successfully!")
 
@@ -108,7 +117,7 @@ def create(name, description, embedding_model):
 )
 @click.help_option("-h", "--help")
 def list(output_format):
-    """List all contexts.
+    """📊 List all contexts.
 
     Args:
         output_format: Output format (table or json)
@@ -174,7 +183,7 @@ def list(output_format):
     help="Output format",
 )
 def info(name, output_format):
-    """Show detailed information about a context.
+    """🔍 Show detailed information about a context.
 
     Args:
         name: Context name
@@ -235,7 +244,7 @@ def info(name, output_format):
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 @click.help_option("-h", "--help")
 def delete(name, force):
-    """Delete a context and all its data.
+    """🗚️ Delete a context and all its data.
 
     Args:
         name: Context name
@@ -276,7 +285,7 @@ def delete(name, force):
 @click.argument("old_name", shell_complete=complete_context_name)
 @click.argument("new_name")
 def rename(old_name, new_name):
-    """Rename a context.
+    """🏷️ Rename a context.
 
     Args:
         old_name: Current context name
@@ -295,7 +304,7 @@ def rename(old_name, new_name):
     help="New embedding model (requires re-embedding all documents)",
 )
 def update(name, new_description, new_embedding_model):
-    """Update context properties.
+    """✏️ Update context properties.
 
     Args:
         name: Context name

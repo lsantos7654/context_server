@@ -687,3 +687,33 @@ class DatabaseManager:
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
             }
+
+    async def get_document_content_by_id(self, document_id: str) -> dict | None:
+        """Get document content by ID only (for expansion service)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    d.id, d.title, d.url, d.content, d.metadata,
+                    d.indexed_at, d.source_type, d.chunk_count
+                FROM documents d
+                WHERE d.id = $1
+                """,
+                uuid.UUID(document_id),
+            )
+
+            if not row:
+                return None
+
+            return {
+                "id": str(row["id"]),
+                "title": row["title"],
+                "url": row["url"],
+                "content": row["content"],
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                "created_at": row["indexed_at"].isoformat()
+                if row["indexed_at"]
+                else None,
+                "source_type": row["source_type"],
+                "chunk_count": row["chunk_count"] or 0,
+            }

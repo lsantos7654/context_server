@@ -102,10 +102,12 @@ class ContextExpansionService:
     async def _get_chunk_line_info(self, chunk_id: str) -> Optional[dict]:
         """Get line information for a chunk from the database."""
         try:
+            import uuid
+
             async with self.db.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     "SELECT start_line, end_line, char_start, char_end FROM chunks WHERE id = $1",
-                    chunk_id,
+                    uuid.UUID(chunk_id),
                 )
                 if row:
                     return {
@@ -141,9 +143,7 @@ class ContextExpansionService:
         """
         try:
             # Get full document content from database
-            document = await self.db.get_document_by_id(
-                "", document_id
-            )  # context_id not needed for this query
+            document = await self.db.get_document_content_by_id(document_id)
             if not document:
                 return None
 

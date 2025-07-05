@@ -85,7 +85,7 @@ def query(
     show_content,
     expand_context,
 ):
-    """Search for documents in a context.
+    """🎯 Search for documents in a context.
 
     Args:
         query: Search query
@@ -163,7 +163,7 @@ def query(
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--limit", default=10, help="Maximum number of suggestions")
 def suggest(context_name, limit):
-    """Get search query suggestions for a context.
+    """💡 Get search query suggestions for a context.
 
     Args:
         context_name: Context name
@@ -179,7 +179,7 @@ def suggest(context_name, limit):
 @click.option("--interactive", "-i", is_flag=True, help="Interactive search mode")
 @rich_help_option("-h", "--help")
 def interactive(context_name, interactive):
-    """Start an interactive search session.
+    """💬 Start an interactive search session.
 
     Args:
         context_name: Context to search in

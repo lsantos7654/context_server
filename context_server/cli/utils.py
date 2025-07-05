@@ -71,8 +71,12 @@ async def check_api_health() -> Tuple[bool, Optional[str]]:
     """Check if the API is healthy."""
     try:
         async with httpx.AsyncClient() as client:
+            # Health endpoint is at root level, not under /api/
+            from .config import get_api_base_url
+
+            health_url = f"{get_api_base_url()}/health"
             response = await client.get(
-                get_api_url("health"),
+                health_url,
                 timeout=5.0,
             )
             if response.status_code == 200:

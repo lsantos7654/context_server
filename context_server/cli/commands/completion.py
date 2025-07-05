@@ -15,9 +15,14 @@ console = Console()
 @click.group()
 @click.help_option("-h", "--help")
 def completion():
-    """Shell completion setup commands.
+    """🐚 Shell completion setup commands.
 
     Commands for installing shell completion for bash, zsh, and fish.
+
+    Examples:
+        ⚙️ ctx completion install        # Auto-install completion
+        📜 ctx completion show bash     # Show bash completion script
+        🔎 ctx completion status       # Check installation status
     """
     pass
 
@@ -31,7 +36,7 @@ def completion():
 @click.option("--force", is_flag=True, help="Overwrite existing completion files")
 @click.help_option("-h", "--help")
 def install(shell, force):
-    """Install shell completion for context-server and ctx commands.
+    """⚙️ Install shell completion for context-server and ctx commands.
 
     Args:
         shell: Target shell (bash, zsh, fish)
@@ -68,7 +73,7 @@ def install(shell, force):
     help="Shell to uninstall completion for",
 )
 def uninstall(shell):
-    """Uninstall shell completion.
+    """🗚️ Uninstall shell completion.
 
     Args:
         shell: Target shell (bash, zsh, fish)
@@ -103,7 +108,7 @@ def uninstall(shell):
     help="Shell to show completion for",
 )
 def show(shell):
-    """Show completion script for manual installation.
+    """📜 Show completion script for manual installation.
 
     Args:
         shell: Target shell (bash, zsh, fish)
@@ -323,7 +328,7 @@ end"""
 @completion.command()
 @click.help_option("-h", "--help")
 def status():
-    """Show completion installation status."""
+    """🔎 Show completion installation status."""
     echo_info("Checking completion installation status...")
 
     shells = ["bash", "zsh", "fish"]

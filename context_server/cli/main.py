@@ -57,7 +57,7 @@ def cli(ctx, verbose, no_color, config_file):
 @cli.command()
 @click.pass_context
 def version(ctx):
-    """Show version information."""
+    """📋 Show version information."""
     from . import __version__
 
     console.print(f"Context Server CLI v{__version__}")
@@ -66,7 +66,7 @@ def version(ctx):
 @cli.command()
 @click.pass_context
 def config(ctx):
-    """Show current configuration."""
+    """⚙️ Show current configuration."""
     config = ctx.obj["config"]
 
     console.print("[bold]Context Server Configuration[/bold]")
