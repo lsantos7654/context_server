@@ -52,6 +52,7 @@ async def search_context(
                 query_embedding=query_embedding,
                 limit=search_request.limit,
                 min_similarity=0.1,  # Lower threshold for testing
+                expand_context=search_request.expand_context,
             )
 
         elif search_request.mode.value == "fulltext":
@@ -60,6 +61,7 @@ async def search_context(
                 context_id=context_id,
                 query=search_request.query,
                 limit=search_request.limit,
+                expand_context=search_request.expand_context,
             )
 
         elif search_request.mode.value == "hybrid":
@@ -72,12 +74,14 @@ async def search_context(
                 query_embedding=query_embedding,
                 limit=search_request.limit * 2,  # Get more for merging
                 min_similarity=0.1,  # Lower threshold for testing
+                expand_context=search_request.expand_context,
             )
 
             fulltext_results = await db.fulltext_search(
                 context_id=context_id,
                 query=search_request.query,
                 limit=search_request.limit * 2,  # Get more for merging
+                expand_context=search_request.expand_context,
             )
 
             # Merge and rank results
@@ -91,20 +95,51 @@ async def search_context(
                 detail=f"Unsupported search mode: {search_request.mode}",
             )
 
-        # Format results
-        formatted_results = [
-            {
-                "id": result["id"],
-                "document_id": result.get("document_id"),
-                "title": result["title"],
-                "content": result["content"],
-                "score": result["score"],
-                "metadata": result["metadata"],
-                "url": result.get("url"),
-                "chunk_index": result.get("chunk_index"),
-            }
-            for result in results
-        ]
+        # Handle load_full_doc option
+        if search_request.load_full_doc and results:
+            # Replace chunk content with full document content
+            processed_docs = set()
+            enhanced_results = []
+
+            for result in results:
+                doc_id = result.get("document_id")
+                if doc_id and doc_id not in processed_docs:
+                    # Get full document content
+                    full_doc = await db.get_document_by_id(context_id, doc_id)
+                    if full_doc:
+                        enhanced_result = {
+                            "id": result["id"],
+                            "document_id": doc_id,
+                            "title": full_doc["title"],
+                            "content": full_doc["content"],  # Full document content
+                            "score": result["score"],
+                            "metadata": full_doc["metadata"],
+                            "url": full_doc.get("url"),
+                            "chunk_index": result.get("chunk_index"),
+                            "content_type": "full_document",
+                        }
+                        enhanced_results.append(enhanced_result)
+                        processed_docs.add(doc_id)
+
+            formatted_results = enhanced_results
+        else:
+            # Format results normally
+            formatted_results = [
+                {
+                    "id": result["id"],
+                    "document_id": result.get("document_id"),
+                    "title": result["title"],
+                    "content": result["content"],
+                    "score": result["score"],
+                    "metadata": result["metadata"],
+                    "url": result.get("url"),
+                    "chunk_index": result.get("chunk_index"),
+                    "content_type": "expanded_chunk"
+                    if search_request.expand_context > 0
+                    else "chunk",
+                }
+                for result in results
+            ]
 
         execution_time_ms = int((time.time() - start_time) * 1000)
 

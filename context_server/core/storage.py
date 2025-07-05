@@ -423,30 +423,69 @@ class DatabaseManager:
         query_embedding: list[float],
         limit: int = 10,
         min_similarity: float = 0.7,
+        expand_context: int = 0,
     ) -> list[dict]:
         """Perform vector similarity search."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
             embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
-            rows = await conn.fetch(
-                """
-                SELECT
-                    c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
-                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
-                    1 - (c.embedding <=> $2::vector) as similarity
-                FROM chunks c
-                JOIN documents d ON c.document_id = d.id
-                WHERE c.context_id = $1
-                    AND 1 - (c.embedding <=> $2::vector) > $3
-                ORDER BY c.embedding <=> $2::vector
-                LIMIT $4
-            """,
-                uuid.UUID(context_id),
-                embedding_str,
-                min_similarity,
-                limit,
-            )
+            if expand_context > 0:
+                # Get chunks with surrounding context
+                rows = await conn.fetch(
+                    """
+                    WITH matched_chunks AS (
+                        SELECT c.id, c.document_id, c.chunk_index,
+                               1 - (c.embedding <=> $2::vector) as similarity
+                        FROM chunks c
+                        WHERE c.context_id = $1
+                            AND 1 - (c.embedding <=> $2::vector) > $3
+                        ORDER BY c.embedding <=> $2::vector
+                        LIMIT $4
+                    ),
+                    expanded_chunks AS (
+                        SELECT DISTINCT c2.id, c2.content, d.title, d.url,
+                               d.metadata as doc_metadata, c2.metadata as chunk_metadata,
+                               c2.chunk_index, d.id as document_id, mc.similarity,
+                               ROW_NUMBER() OVER (PARTITION BY mc.id ORDER BY c2.chunk_index) as context_order
+                        FROM matched_chunks mc
+                        JOIN chunks c2 ON c2.document_id = mc.document_id
+                        JOIN documents d ON c2.document_id = d.id
+                        WHERE c2.chunk_index BETWEEN (mc.chunk_index - $5) AND (mc.chunk_index + $5)
+                    )
+                    SELECT id,
+                           string_agg(content, '\n\n' ORDER BY chunk_index) as content,
+                           title, url, doc_metadata, chunk_metadata, chunk_index,
+                           document_id, similarity
+                    FROM expanded_chunks
+                    GROUP BY id, title, url, doc_metadata, chunk_metadata, chunk_index, document_id, similarity
+                    ORDER BY similarity DESC
+                """,
+                    uuid.UUID(context_id),
+                    embedding_str,
+                    min_similarity,
+                    limit,
+                    expand_context,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
+                        c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                        1 - (c.embedding <=> $2::vector) as similarity
+                    FROM chunks c
+                    JOIN documents d ON c.document_id = d.id
+                    WHERE c.context_id = $1
+                        AND 1 - (c.embedding <=> $2::vector) > $3
+                    ORDER BY c.embedding <=> $2::vector
+                    LIMIT $4
+                """,
+                    uuid.UUID(context_id),
+                    embedding_str,
+                    min_similarity,
+                    limit,
+                )
 
             return [
                 {
@@ -474,27 +513,63 @@ class DatabaseManager:
             ]
 
     async def fulltext_search(
-        self, context_id: str, query: str, limit: int = 10
+        self, context_id: str, query: str, limit: int = 10, expand_context: int = 0
     ) -> list[dict]:
         """Perform full-text search."""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
-                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
-                    ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
-                FROM chunks c
-                JOIN documents d ON c.document_id = d.id
-                WHERE c.context_id = $1
-                    AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
-                ORDER BY score DESC
-                LIMIT $3
-            """,
-                uuid.UUID(context_id),
-                query,
-                limit,
-            )
+            if expand_context > 0:
+                # Get chunks with surrounding context
+                rows = await conn.fetch(
+                    """
+                    WITH matched_chunks AS (
+                        SELECT c.id, c.document_id, c.chunk_index,
+                               ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
+                        FROM chunks c
+                        WHERE c.context_id = $1
+                            AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
+                        ORDER BY score DESC
+                        LIMIT $3
+                    ),
+                    expanded_chunks AS (
+                        SELECT c2.id, c2.content, d.title, d.url,
+                               d.metadata as doc_metadata, c2.metadata as chunk_metadata,
+                               c2.chunk_index, d.id as document_id, mc.score
+                        FROM matched_chunks mc
+                        JOIN chunks c2 ON c2.document_id = mc.document_id
+                        JOIN documents d ON c2.document_id = d.id
+                        WHERE c2.chunk_index BETWEEN (mc.chunk_index - $4) AND (mc.chunk_index + $4)
+                    )
+                    SELECT id,
+                           string_agg(content, '\n\n' ORDER BY chunk_index) as content,
+                           title, url, doc_metadata, chunk_metadata, chunk_index,
+                           document_id, score
+                    FROM expanded_chunks
+                    GROUP BY id, title, url, doc_metadata, chunk_metadata, chunk_index, document_id, score
+                    ORDER BY score DESC
+                """,
+                    uuid.UUID(context_id),
+                    query,
+                    limit,
+                    expand_context,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
+                        c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                        ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
+                    FROM chunks c
+                    JOIN documents d ON c.document_id = d.id
+                    WHERE c.context_id = $1
+                        AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
+                    ORDER BY score DESC
+                    LIMIT $3
+                """,
+                    uuid.UUID(context_id),
+                    query,
+                    limit,
+                )
 
             return [
                 {

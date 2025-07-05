@@ -56,8 +56,28 @@ def search():
     default=True,
     help="Show result content snippets",
 )
+@click.option(
+    "--expand-context",
+    default=0,
+    type=click.IntRange(0, 10),
+    help="Number of surrounding chunks to include (0-10)",
+)
+@click.option(
+    "--load-full-doc",
+    is_flag=True,
+    help="Load full document content instead of chunks",
+)
 @click.help_option("-h", "--help")
-def query(query, context_name, mode, limit, output_format, show_content):
+def query(
+    query,
+    context_name,
+    mode,
+    limit,
+    output_format,
+    show_content,
+    expand_context,
+    load_full_doc,
+):
     """Search for documents in a context.
 
     Args:
@@ -81,6 +101,8 @@ def query(query, context_name, mode, limit, output_format, show_content):
                         "query": query,
                         "mode": mode,
                         "limit": limit,
+                        "expand_context": expand_context,
+                        "load_full_doc": load_full_doc,
                     },
                     timeout=60.0,  # Search can take a while
                 )
@@ -176,6 +198,8 @@ def interactive(context_name, interactive):
                                 "query": query,
                                 "mode": "hybrid",
                                 "limit": 5,
+                                "expand_context": 0,
+                                "load_full_doc": False,
                             },
                             timeout=60.0,
                         )
@@ -261,9 +285,12 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
         url = result.get("url", "")
         content = result["content"]
         doc_id = result.get("document_id", "N/A")
+        content_type = result.get("content_type", "chunk")
 
-        # Create header with score and document ID
-        header = f"Result {i} (Score: {score:.3f}, Doc ID: {doc_id})"
+        # Create header with score, document ID, and content type
+        header = (
+            f"Result {i} (Score: {score:.3f}, Doc ID: {doc_id}, Type: {content_type})"
+        )
 
         # Create title section
         title_text = f"[bold blue]{title}[/bold blue]"
@@ -273,9 +300,22 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
         # Add document ID as a separate line
         title_text += f"\n[dim cyan]Document ID: {doc_id}[/dim cyan]"
 
+        # Add content type indicator
+        if content_type == "full_document":
+            title_text += f"\n[bold green]📄 Full Document Content[/bold green]"
+        elif content_type == "expanded_chunk":
+            title_text += f"\n[bold yellow]🔍 Expanded Context[/bold yellow]"
+
         if show_content:
             # Highlight query terms in content (simple highlighting)
             highlighted_content = highlight_query_terms(content, query)
+
+            # Truncate very long content for display
+            if len(highlighted_content) > 2000:
+                highlighted_content = (
+                    highlighted_content[:2000]
+                    + "\n\n[dim]... (content truncated)[/dim]"
+                )
 
             # Create panel with content
             panel_content = f"{title_text}\n\n{highlighted_content}"
