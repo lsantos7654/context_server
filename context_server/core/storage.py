@@ -123,10 +123,28 @@ class DatabaseManager:
                     chunk_index INTEGER NOT NULL,
                     metadata JSONB DEFAULT '{}',
                     tokens INTEGER,
+                    start_line INTEGER,
+                    end_line INTEGER,
+                    char_start INTEGER,
+                    char_end INTEGER,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     UNIQUE(document_id, chunk_index)
                 )
             """
+            )
+
+            # Add line tracking columns to existing tables (if they don't exist)
+            await conn.execute(
+                """
+                DO $$ BEGIN
+                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS start_line INTEGER;
+                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS end_line INTEGER;
+                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS char_start INTEGER;
+                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS char_end INTEGER;
+                EXCEPTION
+                    WHEN duplicate_column THEN NULL;
+                END $$;
+                """
             )
 
             # Create indexes for performance
@@ -141,6 +159,12 @@ class DatabaseManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_documents_url ON documents(url)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_lines ON chunks(document_id, start_line, end_line)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_chars ON chunks(document_id, char_start, char_end)"
             )
 
             # Create full-text search indexes
@@ -376,21 +400,29 @@ class DatabaseManager:
         chunk_index: int,
         metadata: dict = None,
         tokens: int = None,
+        start_line: int = None,
+        end_line: int = None,
+        char_start: int = None,
+        char_end: int = None,
     ) -> str:
-        """Create a new chunk with embedding."""
+        """Create a new chunk with embedding and line tracking."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
             embedding_str = "[" + ",".join(map(str, embedding)) + "]"
 
             chunk_id = await conn.fetchval(
                 """
-                INSERT INTO chunks (document_id, context_id, content, embedding, chunk_index, metadata, tokens)
-                VALUES ($1, $2, $3, $4::vector, $5, $6, $7)
+                INSERT INTO chunks (document_id, context_id, content, embedding, chunk_index, metadata, tokens, start_line, end_line, char_start, char_end)
+                VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11)
                 ON CONFLICT (document_id, chunk_index) DO UPDATE SET
                     content = EXCLUDED.content,
                     embedding = EXCLUDED.embedding,
                     metadata = EXCLUDED.metadata,
-                    tokens = EXCLUDED.tokens
+                    tokens = EXCLUDED.tokens,
+                    start_line = EXCLUDED.start_line,
+                    end_line = EXCLUDED.end_line,
+                    char_start = EXCLUDED.char_start,
+                    char_end = EXCLUDED.char_end
                 RETURNING id
             """,
                 uuid.UUID(document_id),
@@ -400,6 +432,10 @@ class DatabaseManager:
                 chunk_index,
                 json.dumps(metadata or {}),
                 tokens,
+                start_line,
+                end_line,
+                char_start,
+                char_end,
             )
 
             return str(chunk_id)
@@ -451,10 +487,15 @@ class DatabaseManager:
                         FROM matched_chunks mc
                         JOIN chunks c2 ON c2.document_id = mc.document_id
                         JOIN documents d ON c2.document_id = d.id
-                        WHERE c2.chunk_index BETWEEN (mc.chunk_index - $5) AND (mc.chunk_index + $5)
+                        WHERE c2.chunk_index BETWEEN
+                            GREATEST(0, mc.chunk_index - $5) AND
+                            LEAST(
+                                (SELECT MAX(chunk_index) FROM chunks WHERE document_id = mc.document_id),
+                                mc.chunk_index + $5
+                            )
                     )
                     SELECT original_chunk_id as id,
-                           string_agg(content, '\n\n' ORDER BY chunk_index) as content,
+                           string_agg(content, ' ' ORDER BY chunk_index) as content,
                            title, url, doc_metadata, chunk_metadata,
                            MIN(chunk_index) as chunk_index,
                            document_id, similarity
@@ -474,6 +515,7 @@ class DatabaseManager:
                     SELECT
                         c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
                         c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                        c.start_line, c.end_line, c.char_start, c.char_end,
                         1 - (c.embedding <=> $2::vector) as similarity
                     FROM chunks c
                     JOIN documents d ON c.document_id = d.id
@@ -509,6 +551,10 @@ class DatabaseManager:
                         ),
                     },
                     "chunk_index": row["chunk_index"],
+                    "start_line": row.get("start_line"),
+                    "end_line": row.get("end_line"),
+                    "char_start": row.get("char_start"),
+                    "char_end": row.get("char_end"),
                 }
                 for row in rows
             ]
@@ -539,10 +585,15 @@ class DatabaseManager:
                         FROM matched_chunks mc
                         JOIN chunks c2 ON c2.document_id = mc.document_id
                         JOIN documents d ON c2.document_id = d.id
-                        WHERE c2.chunk_index BETWEEN (mc.chunk_index - $4) AND (mc.chunk_index + $4)
+                        WHERE c2.chunk_index BETWEEN
+                            GREATEST(0, mc.chunk_index - $4) AND
+                            LEAST(
+                                (SELECT MAX(chunk_index) FROM chunks WHERE document_id = mc.document_id),
+                                mc.chunk_index + $4
+                            )
                     )
                     SELECT original_chunk_id as id,
-                           string_agg(content, '\n\n' ORDER BY chunk_index) as content,
+                           string_agg(content, ' ' ORDER BY chunk_index) as content,
                            title, url, doc_metadata, chunk_metadata,
                            MIN(chunk_index) as chunk_index,
                            document_id, score
@@ -561,6 +612,7 @@ class DatabaseManager:
                     SELECT
                         c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
                         c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                        c.start_line, c.end_line, c.char_start, c.char_end,
                         ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
                     FROM chunks c
                     JOIN documents d ON c.document_id = d.id
@@ -595,6 +647,10 @@ class DatabaseManager:
                         ),
                     },
                     "chunk_index": row["chunk_index"],
+                    "start_line": row.get("start_line"),
+                    "end_line": row.get("end_line"),
+                    "char_start": row.get("char_start"),
+                    "char_end": row.get("char_end"),
                 }
                 for row in rows
             ]

@@ -5,7 +5,9 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ..core.cache import DocumentCacheService
 from ..core.embeddings import EmbeddingService
+from ..core.expansion import ContextExpansionService
 from ..core.storage import DatabaseManager
 from .models import SearchRequest, SearchResponse
 
@@ -25,12 +27,29 @@ def get_embedding_service(request: Request) -> EmbeddingService:
     return request.app.state.embedding_service
 
 
+def get_cache_service(request: Request) -> DocumentCacheService:
+    """Dependency to get cache service."""
+    if not hasattr(request.app.state, "cache_service"):
+        request.app.state.cache_service = DocumentCacheService()
+    return request.app.state.cache_service
+
+
+def get_expansion_service(request: Request) -> ContextExpansionService:
+    """Dependency to get expansion service."""
+    if not hasattr(request.app.state, "expansion_service"):
+        db = get_db_manager(request)
+        cache = get_cache_service(request)
+        request.app.state.expansion_service = ContextExpansionService(db, cache)
+    return request.app.state.expansion_service
+
+
 @router.post("/contexts/{context_name}/search", response_model=SearchResponse)
 async def search_context(
     context_name: str,
     search_request: SearchRequest,
     db: DatabaseManager = Depends(get_db_manager),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    expansion_service: ContextExpansionService = Depends(get_expansion_service),
 ):
     """Search documents within a context."""
     start_time = time.time()
@@ -45,27 +64,27 @@ async def search_context(
         results = []
 
         if search_request.mode.value == "vector":
-            # Pure vector search
+            # Pure vector search (without expansion at DB level)
             query_embedding = await embedding_service.embed_text(search_request.query)
             results = await db.vector_search(
                 context_id=context_id,
                 query_embedding=query_embedding,
                 limit=search_request.limit,
                 min_similarity=0.1,  # Lower threshold for testing
-                expand_context=search_request.expand_context,
+                expand_context=0,  # No DB-level expansion
             )
 
         elif search_request.mode.value == "fulltext":
-            # Pure full-text search
+            # Pure full-text search (without expansion at DB level)
             results = await db.fulltext_search(
                 context_id=context_id,
                 query=search_request.query,
                 limit=search_request.limit,
-                expand_context=search_request.expand_context,
+                expand_context=0,  # No DB-level expansion
             )
 
         elif search_request.mode.value == "hybrid":
-            # Hybrid search - combine vector and full-text
+            # Hybrid search - combine vector and full-text (without expansion at DB level)
             query_embedding = await embedding_service.embed_text(search_request.query)
 
             # Get results from both methods
@@ -74,14 +93,14 @@ async def search_context(
                 query_embedding=query_embedding,
                 limit=search_request.limit * 2,  # Get more for merging
                 min_similarity=0.1,  # Lower threshold for testing
-                expand_context=search_request.expand_context,
+                expand_context=0,  # No DB-level expansion
             )
 
             fulltext_results = await db.fulltext_search(
                 context_id=context_id,
                 query=search_request.query,
                 limit=search_request.limit * 2,  # Get more for merging
-                expand_context=search_request.expand_context,
+                expand_context=0,  # No DB-level expansion
             )
 
             # Merge and rank results
@@ -95,51 +114,38 @@ async def search_context(
                 detail=f"Unsupported search mode: {search_request.mode}",
             )
 
-        # Handle load_full_doc option
-        if search_request.load_full_doc and results:
-            # Replace chunk content with full document content
-            processed_docs = set()
-            enhanced_results = []
+        # Add warning for large context expansions
+        if search_request.expand_context > 50:
+            logger.warning(
+                f"Large context expansion requested: {search_request.expand_context} lines. "
+                f"This may impact performance and memory usage."
+            )
 
-            for result in results:
-                doc_id = result.get("document_id")
-                if doc_id and doc_id not in processed_docs:
-                    # Get full document content
-                    full_doc = await db.get_document_by_id(context_id, doc_id)
-                    if full_doc:
-                        enhanced_result = {
-                            "id": result["id"],
-                            "document_id": doc_id,
-                            "title": full_doc["title"],
-                            "content": full_doc["content"],  # Full document content
-                            "score": result["score"],
-                            "metadata": full_doc["metadata"],
-                            "url": full_doc.get("url"),
-                            "chunk_index": result.get("chunk_index"),
-                            "content_type": "full_document",
-                        }
-                        enhanced_results.append(enhanced_result)
-                        processed_docs.add(doc_id)
+        # Apply line-based expansion if requested
+        if search_request.expand_context > 0:
+            # Expand results using line-based context expansion
+            results = await expansion_service.expand_search_results(
+                results,
+                expand_lines=search_request.expand_context,
+                prefer_boundaries=True,
+            )
 
-            formatted_results = enhanced_results
-        else:
-            # Format results normally
-            formatted_results = [
-                {
-                    "id": result["id"],
-                    "document_id": result.get("document_id"),
-                    "title": result["title"],
-                    "content": result["content"],
-                    "score": result["score"],
-                    "metadata": result["metadata"],
-                    "url": result.get("url"),
-                    "chunk_index": result.get("chunk_index"),
-                    "content_type": "expanded_chunk"
-                    if search_request.expand_context > 0
-                    else "chunk",
-                }
-                for result in results
-            ]
+        # Format results
+        formatted_results = [
+            {
+                "id": result["id"],
+                "document_id": result.get("document_id"),
+                "title": result["title"],
+                "content": result["content"],
+                "score": result["score"],
+                "metadata": result["metadata"],
+                "url": result.get("url"),
+                "chunk_index": result.get("chunk_index"),
+                "content_type": result.get("content_type", "chunk"),
+                "expansion_info": result.get("expansion_info"),
+            }
+            for result in results
+        ]
 
         execution_time_ms = int((time.time() - start_time) * 1000)
 

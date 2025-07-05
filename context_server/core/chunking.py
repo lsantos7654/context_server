@@ -10,11 +10,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TextChunk:
-    """A chunk of text with metadata."""
+    """A chunk of text with metadata and line tracking."""
 
     content: str
     tokens: int
     metadata: dict
+    start_line: int = None
+    end_line: int = None
+    char_start: int = None
+    char_end: int = None
 
 
 class TextChunker:
@@ -25,42 +29,62 @@ class TextChunker:
         self.chunk_overlap = chunk_overlap
 
     def chunk_text(self, text: str) -> List[TextChunk]:
-        """Split text into chunks with overlaps."""
+        """Split text into chunks with overlaps and line tracking."""
         try:
+            # Store original text and line mappings
+            self.original_text = text
+            self.lines = text.splitlines()
+            self.line_to_char = self._build_line_to_char_mapping()
+
             # Clean the text first
-            text = self._clean_text(text)
+            cleaned_text = self._clean_text(text)
 
             # Split by paragraphs first, then by sentences if needed
-            chunks = self._split_by_paragraphs(text)
+            chunk_strings = self._split_by_paragraphs(cleaned_text)
 
             # If chunks are still too large, split further
-            final_chunks = []
-            for chunk in chunks:
+            final_chunk_strings = []
+            for chunk in chunk_strings:
                 if len(chunk) <= self.chunk_size:
-                    final_chunks.append(chunk)
+                    final_chunk_strings.append(chunk)
                 else:
                     # Split large chunks by sentences
                     sub_chunks = self._split_by_sentences(chunk)
-                    final_chunks.extend(sub_chunks)
+                    final_chunk_strings.extend(sub_chunks)
 
-            # Create TextChunk objects
+            # Create TextChunk objects with line tracking
             text_chunks = []
-            for i, chunk_content in enumerate(final_chunks):
-                if chunk_content.strip():  # Skip empty chunks
+            for i, chunk_content in enumerate(final_chunk_strings):
+                chunk_content = chunk_content.strip()
+                if chunk_content:  # Skip empty chunks
+                    # Find line positions for this chunk
+                    (
+                        start_line,
+                        end_line,
+                        char_start,
+                        char_end,
+                    ) = self._find_chunk_position(chunk_content, i)
+
                     text_chunk = TextChunk(
-                        content=chunk_content.strip(),
+                        content=chunk_content,
                         tokens=self._estimate_tokens(chunk_content),
                         metadata={"chunk_index": i, "method": "paragraph_sentence"},
+                        start_line=start_line,
+                        end_line=end_line,
+                        char_start=char_start,
+                        char_end=char_end,
                     )
                     text_chunks.append(text_chunk)
 
-            logger.debug(f"Split text into {len(text_chunks)} chunks")
+            logger.debug(
+                f"Split text into {len(text_chunks)} chunks with line tracking"
+            )
             return text_chunks
 
         except Exception as e:
             logger.error(f"Failed to chunk text: {e}")
             # Fallback to simple splitting
-            return self._simple_chunk(text)
+            return self._simple_chunk_with_lines(text)
 
     def _clean_text(self, text: str) -> str:
         """Clean text for better chunking."""
@@ -193,3 +217,92 @@ class TextChunker:
         """Estimate token count for text."""
         # Rough approximation: 1 token ≈ 4 characters for English text
         return len(text) // 4
+
+    def _build_line_to_char_mapping(self) -> List[tuple]:
+        """Build mapping from line numbers to character positions."""
+        line_to_char = []
+        char_pos = 0
+
+        for line_num, line in enumerate(self.lines):
+            start_char = char_pos
+            end_char = char_pos + len(line)
+            line_to_char.append((start_char, end_char))
+            # Add 1 for newline character (except last line)
+            char_pos = end_char + (1 if line_num < len(self.lines) - 1 else 0)
+
+        return line_to_char
+
+    def _find_chunk_position(self, chunk_content: str, chunk_index: int) -> tuple:
+        """
+        Find the line and character positions of a chunk in the original text.
+
+        Returns:
+            tuple: (start_line, end_line, char_start, char_end)
+        """
+        try:
+            # Find the chunk content in the original text
+            # This is approximate since the content might have been cleaned
+            chunk_start = self.original_text.find(
+                chunk_content[:100]
+            )  # Use first 100 chars for search
+
+            if chunk_start == -1:
+                # Fallback: estimate based on chunk index
+                chars_per_chunk = len(self.original_text) // max(1, chunk_index + 1)
+                chunk_start = chunk_index * chars_per_chunk
+                chunk_end = min(
+                    chunk_start + len(chunk_content), len(self.original_text)
+                )
+            else:
+                chunk_end = chunk_start + len(chunk_content)
+
+            # Find which lines these character positions correspond to
+            start_line = self._char_to_line(chunk_start)
+            end_line = self._char_to_line(chunk_end)
+
+            return start_line, end_line, chunk_start, chunk_end
+
+        except Exception as e:
+            logger.warning(f"Could not determine chunk position: {e}")
+            # Return estimated positions
+            lines_per_chunk = max(1, len(self.lines) // max(1, chunk_index + 1))
+            start_line = chunk_index * lines_per_chunk
+            end_line = min(start_line + lines_per_chunk, len(self.lines) - 1)
+            return start_line, end_line, 0, len(chunk_content)
+
+    def _char_to_line(self, char_pos: int) -> int:
+        """Convert character position to line number."""
+        for line_num, (start_char, end_char) in enumerate(self.line_to_char):
+            if start_char <= char_pos <= end_char:
+                return line_num
+        # If not found, return closest line
+        return min(
+            len(self.lines) - 1, max(0, char_pos // 80)
+        )  # Assume ~80 chars per line
+
+    def _simple_chunk_with_lines(self, text: str) -> List[TextChunk]:
+        """Simple chunking fallback method with line tracking."""
+        self.original_text = text
+        self.lines = text.splitlines()
+        self.line_to_char = self._build_line_to_char_mapping()
+
+        chunks = []
+
+        for i in range(0, len(text), self.chunk_size - self.chunk_overlap):
+            chunk_content = text[i : i + self.chunk_size].strip()
+            if chunk_content:
+                start_line = self._char_to_line(i)
+                end_line = self._char_to_line(min(i + self.chunk_size, len(text) - 1))
+
+                chunk = TextChunk(
+                    content=chunk_content,
+                    tokens=self._estimate_tokens(chunk_content),
+                    metadata={"chunk_index": len(chunks), "method": "simple"},
+                    start_line=start_line,
+                    end_line=end_line,
+                    char_start=i,
+                    char_end=min(i + self.chunk_size, len(text)),
+                )
+                chunks.append(chunk)
+
+        return chunks

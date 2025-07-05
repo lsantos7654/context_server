@@ -111,10 +111,7 @@ class SearchRequest(BaseModel):
     limit: int = Field(10, ge=1, le=100, description="Maximum results to return")
     include_raw: bool = Field(False, description="Include raw document content")
     expand_context: int = Field(
-        0, ge=0, le=10, description="Number of surrounding chunks to include"
-    )
-    load_full_doc: bool = Field(
-        False, description="Load full document content instead of chunks"
+        0, ge=0, le=300, description="Number of surrounding chunks to include (0-300)"
     )
     filters: dict = Field(default_factory=dict, description="Additional search filters")
 

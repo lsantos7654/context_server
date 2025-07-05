@@ -13,7 +13,13 @@ from rich.table import Table
 
 from ..config import get_api_url
 from ..help_formatter import rich_help_option
-from ..utils import echo_error, echo_info, echo_success, get_context_names_sync
+from ..utils import (
+    echo_error,
+    echo_info,
+    echo_success,
+    echo_warning,
+    get_context_names_sync,
+)
 
 console = Console()
 
@@ -35,8 +41,8 @@ def search():
     Examples:
         ctx search query "async patterns" my-docs          # Basic search
         ctx search query "rendering" docs --mode vector    # Vector search only
-        ctx search query "widgets" docs --expand-context 2 # Expand surrounding chunks
-        ctx search query "concepts" docs --load-full-doc   # Load complete documents
+        ctx search query "widgets" docs --expand-context 10 # Expand surrounding lines
+        ctx search query "concepts" docs --expand-context 50 # Get lots of context
     """
     pass
 
@@ -66,13 +72,8 @@ def search():
 @click.option(
     "--expand-context",
     default=0,
-    type=click.IntRange(0, 10),
-    help="Number of surrounding chunks to include (0-10)",
-)
-@click.option(
-    "--load-full-doc",
-    is_flag=True,
-    help="Load full document content instead of chunks",
+    type=click.IntRange(0, 300),
+    help="Number of surrounding lines to include (0-300)",
 )
 @rich_help_option("-h", "--help")
 def query(
@@ -83,7 +84,6 @@ def query(
     output_format,
     show_content,
     expand_context,
-    load_full_doc,
 ):
     """Search for documents in a context.
 
@@ -101,6 +101,14 @@ def query(
             echo_info(f"Searching '{context_name}' for: {query}")
             echo_info(f"Search mode: {mode}")
 
+            # Warn about large context expansion
+            if expand_context > 100:
+                echo_warning(
+                    f"Large context expansion ({expand_context} lines) may take longer and use more memory"
+                )
+            elif expand_context > 50:
+                echo_info(f"Expanding context by {expand_context} lines around matches")
+
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     get_api_url(f"contexts/{context_name}/search"),
@@ -109,7 +117,6 @@ def query(
                         "mode": mode,
                         "limit": limit,
                         "expand_context": expand_context,
-                        "load_full_doc": load_full_doc,
                     },
                     timeout=60.0,  # Search can take a while
                 )
@@ -206,7 +213,6 @@ def interactive(context_name, interactive):
                                 "mode": "hybrid",
                                 "limit": 5,
                                 "expand_context": 0,
-                                "load_full_doc": False,
                             },
                             timeout=60.0,
                         )
@@ -308,20 +314,26 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
         title_text += f"\n[dim cyan]Document ID: {doc_id}[/dim cyan]"
 
         # Add content type indicator
-        if content_type == "full_document":
-            title_text += f"\n[bold green]📄 Full Document Content[/bold green]"
-        elif content_type == "expanded_chunk":
-            title_text += f"\n[bold yellow]🔍 Expanded Context[/bold yellow]"
+        if content_type == "expanded_chunk":
+            # Show actual line count for expanded context
+            line_count = len(content.split("\n"))
+            title_text += (
+                f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
+            )
 
         if show_content:
             # Highlight query terms in content (simple highlighting)
             highlighted_content = highlight_query_terms(content, query)
 
-            # Truncate very long content for display
-            if len(highlighted_content) > 2000:
+            # Intelligent truncation based on content type
+            max_display_length = 2000
+            if content_type == "expanded_chunk":
+                max_display_length = 5000  # Allow more for expanded context
+
+            if len(highlighted_content) > max_display_length:
                 highlighted_content = (
-                    highlighted_content[:2000]
-                    + "\n\n[dim]... (content truncated)[/dim]"
+                    highlighted_content[:max_display_length]
+                    + f"\n\n[dim]... (content truncated, showing first {max_display_length:,} characters)[/dim]"
                 )
 
             # Create panel with content

@@ -6,6 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
+from ..core.cache import DocumentCacheService
 from ..core.processing import DocumentProcessor
 from ..core.storage import DatabaseManager
 from .models import DocumentDelete, DocumentIngest, DocumentsResponse, JobStatus
@@ -17,6 +18,13 @@ router = APIRouter()
 def get_db_manager(request: Request) -> DatabaseManager:
     """Dependency to get database manager."""
     return request.app.state.db_manager
+
+
+def get_cache_service(request: Request) -> DocumentCacheService:
+    """Dependency to get document cache service."""
+    if not hasattr(request.app.state, "cache_service"):
+        request.app.state.cache_service = DocumentCacheService()
+    return request.app.state.cache_service
 
 
 def get_processor(request: Request) -> DocumentProcessor:
@@ -33,6 +41,7 @@ async def ingest_document(
     background_tasks: BackgroundTasks,
     db: DatabaseManager = Depends(get_db_manager),
     processor: DocumentProcessor = Depends(get_processor),
+    cache_service: DocumentCacheService = Depends(get_cache_service),
 ):
     """Ingest a document into a context (async processing)."""
     try:
@@ -46,7 +55,13 @@ async def ingest_document(
 
         # Start background processing
         background_tasks.add_task(
-            _process_document_background, job_id, context, document_data, db, processor
+            _process_document_background,
+            job_id,
+            context,
+            document_data,
+            db,
+            processor,
+            cache_service,
         )
 
         logger.info(f"Started document ingestion job: {job_id}")
@@ -72,6 +87,7 @@ async def _process_document_background(
     document_data: DocumentIngest,
     db: DatabaseManager,
     processor: DocumentProcessor,
+    cache_service: DocumentCacheService = None,
 ):
     """Background task for document processing."""
     try:
@@ -106,7 +122,7 @@ async def _process_document_background(
                 source_type=document_data.source_type.value,
             )
 
-            # Store chunks with embeddings
+            # Store chunks with embeddings and line tracking
             for i, chunk in enumerate(doc.chunks):
                 await db.create_chunk(
                     document_id=doc_id,
@@ -116,10 +132,23 @@ async def _process_document_background(
                     chunk_index=i,
                     metadata=chunk.metadata,
                     tokens=chunk.tokens,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
                 )
 
             # Update document chunk count
             await db.update_document_chunk_count(doc_id)
+
+            # Cache the document for fast line-based expansion
+            if cache_service:
+                try:
+                    await cache_service.cache_document(doc_id, doc.content)
+                    logger.debug(f"Cached document {doc_id} for line-based expansion")
+                except Exception as e:
+                    logger.warning(f"Failed to cache document {doc_id}: {e}")
+                    # Don't fail the whole operation if caching fails
 
         logger.info(
             f"Completed processing job: {job_id}, processed {len(result.documents)} documents"

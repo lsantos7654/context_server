@@ -20,12 +20,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProcessedChunk:
-    """A processed text chunk with embedding."""
+    """A processed text chunk with embedding and line tracking."""
 
     content: str
     embedding: list[float]
     metadata: dict
     tokens: int
+    start_line: int = None
+    end_line: int = None
+    char_start: int = None
+    char_end: int = None
 
 
 @dataclass
@@ -194,6 +198,10 @@ class DocumentProcessor:
                             "source_title": title,
                         },
                         tokens=chunk.tokens,
+                        start_line=chunk.start_line,
+                        end_line=chunk.end_line,
+                        char_start=chunk.char_start,
+                        char_end=chunk.char_end,
                     )
                     processed_chunks.append(processed_chunk)
 
