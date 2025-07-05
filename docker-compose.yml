@@ -11,6 +11,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=INFO
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY:-}
       - PYTHONPATH=/app
     volumes:
       - ./context_server:/app/context_server

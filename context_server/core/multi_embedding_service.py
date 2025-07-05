@@ -24,8 +24,7 @@ class EmbeddingModel(Enum):
     OPENAI_ADA = "text-embedding-ada-002"
 
     # Code-specific models
-    COHERE_CODE = "embed-code-v3.0"  # Cohere's code embedding model
-    # Note: CodeBERT would require different integration (Hugging Face)
+    VOYAGE_CODE = "voyage-code-3"  # Voyage AI's code embedding model
 
 
 class ContentType(Enum):
@@ -134,90 +133,144 @@ class OpenAIProvider(EmbeddingProvider):
         return text
 
 
-class CohereProvider(EmbeddingProvider):
-    """Cohere embedding provider for code-specific embeddings."""
+class VoyageProvider(EmbeddingProvider):
+    """Voyage AI embedding provider for code-specific embeddings."""
 
-    def __init__(self, model: str = "embed-code-v3.0", api_key: str | None = None):
+    def __init__(self, model: str = "voyage-code-3", api_key: str | None = None):
         super().__init__(api_key)
         self.model = model
-        self.api_key = api_key or os.getenv("COHERE_API_KEY")
+        self.api_key = api_key or os.getenv("VOYAGE_API_KEY")
 
         if not self.api_key:
-            logger.warning("No Cohere API key provided")
+            logger.warning("No Voyage API key provided")
 
-        # Cohere code models typically use 4096 dimensions
-        self.dimension = 4096
+        # voyage-code-3 supports multiple dimensions, default to 1024
+        self.dimension = 1024
 
     async def embed_text(self, text: str) -> list[float]:
-        """Generate embedding for a single text using Cohere."""
+        """Generate embedding for a single text using Voyage AI with retry logic."""
         if not self.api_key:
-            raise ValueError("Cohere API key not configured")
+            raise ValueError("Voyage API key not configured")
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.cohere.ai/v1/embed",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "texts": [self._prepare_text(text)],
-                        "input_type": "search_document",  # For indexing
-                        "embedding_types": ["float"],
-                    },
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data["embeddings"]["float"][0]
-        except Exception as e:
-            logger.error(f"Cohere embedding failed: {e}")
-            raise
+        max_retries = 3
+        base_delay = 1.0
 
-    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings for a batch of texts using Cohere."""
-        if not self.api_key:
-            raise ValueError("Cohere API key not configured")
-
-        try:
-            prepared_texts = [self._prepare_text(text) for text in texts]
-
-            # Cohere allows larger batches but we'll be conservative
-            max_batch_size = 96  # Cohere limit is 96
-            all_embeddings = []
-
-            for i in range(0, len(prepared_texts), max_batch_size):
-                batch = prepared_texts[i : i + max_batch_size]
-
+        for attempt in range(max_retries):
+            try:
                 async with httpx.AsyncClient() as client:
                     response = await client.post(
-                        "https://api.cohere.ai/v1/embed",
+                        "https://api.voyageai.com/v1/embeddings",
                         headers={
                             "Authorization": f"Bearer {self.api_key}",
                             "Content-Type": "application/json",
                         },
                         json={
                             "model": self.model,
-                            "texts": batch,
-                            "input_type": "search_document",
-                            "embedding_types": ["float"],
+                            "input": [self._prepare_text(text)],
+                            "input_type": "document",  # For indexing documents
+                            "output_dimension": self.dimension,
                         },
-                        timeout=60.0,
+                        timeout=30.0,
                     )
+
+                    if response.status_code == 429 and attempt < max_retries - 1:
+                        # Rate limited, wait and retry with exponential backoff
+                        delay = base_delay * (2**attempt)
+                        logger.warning(
+                            f"Rate limited by Voyage API, retrying in {delay}s (attempt {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
                     response.raise_for_status()
                     data = response.json()
-                    all_embeddings.extend(data["embeddings"]["float"])
+                    return data["data"][0]["embedding"]
 
-                # Rate limiting
-                if i + max_batch_size < len(prepared_texts):
-                    await asyncio.sleep(0.2)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"Rate limited by Voyage API, retrying in {delay}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Voyage embedding failed: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"Voyage embedding failed: {e}")
+                raise
 
-            return all_embeddings
-        except Exception as e:
-            logger.error(f"Cohere batch embedding failed: {e}")
-            raise
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for a batch of texts using Voyage AI with retry logic."""
+        if not self.api_key:
+            raise ValueError("Voyage API key not configured")
+
+        prepared_texts = [self._prepare_text(text) for text in texts]
+
+        # Optimize batch size based on Voyage limits: 2,000 RPM, 3M TPM
+        max_batch_size = 96  # Balanced for efficiency while staying under limits
+        all_embeddings = []
+
+        for i in range(0, len(prepared_texts), max_batch_size):
+            batch = prepared_texts[i : i + max_batch_size]
+
+            # Retry logic for each batch
+            max_retries = 3
+            base_delay = 1.0
+
+            for attempt in range(max_retries):
+                try:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(
+                            "https://api.voyageai.com/v1/embeddings",
+                            headers={
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json={
+                                "model": self.model,
+                                "input": batch,
+                                "input_type": "document",
+                                "output_dimension": self.dimension,
+                            },
+                            timeout=60.0,
+                        )
+
+                        if response.status_code == 429 and attempt < max_retries - 1:
+                            delay = base_delay * (2**attempt)
+                            logger.warning(
+                                f"Rate limited by Voyage API, retrying batch in {delay}s (attempt {attempt + 1}/{max_retries})"
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+
+                        response.raise_for_status()
+                        data = response.json()
+                        batch_embeddings = [item["embedding"] for item in data["data"]]
+                        all_embeddings.extend(batch_embeddings)
+                        break  # Success, exit retry loop
+
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429 and attempt < max_retries - 1:
+                        delay = base_delay * (2**attempt)
+                        logger.warning(
+                            f"Rate limited by Voyage API, retrying batch in {delay}s (attempt {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"Voyage batch embedding failed: {e}")
+                        raise
+                except Exception as e:
+                    logger.error(f"Voyage batch embedding failed: {e}")
+                    raise
+
+            # Rate limiting between batches - optimized for 2,000 RPM
+            if i + max_batch_size < len(prepared_texts):
+                await asyncio.sleep(0.1)  # Minimal delay - we have 2,000 RPM available
+
+        return all_embeddings
 
     def get_dimension(self) -> int:
         """Get the embedding dimension."""
@@ -226,8 +279,8 @@ class CohereProvider(EmbeddingProvider):
     def _prepare_text(self, text: str) -> str:
         """Prepare text for embedding."""
         text = " ".join(text.split())
-        # Cohere has different limits, but let's be conservative
-        max_chars = 40000
+        # Voyage has generous token limits
+        max_chars = 120000  # 120K token limit
         if len(text) > max_chars:
             text = text[:max_chars]
         return text
@@ -241,13 +294,13 @@ class MultiEmbeddingService:
         self.providers = {
             EmbeddingModel.OPENAI_SMALL: OpenAIProvider("text-embedding-3-small"),
             EmbeddingModel.OPENAI_LARGE: OpenAIProvider("text-embedding-3-large"),
-            EmbeddingModel.COHERE_CODE: CohereProvider("embed-code-v3.0"),
+            EmbeddingModel.VOYAGE_CODE: VoyageProvider("voyage-code-3"),
         }
 
         # Default routing rules based on content analysis
         self.routing_rules = {
-            ContentType.CODE: EmbeddingModel.COHERE_CODE,
-            ContentType.API_REFERENCE: EmbeddingModel.COHERE_CODE,
+            ContentType.CODE: EmbeddingModel.VOYAGE_CODE,
+            ContentType.API_REFERENCE: EmbeddingModel.VOYAGE_CODE,
             ContentType.TUTORIAL: EmbeddingModel.OPENAI_SMALL,
             ContentType.DOCUMENTATION: EmbeddingModel.OPENAI_SMALL,
             ContentType.GENERAL: EmbeddingModel.OPENAI_SMALL,

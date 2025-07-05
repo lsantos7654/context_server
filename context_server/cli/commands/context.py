@@ -279,7 +279,10 @@ def delete(name, force):
                     timeout=30.0,
                 )
 
-                if response.status_code == 200:
+                if response.status_code in [
+                    200,
+                    204,
+                ]:  # Both 200 OK and 204 No Content are success
                     echo_success(f"Context '{name}' deleted successfully!")
                 elif response.status_code == 404:
                     echo_error(f"Context '{name}' not found")
