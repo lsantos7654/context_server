@@ -681,3 +681,160 @@ class EnhancedDatabaseManager:
                     for row in embedding_models
                 ],
             }
+
+    async def search_similar_content(
+        self, embedding: List[float], limit: int = 10, filters: Dict[str, Any] = None
+    ) -> List[Dict]:
+        """Search for similar content using single embedding."""
+
+        # Default context_id if not in filters (for testing)
+        context_id = filters.get("context_id") if filters else None
+        if not context_id:
+            # Get first available context for testing
+            async with self.pool.acquire() as conn:
+                context_row = await conn.fetchrow("SELECT id FROM contexts LIMIT 1")
+                if not context_row:
+                    return []
+                context_id = str(context_row["id"])
+
+        # Pad or truncate embedding to fit vector(4096)
+        if len(embedding) > 4096:
+            embedding = embedding[:4096]
+        elif len(embedding) < 4096:
+            embedding = embedding + [0.0] * (4096 - len(embedding))
+
+        embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+
+        async with self.pool.acquire() as conn:
+            # Build WHERE clause based on filters
+            where_conditions = ["c.context_id = $1"]
+            params = [uuid.UUID(context_id), embedding_str]
+            param_count = 2
+
+            if filters:
+                if "content_type" in filters:
+                    param_count += 1
+                    where_conditions.append(f"ca.content_type = ${param_count}")
+                    params.append(filters["content_type"])
+
+                if "primary_language" in filters:
+                    param_count += 1
+                    where_conditions.append(f"ca.primary_language = ${param_count}")
+                    params.append(filters["primary_language"])
+
+                if "min_code_percentage" in filters:
+                    param_count += 1
+                    where_conditions.append(f"ca.code_percentage >= ${param_count}")
+                    params.append(filters["min_code_percentage"])
+
+            where_clause = " AND ".join(where_conditions)
+
+            query = f"""
+                SELECT
+                    c.id, c.content, d.title, d.url, d.content,
+                    ca.content_type, ca.primary_language, ca.summary, ca.code_percentage,
+                    1 - (ce.embedding <=> $2::vector) as similarity,
+                    d.metadata, c.metadata as chunk_metadata
+                FROM chunks c
+                JOIN chunk_embeddings ce ON c.id = ce.chunk_id
+                JOIN documents d ON c.document_id = d.id
+                LEFT JOIN content_analyses ca ON d.id = ca.document_id
+                WHERE {where_clause}
+                ORDER BY ce.embedding <=> $2::vector
+                LIMIT {limit}
+            """
+
+            rows = await conn.fetch(query, *params)
+
+            results = []
+            for row in rows:
+                result = {
+                    "id": str(row["id"]),
+                    "content": row["content"],
+                    "title": row["title"],
+                    "url": row["url"],
+                    "similarity": float(row["similarity"]),
+                    "content_type": row["content_type"] or "general",
+                    "primary_language": row["primary_language"],
+                    "summary": row["summary"] or "",
+                    "quality_score": 0.8,  # Default quality score
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                }
+                results.append(result)
+
+            return results
+
+    async def search_by_keywords(
+        self, keywords: List[str], limit: int = 10, filters: Dict[str, Any] = None
+    ) -> List[Dict]:
+        """Search content by keywords using full-text search."""
+
+        if not keywords:
+            return []
+
+        # Default context_id if not in filters (for testing)
+        context_id = filters.get("context_id") if filters else None
+        if not context_id:
+            # Get first available context for testing
+            async with self.pool.acquire() as conn:
+                context_row = await conn.fetchrow("SELECT id FROM contexts LIMIT 1")
+                if not context_row:
+                    return []
+                context_id = str(context_row["id"])
+
+        # Create search query
+        search_query = " & ".join(keywords)
+
+        async with self.pool.acquire() as conn:
+            # Build WHERE clause based on filters
+            where_conditions = ["c.context_id = $1"]
+            params = [uuid.UUID(context_id), search_query]
+            param_count = 2
+
+            if filters:
+                if "content_type" in filters:
+                    param_count += 1
+                    where_conditions.append(f"ca.content_type = ${param_count}")
+                    params.append(filters["content_type"])
+
+                if "primary_language" in filters:
+                    param_count += 1
+                    where_conditions.append(f"ca.primary_language = ${param_count}")
+                    params.append(filters["primary_language"])
+
+            where_clause = " AND ".join(where_conditions)
+
+            query = f"""
+                SELECT
+                    c.id, c.content, d.title, d.url, d.content,
+                    ca.content_type, ca.primary_language, ca.summary, ca.code_percentage,
+                    ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as rank,
+                    d.metadata, c.metadata as chunk_metadata
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                LEFT JOIN content_analyses ca ON d.id = ca.document_id
+                WHERE {where_clause}
+                    AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
+                ORDER BY rank DESC
+                LIMIT {limit}
+            """
+
+            rows = await conn.fetch(query, *params)
+
+            results = []
+            for row in rows:
+                result = {
+                    "id": str(row["id"]),
+                    "content": row["content"],
+                    "title": row["title"],
+                    "url": row["url"],
+                    "similarity": float(row["rank"]),
+                    "content_type": row["content_type"] or "general",
+                    "primary_language": row["primary_language"],
+                    "summary": row["summary"] or "",
+                    "quality_score": 0.7,  # Default quality score for keyword search
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                }
+                results.append(result)
+
+            return results
