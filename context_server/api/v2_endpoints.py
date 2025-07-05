@@ -159,6 +159,8 @@ async def enhanced_search(
                 "query": response.search_response.query,
                 "results": [
                     {
+                        "id": getattr(result, "id", None),
+                        "document_id": getattr(result, "document_id", None),
                         "url": result.url,
                         "title": result.title,
                         "content": result.content,
@@ -172,6 +174,8 @@ async def enhanced_search(
                         "matched_keywords": result.matched_keywords,
                         "code_elements": result.code_elements,
                         "api_references": result.api_references,
+                        "start_line": getattr(result, "start_line", None),
+                        "end_line": getattr(result, "end_line", None),
                     }
                     for result in response.search_response.results
                 ],

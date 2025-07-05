@@ -61,6 +61,12 @@ class SearchResult:
     code_elements: List[str]
     api_references: List[str]
 
+    # Chunk-level metadata for context expansion
+    id: Optional[str] = None  # Chunk ID
+    document_id: Optional[str] = None
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+
     # Ranking factors
     freshness_score: float = 1.0
     authority_score: float = 1.0
@@ -360,6 +366,10 @@ class SearchEngine:
                 matched_keywords=[],
                 code_elements=[],
                 api_references=[],
+                id=result.get("id"),
+                document_id=result.get("document_id"),
+                start_line=result.get("start_line"),
+                end_line=result.get("end_line"),
             )
             search_results.append(search_result)
 
@@ -413,6 +423,10 @@ class SearchEngine:
                 matched_keywords=[],
                 code_elements=query_analysis.code_elements,
                 api_references=query_analysis.api_references,
+                id=result.get("id"),
+                document_id=result.get("document_id"),
+                start_line=result.get("start_line"),
+                end_line=result.get("end_line"),
             )
             search_results.append(search_result)
 
@@ -494,6 +508,10 @@ class SearchEngine:
                 ],
                 code_elements=[],
                 api_references=[],
+                id=result.get("id"),
+                document_id=result.get("document_id"),
+                start_line=result.get("start_line"),
+                end_line=result.get("end_line"),
             )
             search_results.append(search_result)
 

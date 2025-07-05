@@ -79,6 +79,12 @@ def search():
     help="Include knowledge graph insights",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed metadata")
+@click.option(
+    "--expand-context",
+    type=int,
+    default=0,
+    help="Number of lines to expand around each result for fuller context",
+)
 @rich_help_option("-h", "--help")
 def query(
     query,
@@ -89,11 +95,13 @@ def query(
     include_clusters,
     include_insights,
     verbose,
+    expand_context,
 ):
     """Search for documents in a context using enhanced multi-modal search.
 
     Performs intelligent search with content recommendations, topic clustering,
-    and knowledge graph insights for comprehensive results.
+    and knowledge graph insights for comprehensive results. Can expand results
+    with surrounding context using Redis-cached line-based expansion.
 
     Args:
         query: Search query text
@@ -104,6 +112,7 @@ def query(
         include_clusters: Include related topic clusters
         include_insights: Include knowledge graph insights
         verbose: Show detailed metadata
+        expand_context: Number of lines to expand around each result
     """
 
     async def enhanced_search():
@@ -153,6 +162,13 @@ def query(
                     if not results:
                         echo_info("No results found")
                         return
+
+                    # Apply context expansion if requested
+                    if expand_context > 0:
+                        echo_info(f"Expanding context by {expand_context} lines...")
+                        results = await expand_search_results(
+                            results, expand_context, context_id
+                        )
 
                     echo_success(
                         f"Found {search_response['total_results']} result(s) in {search_response['search_time_ms']}ms"
@@ -495,6 +511,98 @@ def display_insights(insights: dict):
             console.print(
                 f"• {key.replace('_', ' ').title()}: {', '.join(map(str, value[:3]))}"
             )
+
+
+async def expand_search_results(
+    results: list, expand_lines: int, context_id: str
+) -> list:
+    """
+    Expand search results with surrounding context using the ContextExpansionService.
+
+    Args:
+        results: List of search result dictionaries
+        expand_lines: Number of lines to expand above and below each result
+        context_id: Context ID for database operations
+
+    Returns:
+        List of expanded search results
+    """
+    try:
+        # Import the required services
+        from ...core.cache import DocumentCacheService
+        from ...core.enhanced_storage import EnhancedDatabaseManager
+        from ...core.expansion import ContextExpansionService
+        from ..config import get_api_url
+
+        # Initialize services
+        db_manager = EnhancedDatabaseManager()
+        await db_manager.initialize()
+
+        cache_service = DocumentCacheService()
+        try:
+            await cache_service.initialize()
+        except Exception as e:
+            echo_warning(f"Redis cache not available: {e}")
+            echo_info("Context expansion will use database fallback")
+
+        # Create a wrapper for compatibility with ContextExpansionService
+        class EnhancedDatabaseWrapper:
+            def __init__(self, enhanced_db, context_id):
+                self.enhanced_db = enhanced_db
+                self.context_id = context_id
+                self.pool = enhanced_db.pool
+
+            async def get_document_content_by_id(self, document_id):
+                doc = await self.enhanced_db.get_document_by_id(
+                    self.context_id, document_id
+                )
+                return doc if doc else None
+
+        db_wrapper = EnhancedDatabaseWrapper(db_manager, context_id)
+        expansion_service = ContextExpansionService(db_wrapper, cache_service)
+
+        # Expand each result
+        expanded_results = []
+        for result in results:
+            try:
+                # Map v2 API result format to expansion service format
+                expansion_result = {
+                    "id": result.get("id"),
+                    "document_id": result.get("document_id"),
+                    "content": result.get("content"),
+                    "start_line": result.get("start_line"),
+                    "end_line": result.get("end_line"),
+                }
+
+                expanded = await expansion_service.expand_search_result(
+                    expansion_result, expand_lines, prefer_boundaries=True
+                )
+
+                # Update the original result with expanded content
+                if expanded.get("content") != result.get("content"):
+                    result["content"] = expanded["content"]
+                    result["expansion_info"] = expanded.get("expansion_info", {})
+                    result["content_type"] = "expanded_chunk"
+
+                expanded_results.append(result)
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to expand result {result.get('id', 'unknown')}: {e}"
+                )
+                # Keep original result if expansion fails
+                expanded_results.append(result)
+
+        # Clean up connections
+        await db_manager.close()
+        await cache_service.close()
+
+        return expanded_results
+
+    except Exception as e:
+        echo_error(f"Context expansion failed: {e}")
+        echo_info("Returning original results without expansion")
+        return results
 
 
 # Alias for the query command to avoid naming conflicts
