@@ -33,16 +33,19 @@ def complete_context_name(ctx, param, incomplete):
 @click.group()
 @rich_help_option("-h", "--help")
 def search():
-    """🔍 Search commands for Context Server.
+    """Search documents in contexts using vector, full-text, or hybrid modes.
 
-    Commands for searching documents within contexts using different
-    search modes: vector similarity, full-text, and hybrid search.
+    Search your documentation contexts using different algorithms:
+    • Vector search: Semantic similarity using embeddings
+    • Full-text search: Traditional keyword matching
+    • Hybrid search: Combined approach for best results
 
     Examples:
-        ctx search query "async patterns" my-docs          # Basic search
-        ctx search query "rendering" docs --mode vector    # Vector search only
-        ctx search query "widgets" docs --expand-context 10 # Expand surrounding lines
-        ctx search query "concepts" docs --expand-context 50 # Get lots of context
+        ctx search query "async patterns" my-docs             # Basic hybrid search
+        ctx search query "rendering" docs --mode vector       # Vector search only
+        ctx search query "widgets" docs --expand-context 10   # With context expansion
+        ctx search query "data" docs --verbose               # Show all metadata
+        ctx search interactive my-docs                        # Interactive mode
     """
     pass
 
@@ -75,6 +78,12 @@ def search():
     type=click.IntRange(0, 300),
     help="Number of surrounding lines to include (0-300)",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show all available metadata fields",
+)
 @rich_help_option("-h", "--help")
 def query(
     query,
@@ -84,16 +93,21 @@ def query(
     output_format,
     show_content,
     expand_context,
+    verbose,
 ):
-    """🎯 Search for documents in a context.
+    """Search for documents in a context.
+
+    Performs semantic or text-based search within a specific context.
+    Results are ranked by relevance and optionally expanded with
+    surrounding lines for better context understanding.
 
     Args:
-        query: Search query
-        context_name: Context to search in
-        mode: Search mode (vector, fulltext, hybrid)
-        limit: Maximum number of results
-        output_format: Output format (rich, table, json)
-        show_content: Show content snippets
+        query: Search query text
+        context_name: Name of context to search within
+        mode: Search algorithm (vector, fulltext, hybrid)
+        limit: Maximum number of results to return
+        output_format: Display format (rich, table, json)
+        show_content: Whether to display content snippets
     """
 
     async def search_documents():
@@ -142,7 +156,7 @@ def query(
                     if output_format == "table":
                         display_results_table(results, show_content)
                     else:  # rich format
-                        display_results_rich(results, query, show_content)
+                        display_results_rich(results, query, show_content, verbose)
 
                 elif response.status_code == 404:
                     echo_error(f"Context '{context_name}' not found")
@@ -163,11 +177,14 @@ def query(
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--limit", default=10, help="Maximum number of suggestions")
 def suggest(context_name, limit):
-    """💡 Get search query suggestions for a context.
+    """Get search query suggestions for a context.
+
+    Analyzes context content to suggest relevant search queries
+    based on common terms and document titles.
 
     Args:
-        context_name: Context name
-        limit: Maximum number of suggestions
+        context_name: Name of context to analyze
+        limit: Maximum number of suggestions to return
     """
     # This would require an API endpoint for search suggestions
     echo_error("Search suggestions are not yet implemented")
@@ -179,10 +196,14 @@ def suggest(context_name, limit):
 @click.option("--interactive", "-i", is_flag=True, help="Interactive search mode")
 @rich_help_option("-h", "--help")
 def interactive(context_name, interactive):
-    """💬 Start an interactive search session.
+    """Start an interactive search session.
+
+    Provides a continuous search interface where you can enter
+    multiple queries without restarting the command. Type 'quit'
+    or press Ctrl+C to exit.
 
     Args:
-        context_name: Context to search in
+        context_name: Name of context to search within
         interactive: Enable interactive mode
     """
     if not interactive:
@@ -231,7 +252,9 @@ def interactive(context_name, interactive):
                                 f"Found {total} result(s) in {execution_time}ms"
                             )
                             console.print()
-                            display_results_rich(results, query, True)
+                            display_results_rich(
+                                results, query, True, False
+                            )  # verbose=False for interactive
 
                         elif response.status_code == 404:
                             echo_error(f"Context '{context_name}' not found")
@@ -290,7 +313,9 @@ def display_results_table(results: list, show_content: bool = True):
     console.print(table)
 
 
-def display_results_rich(results: list, query: str, show_content: bool = True):
+def display_results_rich(
+    results: list, query: str, show_content: bool = True, verbose: bool = False
+):
     """Display search results in rich format with highlighting."""
     for i, result in enumerate(results, 1):
         score = result["score"]
@@ -370,6 +395,154 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
                 )
             else:
                 title_text += f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
+
+        # Add comprehensive metadata if verbose mode is enabled
+        if verbose:
+            title_text += "\n\n[bold cyan]📋 Complete Metadata:[/bold cyan]"
+
+            # Core identifiers
+            title_text += f"\n[dim white]• Document ID: {doc_id}[/dim white]"
+            title_text += (
+                f"\n[dim white]• Chunk ID: {result.get('id', 'N/A')}[/dim white]"
+            )
+            title_text += f"\n[dim white]• Chunk Index: {chunk_index}[/dim white]"
+
+            # URLs and sources
+            if page_url:
+                title_text += f"\n[dim white]• Page URL: {page_url}[/dim white]"
+            if base_url and base_url != page_url:
+                title_text += f"\n[dim white]• Base URL: {base_url}[/dim white]"
+            if url and url != page_url:
+                title_text += f"\n[dim white]• Document URL: {url}[/dim white]"
+
+            # Content information
+            title_text += f"\n[dim white]• Content Type: {content_type}[/dim white]"
+            title_text += f"\n[dim white]• Score: {score:.6f}[/dim white]"
+            content_length = len(content)
+            title_text += (
+                f"\n[dim white]• Content Length: {content_length:,} chars[/dim white]"
+            )
+
+            # Line tracking information
+            start_line = result.get("start_line")
+            end_line = result.get("end_line")
+            char_start = result.get("char_start")
+            char_end = result.get("char_end")
+
+            if start_line is not None and end_line is not None:
+                title_text += (
+                    f"\n[dim white]• Line Range: {start_line}-{end_line}[/dim white]"
+                )
+            if char_start is not None and char_end is not None:
+                title_text += f"\n[dim white]• Character Range: {char_start:,}-{char_end:,}[/dim white]"
+
+            # Token information
+            tokens = result.get("tokens") or metadata.get("tokens")
+            if tokens:
+                title_text += f"\n[dim white]• Estimated Tokens: {tokens}[/dim white]"
+
+            # Extraction metadata
+            if source_type:
+                title_text += f"\n[dim white]• Source Type: {source_type}[/dim white]"
+            if extraction_time:
+                title_text += (
+                    f"\n[dim white]• Extraction Time: {extraction_time}[/dim white]"
+                )
+
+            # File metadata for file sources
+            file_path = metadata.get("file_path")
+            file_type = metadata.get("file_type")
+            file_size = metadata.get("file_size")
+            if file_path:
+                title_text += f"\n[dim white]• File Path: {file_path}[/dim white]"
+            if file_type:
+                title_text += f"\n[dim white]• File Type: {file_type}[/dim white]"
+            if file_size:
+                title_text += (
+                    f"\n[dim white]• File Size: {file_size:,} bytes[/dim white]"
+                )
+
+            # Crawl4ai specific metadata
+            if source_type == "crawl4ai":
+                filtered_links = metadata.get("filtered_links")
+                total_links = metadata.get("total_links_found")
+                successful = metadata.get("successful_extractions")
+
+                if total_links:
+                    title_text += (
+                        f"\n[dim white]• Total Links Found: {total_links}[/dim white]"
+                    )
+                if filtered_links:
+                    title_text += (
+                        f"\n[dim white]• Filtered Links: {filtered_links}[/dim white]"
+                    )
+                if successful:
+                    title_text += f"\n[dim white]• Successful Extractions: {successful}[/dim white]"
+
+                if is_individual_page:
+                    title_text += f"\n[dim white]• Individual Page: Yes[/dim white]"
+
+            # Search-specific metadata
+            vector_score = result.get("vector_score")
+            fulltext_score = result.get("fulltext_score")
+            hybrid_score = result.get("hybrid_score")
+
+            if vector_score is not None:
+                title_text += (
+                    f"\n[dim white]• Vector Score: {vector_score:.6f}[/dim white]"
+                )
+            if fulltext_score is not None:
+                title_text += (
+                    f"\n[dim white]• Full-text Score: {fulltext_score:.6f}[/dim white]"
+                )
+            if hybrid_score is not None:
+                title_text += (
+                    f"\n[dim white]• Hybrid Score: {hybrid_score:.6f}[/dim white]"
+                )
+
+            # Expansion metadata
+            expansion_info = result.get("expansion_info", {})
+            if expansion_info:
+                title_text += f"\n[dim white]• Expansion Method: {expansion_info.get('method', 'N/A')}[/dim white]"
+                title_text += f"\n[dim white]• Original Lines: {expansion_info.get('original_lines', 'N/A')}[/dim white]"
+                title_text += f"\n[dim white]• Expanded Lines: {expansion_info.get('expanded_lines', 'N/A')}[/dim white]"
+                lines_added = expansion_info.get("lines_added")
+                if lines_added:
+                    title_text += (
+                        f"\n[dim white]• Lines Added: {lines_added}[/dim white]"
+                    )
+
+            # Additional metadata from the metadata object
+            additional_metadata = {}
+            for key, value in metadata.items():
+                if key not in [
+                    "extraction_time",
+                    "source_type",
+                    "file_path",
+                    "file_type",
+                    "file_size",
+                    "total_links_found",
+                    "filtered_links",
+                    "successful_extractions",
+                    "page_url",
+                    "base_url",
+                    "is_individual_page",
+                    "extracted_pages",
+                    "tokens",
+                ]:
+                    additional_metadata[key] = value
+
+            if additional_metadata:
+                title_text += f"\n[dim white]• Additional Metadata:[/dim white]"
+                for key, value in additional_metadata.items():
+                    if isinstance(value, (str, int, float, bool)):
+                        title_text += f"\n[dim gray]  • {key}: {value}[/dim gray]"
+                    elif isinstance(value, list) and len(value) <= 3:
+                        title_text += f"\n[dim gray]  • {key}: {value}[/dim gray]"
+                    else:
+                        title_text += (
+                            f"\n[dim gray]  • {key}: <complex object>[/dim gray]"
+                        )
 
         if show_content:
             # Highlight query terms in content (simple highlighting)

@@ -30,16 +30,17 @@ def complete_context_name(ctx, param, incomplete):
 @click.group()
 @click.help_option("-h", "--help")
 def context():
-    """📁 Context management commands.
+    """Manage documentation contexts for organizing documents.
 
-    Commands for creating, listing, and managing contexts.
-    Contexts are isolated namespaces for organizing your documentation.
+    Contexts are containers that group related documents together.
+    Each context maintains its own search index and can contain
+    documents from URLs, files, and other sources.
 
     Examples:
-        ➕ ctx context create my-docs                # Create new context
-        📊 ctx context list                      # List all contexts
-        🔍 ctx context info my-docs              # Show context details
-        🗚️ ctx context delete my-docs --force     # Delete context
+        ctx context create my-docs                # Create new context
+        ctx context list                          # List all contexts
+        ctx context info my-docs                  # Show context details
+        ctx context delete my-docs --force       # Delete context
     """
     pass
 
@@ -52,12 +53,16 @@ def context():
 )
 @click.help_option("-h", "--help")
 def create(name, description, embedding_model):
-    """➕ Create a new context.
+    """Create a new documentation context.
+
+    Creates a new context container for organizing and indexing
+    related documents. Context names must be unique and follow
+    standard naming conventions.
 
     Args:
-        name: Context name (must be unique)
-        description: Optional description
-        embedding_model: Embedding model to use
+        name: Unique name for the new context
+        description: Optional description for the context
+        embedding_model: Embedding model to use for vector search
     """
 
     async def create_context():
@@ -117,7 +122,10 @@ def create(name, description, embedding_model):
 )
 @click.help_option("-h", "--help")
 def list(output_format):
-    """📊 List all contexts.
+    """List all available contexts.
+
+    Displays all contexts with their document counts, descriptions,
+    and creation dates in table or JSON format.
 
     Args:
         output_format: Output format (table or json)
@@ -183,10 +191,13 @@ def list(output_format):
     help="Output format",
 )
 def info(name, output_format):
-    """🔍 Show detailed information about a context.
+    """Show detailed information about a context.
+
+    Displays comprehensive context metadata including document count,
+    storage size, embedding model, creation date, and recent activity.
 
     Args:
-        name: Context name
+        name: Name of context to inspect
         output_format: Output format (table or json)
     """
 
@@ -244,10 +255,13 @@ def info(name, output_format):
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 @click.help_option("-h", "--help")
 def delete(name, force):
-    """🗚️ Delete a context and all its data.
+    """Delete a context and all its documents.
+
+    Permanently removes the context and all associated documents,
+    chunks, and embeddings. This action cannot be undone.
 
     Args:
-        name: Context name
+        name: Name of context to delete
         force: Skip confirmation prompt
     """
     if not force and not confirm_action(
@@ -285,7 +299,10 @@ def delete(name, force):
 @click.argument("old_name", shell_complete=complete_context_name)
 @click.argument("new_name")
 def rename(old_name, new_name):
-    """🏷️ Rename a context.
+    """Rename a context.
+
+    Changes the name of an existing context while preserving
+    all documents and metadata.
 
     Args:
         old_name: Current context name
@@ -304,12 +321,15 @@ def rename(old_name, new_name):
     help="New embedding model (requires re-embedding all documents)",
 )
 def update(name, new_description, new_embedding_model):
-    """✏️ Update context properties.
+    """Update context properties.
+
+    Modifies context metadata such as description or embedding model.
+    Changing the embedding model requires re-processing all documents.
 
     Args:
-        name: Context name
-        new_description: New description
-        new_embedding_model: New embedding model
+        name: Name of context to update
+        new_description: Updated description
+        new_embedding_model: New embedding model (triggers re-embedding)
     """
     if not new_description and not new_embedding_model:
         echo_error("At least one property must be specified for update")

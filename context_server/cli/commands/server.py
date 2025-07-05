@@ -29,17 +29,17 @@ console = Console()
 @click.group()
 @click.help_option("-h", "--help")
 def server():
-    """🚀 Server management commands.
+    """Manage Context Server Docker services and database.
 
-    Commands for starting, stopping, and managing the Context Server
-    Docker containers and services.
+    Commands for controlling the lifecycle of Context Server services
+    including the PostgreSQL database and FastAPI application.
 
     Examples:
-        🟢 ctx server up                    # Start all services
-        🔴 ctx server down                  # Stop all services
-        🔎 ctx server status                # Check service health
-        📈 ctx server logs --follow api    # Follow API logs
-        🗺️ ctx server reset-db --force      # Reset database
+        ctx server up                       # Start all services
+        ctx server down                     # Stop all services
+        ctx server status                   # Check service health
+        ctx server logs --follow api        # Follow API logs
+        ctx server reset-db --force        # Reset database
     """
     pass
 
@@ -51,9 +51,10 @@ def server():
 )
 @click.help_option("-h", "--help")
 def up(build, detach):
-    """🚀 Start the Context Server services.
+    """Start the Context Server services.
 
-    Starts PostgreSQL database and FastAPI server using Docker Compose.
+    Launches PostgreSQL database and FastAPI server using Docker Compose.
+    Services will be available once startup is complete.
     """
     if not check_docker_running():
         echo_error("Docker is not running. Please start Docker first.")
@@ -93,9 +94,10 @@ def up(build, detach):
 @click.option("--volumes", is_flag=True, help="Remove volumes as well")
 @click.help_option("-h", "--help")
 def down(volumes):
-    """🔴 Stop the Context Server services.
+    """Stop the Context Server services.
 
     Stops all running Docker containers for the Context Server.
+    Optionally removes associated volumes and data.
     """
     echo_info("Stopping Context Server services...")
 

@@ -34,9 +34,10 @@ def complete_context_name(ctx, param, incomplete):
 @click.group()
 @rich_help_option("-h", "--help")
 def docs():
-    """📚 Document management commands.
+    """Extract and manage documents within contexts.
 
-    Commands for extracting, listing, and managing documents within contexts.
+    Commands for processing documents from various sources including
+    URLs, files, directories, and git repositories.
 
     Examples:
         ctx docs extract https://docs.rust-lang.org rust-docs    # Extract from URL
@@ -83,11 +84,14 @@ def extract(
     include_patterns,
     exclude_patterns,
 ):
-    """📎 Extract documents from a source into a context.
+    """Extract documents from a source into a context.
+
+    Processes documents from URLs, files, directories, or git repositories
+    and adds them to the specified context for search and retrieval.
 
     Args:
         source: URL, file path, git repository, or local directory
-        context_name: Target context name
+        context_name: Name of target context
         source_type: Source type (url, file, git, local)
         max_pages: Maximum pages to extract for URLs
         wait: Wait for extraction to complete

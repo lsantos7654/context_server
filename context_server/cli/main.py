@@ -19,19 +19,19 @@ console = Console()
 @rich_help_option("-h", "--help")
 @click.pass_context
 def cli(ctx, verbose, no_color, config_file):
-    """🚀 Context Server - Modern CLI for documentation RAG system.
+    """Context Server - Modern CLI for documentation RAG system.
 
     A powerful command-line interface for managing your local documentation
     extraction and search system. Extract docs from URLs, manage contexts,
     and perform semantic search across your documentation.
 
     Examples:
-        🔧 ctx server up                           # Start the server
-        📁 ctx context create my-docs              # Create a new context
-        📄 ctx docs extract https://... my-docs    # Extract documentation
-        🔍 ctx search query "async patterns" docs  # Search documentation
-        📊 ctx docs list my-docs                   # List documents
-        🔍 ctx search query "concepts" docs --expand-context 50  # Get more context
+        ctx server up                              # Start the server
+        ctx context create my-docs                 # Create a new context
+        ctx docs extract https://... my-docs       # Extract documentation
+        ctx search query "async patterns" docs     # Search documentation
+        ctx docs list my-docs                      # List documents
+        ctx search query "concepts" docs --expand-context 50  # Get more context
     """
     # Ensure context object exists
     ctx.ensure_object(dict)
@@ -57,7 +57,7 @@ def cli(ctx, verbose, no_color, config_file):
 @cli.command()
 @click.pass_context
 def version(ctx):
-    """📋 Show version information."""
+    """Show version information."""
     from . import __version__
 
     console.print(f"Context Server CLI v{__version__}")
@@ -66,7 +66,7 @@ def version(ctx):
 @cli.command()
 @click.pass_context
 def config(ctx):
-    """⚙️ Show current configuration."""
+    """Show current configuration."""
     config = ctx.obj["config"]
 
     console.print("[bold]Context Server Configuration[/bold]")
