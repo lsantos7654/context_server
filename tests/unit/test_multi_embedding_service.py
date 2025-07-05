@@ -144,7 +144,7 @@ class TestMultiEmbeddingService:
 
         # Replace providers with mocks
         self.service.providers[EmbeddingModel.OPENAI_SMALL] = self.mock_openai_provider
-        self.service.providers[EmbeddingModel.COHERE_CODE] = self.mock_cohere_provider
+        self.service.providers[EmbeddingModel.VOYAGE_CODE] = self.mock_cohere_provider
 
     def test_route_content_high_code_percentage(self):
         """Test routing for high code percentage content."""
@@ -160,7 +160,7 @@ class TestMultiEmbeddingService:
         )
 
         model = self.service.route_content(analysis)
-        assert model == EmbeddingModel.COHERE_CODE
+        assert model == EmbeddingModel.VOYAGE_CODE
 
     def test_route_content_api_reference(self):
         """Test routing for API reference content."""
@@ -176,7 +176,7 @@ class TestMultiEmbeddingService:
         )
 
         model = self.service.route_content(analysis)
-        assert model == EmbeddingModel.COHERE_CODE
+        assert model == EmbeddingModel.VOYAGE_CODE
 
     def test_route_content_tutorial(self):
         """Test routing for tutorial content."""
@@ -214,7 +214,7 @@ class TestMultiEmbeddingService:
         """Test routing based on code percentage without analysis."""
         # High code percentage should route to code model
         model = self.service.route_content(code_percentage=40.0)
-        assert model == EmbeddingModel.COHERE_CODE
+        assert model == EmbeddingModel.VOYAGE_CODE
 
         # Low code percentage should route to general model
         model = self.service.route_content(code_percentage=5.0)
@@ -333,7 +333,7 @@ class TestMultiEmbeddingService:
     @pytest.mark.asyncio
     async def test_embed_with_multiple_models(self):
         """Test embedding with multiple models for comparison."""
-        models = [EmbeddingModel.OPENAI_SMALL, EmbeddingModel.COHERE_CODE]
+        models = [EmbeddingModel.OPENAI_SMALL, EmbeddingModel.VOYAGE_CODE]
 
         results = await self.service.embed_with_multiple_models("test content", models)
 

@@ -81,7 +81,7 @@ class DocumentResponse(BaseModel):
     url: str
     title: str
     indexed_at: datetime
-    chunks: int
+    chunk_count: int
     metadata: dict
 
 

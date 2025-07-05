@@ -48,3 +48,5 @@ will need to update makefile at some point
 Can we just have `ctx claude` which will setup claude with a proper claude.md in the current directory, and allow claude to know how to use this mcp server. It would also know how to scrape pages and list all of the docs and even manage different contexts
 
 update audit to check claude.md enforce style guide and remove/consolidate old logic. Check and fix-precommit, this should be the last thing checked and fixed. Only fix pre-commit after the refactor. Come up with an extensive todo list to fix the issues. Everything should be saved to a markdown file. The main focus of these audits are to reduce code size and complexity. We should always take a generalized approach to problems, so whenever we hardcode something this should be a red flag
+
+need a way to download docs from server to local

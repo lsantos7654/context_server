@@ -379,7 +379,7 @@ class SearchEngine:
 
         # Use code-specific model for embedding
         query_embedding = await self.embedding_service.embed_text(
-            query, force_model=EmbeddingModel.COHERE_CODE
+            query, force_model=EmbeddingModel.VOYAGE_CODE
         )
 
         if not query_embedding.get("success", False):

@@ -818,7 +818,7 @@ class EnhancedEmbeddingStrategy:
         """Generate multi-model embeddings for comparison."""
 
         models = config.get(
-            "models", [EmbeddingModel.OPENAI_SMALL, EmbeddingModel.COHERE_CODE]
+            "models", [EmbeddingModel.OPENAI_SMALL, EmbeddingModel.VOYAGE_CODE]
         )
 
         multi_model_results = {}

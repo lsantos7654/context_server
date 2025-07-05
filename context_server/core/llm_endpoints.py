@@ -128,7 +128,7 @@ class LLMOptimizedEndpoints:
             question_analysis = await self._analyze_question(question)
 
             # Generate embedding for semantic search
-            question_embedding = await self.embedding_service.embed_single(
+            question_embedding = await self.embedding_service.embed_text(
                 question, content_analysis=None
             )
 
@@ -200,7 +200,7 @@ class LLMOptimizedEndpoints:
             query_analysis = await self._analyze_user_intent(user_query, user_level)
 
             # Generate embedding for semantic matching
-            query_embedding = await self.embedding_service.embed_single(
+            query_embedding = await self.embedding_service.embed_text(
                 user_query, content_analysis=None
             )
 
@@ -413,45 +413,50 @@ class LLMOptimizedEndpoints:
             # Find relationships for this content
             related_content = []
 
-            for relationship in knowledge_graph.relationships:
-                if relationship.source_url == url:
-                    # Add relationship context based on intent
-                    if (
-                        intent == "procedural"
-                        and relationship.relationship_type
-                        == RelationshipType.TUTORIAL_SEQUENCE
-                    ):
-                        related_content.append(
-                            {
-                                "url": relationship.target_url,
-                                "relationship": "next_step",
-                                "strength": relationship.strength,
-                            }
-                        )
-                    elif (
-                        intent == "implementation"
-                        and relationship.relationship_type
-                        == RelationshipType.CODE_DEPENDENCY
-                    ):
-                        related_content.append(
-                            {
-                                "url": relationship.target_url,
-                                "relationship": "dependency",
-                                "strength": relationship.strength,
-                            }
-                        )
-                    elif (
-                        relationship.relationship_type
-                        == RelationshipType.SEMANTIC_SIMILARITY
-                        and relationship.strength > 0.8
-                    ):
-                        related_content.append(
-                            {
-                                "url": relationship.target_url,
-                                "relationship": "similar_content",
-                                "strength": relationship.strength,
-                            }
-                        )
+            if (
+                knowledge_graph
+                and hasattr(knowledge_graph, "relationships")
+                and knowledge_graph.relationships
+            ):
+                for relationship in knowledge_graph.relationships:
+                    if relationship.source_url == url:
+                        # Add relationship context based on intent
+                        if (
+                            intent == "procedural"
+                            and relationship.relationship_type
+                            == RelationshipType.TUTORIAL_SEQUENCE
+                        ):
+                            related_content.append(
+                                {
+                                    "url": relationship.target_url,
+                                    "relationship": "next_step",
+                                    "strength": relationship.strength,
+                                }
+                            )
+                        elif (
+                            intent == "implementation"
+                            and relationship.relationship_type
+                            == RelationshipType.CODE_DEPENDENCY
+                        ):
+                            related_content.append(
+                                {
+                                    "url": relationship.target_url,
+                                    "relationship": "dependency",
+                                    "strength": relationship.strength,
+                                }
+                            )
+                        elif (
+                            relationship.relationship_type
+                            == RelationshipType.SEMANTIC_SIMILARITY
+                            and relationship.strength > 0.8
+                        ):
+                            related_content.append(
+                                {
+                                    "url": relationship.target_url,
+                                    "relationship": "similar_content",
+                                    "strength": relationship.strength,
+                                }
+                            )
 
             # Add relationship context to item
             enhanced_item = {**item, "related_content": related_content}
@@ -1009,11 +1014,16 @@ This information is compiled from the sources that best match your question."""
 
         related_urls = []
 
-        for relationship in knowledge_graph.relationships:
-            if relationship.source_url == url and relationship.strength > 0.7:
-                related_urls.append(relationship.target_url)
-            elif relationship.target_url == url and relationship.strength > 0.7:
-                related_urls.append(relationship.source_url)
+        if (
+            knowledge_graph
+            and hasattr(knowledge_graph, "relationships")
+            and knowledge_graph.relationships
+        ):
+            for relationship in knowledge_graph.relationships:
+                if relationship.source_url == url and relationship.strength > 0.7:
+                    related_urls.append(relationship.target_url)
+                elif relationship.target_url == url and relationship.strength > 0.7:
+                    related_urls.append(relationship.source_url)
 
         return related_urls[:3]  # Limit to top 3
 
@@ -1128,13 +1138,20 @@ This information is compiled from the sources that best match your question."""
         for url in urls:
             dependencies[url] = []
 
-        for relationship in knowledge_graph.relationships:
-            if (
-                relationship.relationship_type == RelationshipType.TUTORIAL_SEQUENCE
-                and relationship.source_url in dependencies
-                and relationship.target_url in dependencies
-            ):
-                dependencies[relationship.target_url].append(relationship.source_url)
+        if (
+            knowledge_graph
+            and hasattr(knowledge_graph, "relationships")
+            and knowledge_graph.relationships
+        ):
+            for relationship in knowledge_graph.relationships:
+                if (
+                    relationship.relationship_type == RelationshipType.TUTORIAL_SEQUENCE
+                    and relationship.source_url in dependencies
+                    and relationship.target_url in dependencies
+                ):
+                    dependencies[relationship.target_url].append(
+                        relationship.source_url
+                    )
 
         # Topological sort for ordering
         ordered = []
@@ -1166,10 +1183,16 @@ This information is compiled from the sources that best match your question."""
         related_clusters = []
         recommended_urls = {rec.url for rec in recommendations}
 
-        for cluster in knowledge_graph.clusters:
-            overlap = len(set(cluster.content_urls) & recommended_urls)
-            if overlap > 0:
-                related_clusters.append(cluster.cluster_id)
+        # Defensive check for knowledge_graph and clusters
+        if (
+            knowledge_graph
+            and hasattr(knowledge_graph, "clusters")
+            and knowledge_graph.clusters
+        ):
+            for cluster in knowledge_graph.clusters:
+                overlap = len(set(cluster.content_urls) & recommended_urls)
+                if overlap > 0:
+                    related_clusters.append(cluster.cluster_id)
 
         # Identify potential knowledge gaps
         knowledge_gaps = []

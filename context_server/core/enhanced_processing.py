@@ -300,7 +300,7 @@ class EnhancedDocumentProcessor:
         """Generate multiple embeddings per chunk for comparison/experimentation."""
 
         # Models to generate embeddings with
-        models_to_use = [EmbeddingModel.OPENAI_SMALL, EmbeddingModel.COHERE_CODE]
+        models_to_use = [EmbeddingModel.OPENAI_SMALL, EmbeddingModel.VOYAGE_CODE]
 
         results = []
         chunk_texts = [chunk.content for chunk in chunks]

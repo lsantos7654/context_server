@@ -148,7 +148,7 @@ class EnhancedDatabaseManager:
                     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                     context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
-                    embedding vector(1536),  -- Primary embedding (backward compatibility)
+                    embedding halfvec(1536),  -- Primary embedding (halfvec for better dimension support)
                     chunk_index INTEGER NOT NULL,
                     metadata JSONB DEFAULT '{}',
                     tokens INTEGER,
@@ -169,7 +169,7 @@ class EnhancedDatabaseManager:
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     chunk_id UUID NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
                     model_name VARCHAR(100) NOT NULL,
-                    embedding vector(4096),  -- Support larger dimensions (Cohere: 4096)
+                    embedding halfvec(4000),  -- Max dimensions for current models (up to 4000)
                     dimension INTEGER NOT NULL,
                     metadata JSONB DEFAULT '{}',
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -177,6 +177,41 @@ class EnhancedDatabaseManager:
                 )
                 """
             )
+
+            # Migrate existing vector columns to halfvec for better dimension support
+            try:
+                # Check if chunk_embeddings.embedding is vector type and migrate to halfvec
+                result = await conn.fetchval(
+                    """
+                    SELECT udt_name FROM information_schema.columns
+                    WHERE table_name = 'chunk_embeddings'
+                    AND column_name = 'embedding'
+                    AND table_schema = 'public'
+                    """
+                )
+                if result == "vector":
+                    logger.info(
+                        "Migrating chunk_embeddings.embedding from vector to halfvec(4000)"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE chunk_embeddings ALTER COLUMN embedding TYPE halfvec(4000) USING embedding::halfvec"
+                    )
+                    logger.info(
+                        "Successfully migrated chunk_embeddings.embedding to halfvec(4000)"
+                    )
+                elif result == "halfvec":
+                    # Check if it's already the right size
+                    logger.info(
+                        "chunk_embeddings.embedding is already halfvec, ensuring 4000 dimensions"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE chunk_embeddings ALTER COLUMN embedding TYPE halfvec(4000) USING embedding::halfvec"
+                    )
+                    logger.info("Updated chunk_embeddings.embedding to halfvec(4000)")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to migrate chunk_embeddings.embedding to halfvec: {e}"
+                )
 
             # Create content analysis table for structured storage
             await conn.execute(
@@ -250,9 +285,9 @@ class EnhancedDatabaseManager:
 
             # Create indexes for performance
 
-            # Original indexes
+            # Original indexes - fixed to use halfvec_cosine_ops for halfvec data type
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops)"
+                "CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding halfvec_cosine_ops)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_context_id ON chunks(context_id)"
@@ -269,38 +304,29 @@ class EnhancedDatabaseManager:
                 "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id)"
             )
 
-            # Flexible embedding index - use HNSW for better high-dimensional support
-            try:
-                await conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_1536 ON chunk_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 1536"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to create HNSW index for 1536 dimensions: {e}")
-                # Fallback to basic index without HNSW
-                try:
-                    await conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_1536_basic ON chunk_embeddings (dimension) WHERE dimension = 1536"
-                    )
-                except Exception as e2:
-                    logger.warning(
-                        f"Failed to create basic index for 1536 dimensions: {e2}"
-                    )
+            # Create embedding indexes using halfvec for all supported dimensions
+            # halfvec supports up to 4000 dimensions with full indexing support
+            # Use a general index that works for all dimensions, rely on model_name filtering
 
             try:
                 await conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_4096 ON chunk_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 4096"
+                    "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_halfvec_hnsw ON chunk_embeddings USING hnsw (embedding halfvec_cosine_ops)"
                 )
+                logger.info("Created general HNSW index for halfvec embeddings")
             except Exception as e:
-                logger.warning(f"Failed to create HNSW index for 4096 dimensions: {e}")
-                # Fallback to basic index without HNSW
+                logger.warning(f"Failed to create HNSW index for halfvec: {e}")
+                # Fallback to IVFFlat
                 try:
                     await conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_4096_basic ON chunk_embeddings (dimension) WHERE dimension = 4096"
+                        "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_halfvec_ivf ON chunk_embeddings USING ivfflat (embedding halfvec_cosine_ops)"
                     )
+                    logger.info("Created general IVFFlat index for halfvec embeddings")
                 except Exception as e2:
-                    logger.warning(
-                        f"Failed to create basic index for 4096 dimensions: {e2}"
-                    )
+                    logger.warning(f"Failed to create IVFFlat index for halfvec: {e2}")
+
+            logger.info(
+                "Vector indexing strategy: halfvec with general HNSW/IVFFlat index for all dimensions up to 4000"
+            )
 
             # Content analysis indexes
             await conn.execute(
@@ -471,7 +497,7 @@ class EnhancedDatabaseManager:
                 document_id, context_id, content, embedding, chunk_index,
                 metadata, tokens, start_line, end_line, char_start, char_end
             )
-            VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (document_id, chunk_index) DO UPDATE SET
                 content = EXCLUDED.content,
                 embedding = EXCLUDED.embedding,
@@ -501,11 +527,11 @@ class EnhancedDatabaseManager:
             embedding_metadata = chunk.embedding_metadata.get(model_name, {})
             dimension = embedding_metadata.get("dimension", len(embedding))
 
-            # Pad or truncate embedding to fit vector(4096)
-            if len(embedding) > 4096:
-                embedding = embedding[:4096]
-            elif len(embedding) < 4096:
-                embedding = embedding + [0.0] * (4096 - len(embedding))
+            # Pad or truncate embedding to fit halfvec(4000)
+            if len(embedding) > 4000:
+                embedding = embedding[:4000]
+            elif len(embedding) < 4000:
+                embedding = embedding + [0.0] * (4000 - len(embedding))
 
             embedding_str = "[" + ",".join(map(str, embedding)) + "]"
 
@@ -514,7 +540,7 @@ class EnhancedDatabaseManager:
                 INSERT INTO chunk_embeddings (
                     chunk_id, model_name, embedding, dimension, metadata
                 )
-                VALUES ($1, $2, $3::vector, $4, $5)
+                VALUES ($1, $2, $3::halfvec, $4, $5)
                 ON CONFLICT (chunk_id, model_name) DO UPDATE SET
                     embedding = EXCLUDED.embedding,
                     dimension = EXCLUDED.dimension,
@@ -565,12 +591,12 @@ class EnhancedDatabaseManager:
                 if model_name not in model_weights:
                     continue
 
-                # Pad or truncate query embedding to fit vector(4096)
-                if len(query_embedding) > 4096:
-                    query_embedding = query_embedding[:4096]
-                elif len(query_embedding) < 4096:
+                # Pad or truncate query embedding to fit halfvec(4000)
+                if len(query_embedding) > 4000:
+                    query_embedding = query_embedding[:4000]
+                elif len(query_embedding) < 4000:
                     query_embedding = query_embedding + [0.0] * (
-                        4096 - len(query_embedding)
+                        4000 - len(query_embedding)
                     )
 
                 embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
@@ -582,15 +608,16 @@ class EnhancedDatabaseManager:
                             c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
                             c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                             c.start_line, c.end_line, c.char_start, c.char_end,
-                            1 - (ce.embedding <=> $2::vector) as similarity,
+                            1 - (ce.embedding <=> $2::halfvec) as similarity,
                             ce.model_name, ce.dimension
                         FROM chunks c
                         JOIN chunk_embeddings ce ON c.id = ce.chunk_id
                         JOIN documents d ON c.document_id = d.id
                         WHERE c.context_id = $1
                             AND ce.model_name = $3
-                            AND 1 - (ce.embedding <=> $2::vector) > $4
-                        ORDER BY ce.embedding <=> $2::vector
+                            AND ce.dimension = $6
+                            AND 1 - (ce.embedding <=> $2::halfvec) > $4
+                        ORDER BY ce.embedding <=> $2::halfvec
                         LIMIT $5
                         """,
                         uuid.UUID(context_id),
@@ -598,6 +625,7 @@ class EnhancedDatabaseManager:
                         model_name,
                         min_similarity,
                         limit,
+                        len(query_embedding),  # dimension parameter
                     )
 
                     results_by_model[model_name] = rows
@@ -787,6 +815,34 @@ class EnhancedDatabaseManager:
                 ],
             }
 
+    async def get_context_stats(self, context_id: str) -> Dict[str, Any]:
+        """Get basic statistics for a context."""
+        async with self.pool.acquire() as conn:
+            # Get total chunk count from both tables
+            legacy_chunks = await conn.fetchval(
+                "SELECT COUNT(*) FROM chunks c JOIN documents d ON c.document_id = d.id WHERE d.context_id = $1",
+                uuid.UUID(context_id),
+            )
+
+            # Get enhanced chunks - chunk_embeddings table links to chunks, not documents directly
+            enhanced_chunks = await conn.fetchval(
+                "SELECT COUNT(DISTINCT ce.chunk_id) FROM chunk_embeddings ce WHERE ce.chunk_id IN (SELECT c.id FROM chunks c JOIN documents d ON c.document_id = d.id WHERE d.context_id = $1)",
+                uuid.UUID(context_id),
+            )
+
+            # Get document count
+            doc_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM documents WHERE context_id = $1",
+                uuid.UUID(context_id),
+            )
+
+            return {
+                "total_chunks": max(legacy_chunks or 0, enhanced_chunks or 0),
+                "total_documents": doc_count or 0,
+                "legacy_chunks": legacy_chunks or 0,
+                "enhanced_chunks": enhanced_chunks or 0,
+            }
+
     async def search_similar_content(
         self, embedding: List[float], limit: int = 10, filters: Dict[str, Any] = None
     ) -> List[Dict]:
@@ -802,11 +858,11 @@ class EnhancedDatabaseManager:
                     return []
                 context_id = str(context_row["id"])
 
-        # Pad or truncate embedding to fit vector(4096)
-        if len(embedding) > 4096:
-            embedding = embedding[:4096]
-        elif len(embedding) < 4096:
-            embedding = embedding + [0.0] * (4096 - len(embedding))
+        # Pad or truncate embedding to fit halfvec(4000)
+        if len(embedding) > 4000:
+            embedding = embedding[:4000]
+        elif len(embedding) < 4000:
+            embedding = embedding + [0.0] * (4000 - len(embedding))
 
         embedding_str = "[" + ",".join(map(str, embedding)) + "]"
 
@@ -838,14 +894,14 @@ class EnhancedDatabaseManager:
                 SELECT
                     c.id, c.content, d.title, d.url, d.content,
                     ca.content_type, ca.primary_language, ca.summary, ca.code_percentage,
-                    1 - (ce.embedding <=> $2::vector) as similarity,
+                    1 - (ce.embedding <=> $2::halfvec) as similarity,
                     d.metadata, c.metadata as chunk_metadata
                 FROM chunks c
                 JOIN chunk_embeddings ce ON c.id = ce.chunk_id
                 JOIN documents d ON c.document_id = d.id
                 LEFT JOIN content_analyses ca ON d.id = ca.document_id
                 WHERE {where_clause}
-                ORDER BY ce.embedding <=> $2::vector
+                ORDER BY ce.embedding <=> $2::halfvec
                 LIMIT {limit}
             """
 
@@ -863,6 +919,69 @@ class EnhancedDatabaseManager:
                     "primary_language": row["primary_language"],
                     "summary": row["summary"] or "",
                     "quality_score": 0.8,  # Default quality score
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                }
+                results.append(result)
+
+            return results
+
+    async def semantic_search(
+        self,
+        query_embedding: List[float],
+        context_id: str,
+        limit: int = 10,
+        similarity_threshold: float = 0.7,
+    ) -> List[Dict]:
+        """Search for semantically similar content using embedding similarity."""
+
+        # Pad or truncate query embedding to fit halfvec(4000)
+        if len(query_embedding) > 4000:
+            query_embedding = query_embedding[:4000]
+        elif len(query_embedding) < 4000:
+            query_embedding = query_embedding + [0.0] * (4000 - len(query_embedding))
+
+        embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.id,
+                    d.url,
+                    d.title,
+                    c.content,
+                    c.metadata,
+                    COALESCE(d.content_analysis->>'summary', '') as summary,
+                    COALESCE(d.content_analysis->>'content_type', 'general') as content_type,
+                    COALESCE(d.content_analysis->>'primary_language', '') as primary_language,
+                    1 - (c.embedding <=> $2::vector) as similarity
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                WHERE c.context_id = $1
+                    AND 1 - (c.embedding <=> $2::vector) >= $3
+                ORDER BY c.embedding <=> $2::vector
+                LIMIT $4
+                """,
+                uuid.UUID(context_id),
+                embedding_str,
+                similarity_threshold,
+                limit,
+            )
+
+            results = []
+            for row in rows:
+                result = {
+                    "id": str(row["id"]),
+                    "title": row["title"] or "",
+                    "content": row["content"] or "",
+                    "url": row["url"],
+                    "similarity": float(row["similarity"]),
+                    "content_type": row["content_type"] or "general",
+                    "primary_language": row["primary_language"],
+                    "summary": row["summary"] or "",
+                    "quality_score": float(
+                        row["similarity"]
+                    ),  # Use similarity as quality
                     "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
                 }
                 results.append(result)
@@ -1340,7 +1459,10 @@ class EnhancedDatabaseManager:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT id, name, description, embedding_model, created_at, updated_at
+                SELECT
+                    id, name, description, embedding_model, created_at, updated_at,
+                    document_count,
+                    COALESCE((SELECT SUM(LENGTH(content)::float / 1024 / 1024) FROM documents WHERE context_id = contexts.id), 0) as size_mb
                 FROM contexts WHERE name = $1
                 """,
                 name,
@@ -1353,8 +1475,8 @@ class EnhancedDatabaseManager:
                     "description": row["description"],
                     "embedding_model": row["embedding_model"],
                     "created_at": row["created_at"],
-                    "document_count": 0,  # TODO: Calculate actual count
-                    "size_mb": 0.0,
+                    "document_count": row["document_count"] or 0,
+                    "size_mb": float(row["size_mb"]) if row["size_mb"] else 0.0,
                     "last_updated": row["updated_at"],
                 }
             return None
@@ -1364,7 +1486,10 @@ class EnhancedDatabaseManager:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, name, description, embedding_model, created_at, updated_at
+                SELECT
+                    id, name, description, embedding_model, created_at, updated_at,
+                    document_count,
+                    COALESCE((SELECT SUM(LENGTH(content)::float / 1024 / 1024) FROM documents WHERE context_id = contexts.id), 0) as size_mb
                 FROM contexts
                 ORDER BY created_at DESC
                 """
@@ -1377,8 +1502,8 @@ class EnhancedDatabaseManager:
                     "description": row["description"],
                     "embedding_model": row["embedding_model"],
                     "created_at": row["created_at"],
-                    "document_count": 0,  # TODO: Calculate actual count
-                    "size_mb": 0.0,
+                    "document_count": row["document_count"] or 0,
+                    "size_mb": float(row["size_mb"]) if row["size_mb"] else 0.0,
                     "last_updated": row["updated_at"],
                 }
                 for row in rows
@@ -1405,3 +1530,235 @@ class EnhancedDatabaseManager:
                     "DELETE FROM contexts WHERE id = $1", context_id
                 )
                 return result != "DELETE 0"
+
+    async def get_documents(
+        self, context_id: str, offset: int = 0, limit: int = 50
+    ) -> dict:
+        """Get documents in a context."""
+        async with self.pool.acquire() as conn:
+            # Get total count
+            total = await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM documents WHERE context_id = $1
+            """,
+                uuid.UUID(context_id),
+            )
+
+            # Get documents
+            rows = await conn.fetch(
+                """
+                SELECT id, url, title, indexed_at, chunk_count, metadata
+                FROM documents
+                WHERE context_id = $1
+                ORDER BY indexed_at DESC
+                OFFSET $2 LIMIT $3
+                """,
+                uuid.UUID(context_id),
+                offset,
+                limit,
+            )
+
+            documents = []
+            for row in rows:
+                documents.append(
+                    {
+                        "id": str(row["id"]),
+                        "url": row["url"],
+                        "title": row["title"],
+                        "indexed_at": row["indexed_at"],
+                        "chunk_count": row["chunk_count"],
+                        "metadata": json.loads(row["metadata"])
+                        if row["metadata"]
+                        else {},
+                    }
+                )
+
+            return {
+                "documents": documents,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            }
+
+    async def store_enhanced_document(self, doc, context_id: str) -> str:
+        """Store an enhanced processed document."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # Handle different doc formats - could be dict or object
+                doc_url = getattr(doc, "url", None) or (
+                    doc.get("url") if isinstance(doc, dict) else None
+                )
+                doc_title = getattr(doc, "title", None) or (
+                    doc.get("title") if isinstance(doc, dict) else None
+                )
+                doc_content = getattr(doc, "content", None) or (
+                    doc.get("content") if isinstance(doc, dict) else None
+                )
+                doc_metadata = getattr(doc, "metadata", {}) or (
+                    doc.get("metadata", {}) if isinstance(doc, dict) else {}
+                )
+
+                # Handle content_analysis - need to serialize complex objects
+                content_analysis = {}
+                if hasattr(doc, "content_analysis") and doc.content_analysis:
+                    if hasattr(doc.content_analysis, "__dict__"):
+                        content_analysis = self._serialize_content_analysis(
+                            doc.content_analysis.__dict__
+                        )
+                    else:
+                        content_analysis = self._serialize_content_analysis(
+                            doc.content_analysis
+                        )
+                elif isinstance(doc, dict) and "content_analysis" in doc:
+                    content_analysis = self._serialize_content_analysis(
+                        doc["content_analysis"]
+                    )
+
+                # Store the document
+                doc_id = await conn.fetchval(
+                    """
+                    INSERT INTO documents (context_id, url, title, content, metadata, content_analysis, source_type)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (context_id, url) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        content = EXCLUDED.content,
+                        metadata = EXCLUDED.metadata,
+                        content_analysis = EXCLUDED.content_analysis,
+                        indexed_at = NOW()
+                    RETURNING id
+                    """,
+                    uuid.UUID(context_id),
+                    doc_url,
+                    doc_title or "Untitled",
+                    doc_content or "",
+                    json.dumps(doc_metadata),
+                    json.dumps(content_analysis),
+                    "url",
+                )
+
+                # Store chunks
+                chunks = getattr(doc, "chunks", None) or (
+                    doc.get("chunks") if isinstance(doc, dict) else None
+                )
+                if chunks:
+                    for i, chunk in enumerate(chunks):
+                        # Handle chunk formats
+                        chunk_content = getattr(chunk, "content", None) or (
+                            chunk.get("content")
+                            if isinstance(chunk, dict)
+                            else str(chunk)
+                        )
+                        chunk_metadata = getattr(chunk, "metadata", {}) or (
+                            chunk.get("metadata", {}) if isinstance(chunk, dict) else {}
+                        )
+
+                        # Handle enhanced chunks with multiple embeddings
+                        chunk_embeddings = getattr(chunk, "embeddings", {}) or (
+                            chunk.get("embeddings", {})
+                            if isinstance(chunk, dict)
+                            else {}
+                        )
+
+                        # Store the chunk without embedding in legacy column
+                        chunk_id = await conn.fetchval(
+                            """
+                            INSERT INTO chunks (document_id, context_id, content, chunk_index, metadata, tokens)
+                            VALUES ($1, $2, $3, $4, $5, $6)
+                            ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+                                content = EXCLUDED.content,
+                                metadata = EXCLUDED.metadata,
+                                tokens = EXCLUDED.tokens
+                            RETURNING id
+                            """,
+                            doc_id,
+                            uuid.UUID(context_id),
+                            chunk_content,
+                            i,
+                            json.dumps(chunk_metadata),
+                            len(chunk_content.split()) if chunk_content else 0,
+                        )
+
+                        # Store multiple embeddings in chunk_embeddings table
+                        if chunk_embeddings:
+                            for model_name, embedding in chunk_embeddings.items():
+                                if embedding and len(embedding) > 0:
+                                    # Pad or truncate embedding to fit halfvec(4000)
+                                    if len(embedding) > 4000:
+                                        padded_embedding = embedding[:4000]
+                                    elif len(embedding) < 4000:
+                                        padded_embedding = embedding + [0.0] * (
+                                            4000 - len(embedding)
+                                        )
+                                    else:
+                                        padded_embedding = embedding
+
+                                    embedding_str = (
+                                        "[" + ",".join(map(str, padded_embedding)) + "]"
+                                    )
+
+                                    await conn.execute(
+                                        """
+                                        INSERT INTO chunk_embeddings (chunk_id, model_name, embedding, dimension)
+                                        VALUES ($1, $2, $3::halfvec, $4)
+                                        ON CONFLICT (chunk_id, model_name) DO UPDATE SET
+                                            embedding = EXCLUDED.embedding,
+                                            dimension = EXCLUDED.dimension
+                                        """,
+                                        chunk_id,
+                                        model_name,
+                                        embedding_str,
+                                        len(embedding),
+                                    )
+
+                # Update document chunk count
+                chunk_count = len(chunks) if chunks else 0
+                await conn.execute(
+                    """
+                    UPDATE documents
+                    SET chunk_count = $1, indexed_at = NOW()
+                    WHERE id = $2
+                    """,
+                    chunk_count,
+                    doc_id,
+                )
+
+                # Update context stats
+                await conn.execute(
+                    """
+                    UPDATE contexts
+                    SET document_count = (SELECT COUNT(*) FROM documents WHERE context_id = $1),
+                        total_chunks = (SELECT COUNT(*) FROM chunks WHERE context_id = $1),
+                        updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    uuid.UUID(context_id),
+                )
+
+                return str(doc_id)
+
+    def _serialize_content_analysis(self, analysis) -> dict:
+        """Serialize content analysis to JSON-compatible format."""
+        if isinstance(analysis, dict):
+            result = {}
+            for key, value in analysis.items():
+                if hasattr(value, "__dict__"):
+                    # Object with attributes - convert to dict
+                    result[key] = self._serialize_content_analysis(value.__dict__)
+                elif isinstance(value, list):
+                    # List of objects - serialize each
+                    result[key] = [
+                        self._serialize_content_analysis(item.__dict__)
+                        if hasattr(item, "__dict__")
+                        else item
+                        for item in value
+                    ]
+                else:
+                    # Primitive type - keep as is
+                    result[key] = value
+            return result
+        else:
+            # Non-dict object - convert to dict if possible
+            if hasattr(analysis, "__dict__"):
+                return self._serialize_content_analysis(analysis.__dict__)
+            else:
+                return analysis

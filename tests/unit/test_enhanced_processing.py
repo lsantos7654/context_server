@@ -40,7 +40,7 @@ class TestEnhancedDocumentProcessor:
         )
         # Mock routing rules for get_embedding_stats test
         self.mock_embedding_service.routing_rules = {
-            ContentType.CODE: EmbeddingModel.COHERE_CODE,
+            ContentType.CODE: EmbeddingModel.VOYAGE_CODE,
             ContentType.TUTORIAL: EmbeddingModel.OPENAI_SMALL,
         }
 

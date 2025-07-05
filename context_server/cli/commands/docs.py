@@ -238,7 +238,7 @@ def list(context_name, offset, limit, output_format):
                                 doc["title"][:50]
                                 + ("..." if len(doc["title"]) > 50 else ""),
                                 url,
-                                str(doc["chunks"]),
+                                str(doc["chunk_count"]),
                                 str(doc["indexed_at"])[:19],  # Truncate timestamp
                             )
 
