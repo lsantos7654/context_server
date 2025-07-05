@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import uuid
 
 # Import existing extraction functionality
 import sys
@@ -14,6 +15,7 @@ from src.core.crawl4ai_extraction import Crawl4aiExtractor
 
 from .chunking import TextChunker
 from .content_analysis import ContentAnalysis, ContentAnalyzer
+from .hierarchical_graph_builder import HierarchicalGraphBuilder
 from .multi_embedding_service import EmbeddingModel, MultiEmbeddingService
 from .processing import ProcessedChunk, ProcessedDocument, ProcessingResult
 
@@ -62,31 +64,51 @@ class EnhancedProcessingResult:
 
 
 class EnhancedDocumentProcessor:
-    """Enhanced document processor with multi-embedding and content-aware routing."""
+    """Enhanced document processor with multi-embedding and hierarchical graph building."""
 
     def __init__(
         self,
         multi_embedding_service: MultiEmbeddingService | None = None,
+        database_manager = None,
         enable_multi_embedding: bool = False,
+        enable_graph_building: bool = True,
     ):
         """
         Initialize enhanced document processor.
 
         Args:
             multi_embedding_service: Multi-embedding service instance
+            database_manager: Database manager for graph building
             enable_multi_embedding: Whether to generate multiple embeddings per chunk
+            enable_graph_building: Whether to build hierarchical knowledge graphs
         """
         self.multi_embedding_service = (
             multi_embedding_service or MultiEmbeddingService()
         )
         self.enable_multi_embedding = enable_multi_embedding
+        self.enable_graph_building = enable_graph_building
+        
         self.chunker = TextChunker()
         self.extractor = Crawl4aiExtractor()
         self.content_analyzer = ContentAnalyzer()
+        
+        # Initialize graph builder if database manager is provided
+        self.graph_builder = None
+        if database_manager and enable_graph_building:
+            self.graph_builder = HierarchicalGraphBuilder(database_manager)
 
         logger.info(
-            f"Enhanced processor initialized (multi-embedding: {enable_multi_embedding})"
+            f"Enhanced processor initialized (multi-embedding: {enable_multi_embedding}, "
+            f"graph-building: {enable_graph_building})"
         )
+    
+    async def initialize_graph_schema(self):
+        """Initialize the hierarchical graph schema."""
+        if self.graph_builder:
+            await self.graph_builder.initialize_schema()
+            logger.info("Hierarchical graph schema initialized")
+        else:
+            logger.warning("Graph builder not available - schema not initialized")
 
     async def process_url(
         self, url: str, options: dict | None = None
@@ -277,7 +299,7 @@ class EnhancedDocumentProcessor:
                 f"Enhanced processing completed: {len(processed_chunks)} chunks for {title}"
             )
 
-            return EnhancedProcessedDocument(
+            document = EnhancedProcessedDocument(
                 url=url,
                 title=title,
                 content=content,
@@ -286,6 +308,47 @@ class EnhancedDocumentProcessor:
                 content_analysis=content_analysis,
                 primary_embedding_model=primary_model.value,
             )
+
+            # Build hierarchical knowledge graph if enabled
+            if self.graph_builder and self.enable_graph_building:
+                try:
+                    # Prepare chunk data for graph builder
+                    chunk_data_for_graph = []
+                    for chunk in processed_chunks:
+                        chunk_data_for_graph.append({
+                            'id': str(uuid.uuid4()),  # Generate chunk ID for graph
+                            'document_id': metadata.get('document_id', url),
+                            'content': chunk.content,
+                            'chunk_index': len(chunk_data_for_graph),
+                            'metadata': chunk.metadata
+                        })
+                    
+                    # Build document hierarchy in graph
+                    graph_result = await self.graph_builder.build_document_hierarchy(
+                        document_id=metadata.get('document_id', url),
+                        title=title,
+                        content=content,
+                        chunks=chunk_data_for_graph,
+                        content_analysis=content_analysis
+                    )
+                    
+                    # Add graph statistics to metadata
+                    metadata['graph_nodes_created'] = graph_result['total_nodes']
+                    metadata['graph_relationships_created'] = graph_result['total_relationships']
+                    metadata['hierarchical_graph_built'] = True
+                    
+                    logger.info(
+                        f"Built knowledge graph for {title}: "
+                        f"{graph_result['total_nodes']} nodes, "
+                        f"{graph_result['total_relationships']} relationships"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to build knowledge graph for {title}: {e}")
+                    metadata['hierarchical_graph_built'] = False
+                    metadata['graph_error'] = str(e)
+
+            return document
 
         except Exception as e:
             logger.error(f"Enhanced content processing failed for {title}: {e}")

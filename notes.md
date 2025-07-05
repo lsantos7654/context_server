@@ -52,3 +52,4 @@ update audit to check claude.md enforce style guide and remove/consolidate old l
 need a way to download docs from server to local, --output is broken
 no longer an option to expand context
 weird bug where creating a new context and extracting doesn't automatically show
+we should be using some llm service to extract keywords and classes etc.

@@ -62,104 +62,22 @@ class QueryAnalyzer:
     """Analyzes search queries to determine optimal search strategies."""
 
     def __init__(self):
-        """Initialize query analyzer with patterns and rules."""
+        """Initialize query analyzer with basic patterns for text processing."""
+        # Keep only basic patterns for extracting meaningful elements
         self._code_patterns = {
             "function_call": re.compile(r"\w+\s*\([^)]*\)", re.IGNORECASE),
             "method_access": re.compile(r"\w+\.\w+", re.IGNORECASE),
             "class_reference": re.compile(r"class\s+\w+", re.IGNORECASE),
-            "variable_assignment": re.compile(r"\w+\s*=\s*", re.IGNORECASE),
-            "import_statement": re.compile(r"import\s+\w+|from\s+\w+", re.IGNORECASE),
-            "decorator": re.compile(r"@\w+", re.IGNORECASE),
         }
-
-        self._language_indicators = {
-            "python": [
-                "python",
-                "django",
-                "flask",
-                "pandas",
-                "numpy",
-                "def ",
-                "import ",
-                "__init__",
-            ],
-            "javascript": [
-                "javascript",
-                "js",
-                "node",
-                "react",
-                "vue",
-                "function ",
-                "const ",
-                "let ",
-            ],
-            "java": ["java", "spring", "class ", "public static", "package "],
-            "typescript": ["typescript", "ts", "interface ", "type "],
-            "go": ["golang", "func ", "package main"],  # Removed ambiguous 'go'
-            "rust": ["rust", "cargo", "fn ", "let mut"],
-            "c++": ["cpp", "c++", "std::", "#include"],
-            "c#": ["csharp", "c#", "using System", "public class"],
-        }
-
+        
+        # Simplified intent detection - less rigid, more general
         self._intent_keywords = {
-            SearchIntent.LEARNING: [
-                "learn",
-                "tutorial",
-                "guide",
-                "introduction",
-                "basics",
-                "beginner",
-                "how to",
-                "what is",
-                "explain",
-            ],
-            SearchIntent.IMPLEMENTATION: [
-                "implement",
-                "create",
-                "build",
-                "develop",
-                "code",
-                "example",
-                "sample",
-                "template",
-            ],
-            SearchIntent.DEBUGGING: [
-                "error",
-                "bug",
-                "issue",
-                "problem",
-                "fix",
-                "debug",
-                "troubleshoot",
-                "not working",
-                "failed",
-            ],
-            SearchIntent.REFERENCE: [
-                "documentation",
-                "docs",
-                "api",
-                "reference",
-                "parameters",
-                "syntax",
-                "specification",
-            ],
-            SearchIntent.EXPLORATION: [
-                "alternatives",
-                "compare",
-                "options",
-                "best practices",
-                "patterns",
-                "overview",
-            ],
+            SearchIntent.LEARNING: ["tutorial", "guide", "how to", "learn", "introduction"],
+            SearchIntent.IMPLEMENTATION: ["implement", "create", "build", "example"],
+            SearchIntent.DEBUGGING: ["error", "issue", "problem", "fix", "debug"],
+            SearchIntent.REFERENCE: ["documentation", "api", "reference"],
+            SearchIntent.EXPLORATION: ["compare", "alternatives", "overview"],
         }
-
-        self._api_patterns = [
-            re.compile(r"api\s+\w+", re.IGNORECASE),
-            re.compile(r"\w+\s+api", re.IGNORECASE),
-            re.compile(r"endpoint", re.IGNORECASE),
-            re.compile(r"GET|POST|PUT|DELETE|PATCH", re.IGNORECASE),
-            re.compile(r"/\w+", re.IGNORECASE),  # URL patterns
-        ]
 
     def analyze_query(self, query: str) -> QueryAnalysis:
         """Analyze a search query and return comprehensive analysis."""
@@ -271,113 +189,59 @@ class QueryAnalyzer:
         return keywords[:10]  # Limit to top 10 keywords
 
     def _extract_code_elements(self, query: str) -> List[str]:
-        """Extract code-related elements from query."""
+        """Extract basic code-related elements from query."""
         code_elements = []
 
+        # Only look for clear function calls and method access patterns
         for pattern_name, pattern in self._code_patterns.items():
             matches = pattern.findall(query)
             for match in matches:
                 code_elements.append(match.strip())
 
-        # Also look for camelCase or snake_case identifiers
+        # Look for camelCase or snake_case identifiers
         identifier_pattern = re.compile(r"\b(?:[a-z]+[A-Z][a-zA-Z]*|[a-z]+_[a-z_]+)\b")
         identifiers = identifier_pattern.findall(query)
         code_elements.extend(identifiers)
 
-        # Look for standalone keywords that might be code elements
-        code_keywords = [
-            "async",
-            "await",
-            "const",
-            "let",
-            "var",
-            "def",
-            "class",
-            "interface",
-            "type",
-        ]
-        query_words = re.findall(r"\b\w+\b", query.lower())
-        for keyword in code_keywords:
-            if keyword in query_words:
-                code_elements.append(keyword)
-
-        return list(set(code_elements))[:20]  # Remove duplicates, limit to 20
+        return list(set(code_elements))[:10]  # Remove duplicates, limit to 10
 
     def _detect_programming_language(self, query: str) -> Optional[str]:
-        """Detect programming language mentioned in query."""
+        """Basic programming language detection - simplified approach."""
         query_lower = query.lower()
-
-        # Check for explicit language mentions
-        for language, indicators in self._language_indicators.items():
-            for indicator in indicators:
-                if indicator.lower() in query_lower:
-                    return language
-
+        
+        # Only detect very explicit language mentions
+        explicit_languages = {
+            "python", "javascript", "java", "typescript", "rust", "go", "c++", "c#"
+        }
+        
+        for language in explicit_languages:
+            if language in query_lower:
+                return language
+                
         return None
 
     def _extract_api_references(self, query: str) -> List[str]:
-        """Extract API-related references from query."""
+        """Extract basic API-related references from query."""
         api_refs = []
-
-        for pattern in self._api_patterns:
-            matches = pattern.findall(query)
-            api_refs.extend(matches)
-
-        # Look for REST method + endpoint patterns
-        rest_pattern = re.compile(
-            r"(GET|POST|PUT|DELETE|PATCH)\s+(/\S+)", re.IGNORECASE
-        )
-        rest_matches = rest_pattern.findall(query)
-        for method, endpoint in rest_matches:
-            api_refs.append(f"{method} {endpoint}")
-
-        return list(set(api_refs))
+        
+        # Look for explicit API mentions
+        if "api" in query.lower():
+            api_refs.append("api")
+            
+        # Look for REST methods
+        rest_methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        for method in rest_methods:
+            if method.lower() in query.lower():
+                api_refs.append(method)
+                
+        return api_refs
 
     def _classify_query_type(
         self, query: str, code_elements: List[str], api_references: List[str]
     ) -> QueryType:
-        """Classify the type of query based on content analysis."""
-        query_lower = query.lower()
-
-        # Check for API references
-        if api_references or any(
-            word in query_lower for word in ["api", "endpoint", "rest"]
-        ):
-            return QueryType.API_REFERENCE
-
-        # Check for function-specific queries
-        if any(pattern in query_lower for pattern in ["function", "method", "def "]):
-            return QueryType.CODE_FUNCTION
-
-        # Check for class-specific queries
-        if any(pattern in query_lower for pattern in ["class", "interface", "struct"]):
-            return QueryType.CODE_CLASS
-
-        # Check for code patterns
-        if code_elements or any(
-            word in query_lower for word in ["code", "implement", "syntax"]
-        ):
-            return QueryType.CODE_PATTERN
-
-        # Check for tutorial intent
-        if any(
-            word in query_lower
-            for word in ["tutorial", "guide", "how to", "step by step"]
-        ):
-            return QueryType.TUTORIAL
-
-        # Check for troubleshooting
-        if any(
-            word in query_lower for word in ["error", "bug", "issue", "problem", "fix"]
-        ):
-            return QueryType.TROUBLESHOOTING
-
-        # Check for conceptual queries
-        if any(
-            word in query_lower for word in ["what is", "explain", "concept", "theory"]
-        ):
-            return QueryType.CONCEPTUAL
-
+        """Simplified query classification - default to GENERAL for hybrid search."""
+        # Always classify as GENERAL to ensure hybrid search is used
+        # This removes the problematic routing that caused "calendar widget" to fail
         return QueryType.GENERAL
 
     def _determine_search_intent(self, query: str) -> SearchIntent:
@@ -509,39 +373,10 @@ class QueryAnalyzer:
         complexity_score: float,
         programming_language: Optional[str],
     ) -> List[str]:
-        """Suggest optimal search strategies based on analysis."""
-        strategies = []
-
-        # Base strategy selection
-        if query_type in [
-            QueryType.CODE_FUNCTION,
-            QueryType.CODE_CLASS,
-            QueryType.CODE_PATTERN,
-        ]:
-            strategies.append("semantic_code_search")
-            if programming_language:
-                strategies.append("language_specific_search")
-
-        if query_type == QueryType.API_REFERENCE:
-            strategies.append("api_search")
-            strategies.append("structured_search")
-
-        if query_type in [QueryType.CONCEPTUAL, QueryType.TUTORIAL]:
-            strategies.append("semantic_search")
-            strategies.append("hierarchical_search")
-
-        if complexity_score > 0.7:
-            strategies.append("progressive_refinement")
-            strategies.append("multi_strategy_fusion")
-
-        if search_intent == SearchIntent.LEARNING:
-            strategies.append("tutorial_prioritized_search")
-
-        # Default fallbacks
-        if not strategies:
-            strategies.extend(["hybrid_search", "semantic_search"])
-
-        return strategies
+        """Always suggest hybrid search strategy for consistent results."""
+        # Always use hybrid search + multi-strategy fusion for all queries
+        # This ensures consistent behavior and prevents misclassification issues
+        return ["hybrid_search", "semantic_search", "multi_strategy_fusion"]
 
     def _generate_expansion_terms(
         self, query: str, query_type: QueryType, programming_language: Optional[str]

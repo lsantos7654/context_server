@@ -11,6 +11,7 @@ import numpy as np
 from .content_analysis import ContentAnalysis
 from .embedding_strategies import EmbeddingResult, EmbeddingStrategy
 from .enhanced_storage import EnhancedDatabaseManager
+from .hierarchical_graph_builder import HierarchicalGraphBuilder
 from .multi_embedding_service import EmbeddingModel, MultiEmbeddingService
 from .query_analysis import QueryAnalysis, QueryAnalyzer, QueryType, SearchIntent
 
@@ -197,12 +198,20 @@ class SearchEngine:
         self,
         embedding_service: MultiEmbeddingService,
         database_manager: EnhancedDatabaseManager,
+        enable_graph_search: bool = True,
     ):
         """Initialize search engine with required components."""
         self.embedding_service = embedding_service
         self.database_manager = database_manager
         self.router = SearchRouter(embedding_service, database_manager)
         self.query_analyzer = QueryAnalyzer()
+        
+        # Initialize graph builder for graph-enhanced search
+        self.graph_builder = None
+        if enable_graph_search:
+            self.graph_builder = HierarchicalGraphBuilder(database_manager)
+        
+        self.enable_graph_search = enable_graph_search
 
     async def search(
         self, query: str, limit: int = 10, filters: Dict[str, Any] = None
@@ -246,6 +255,14 @@ class SearchEngine:
 
         # Limit results
         final_results = ranked_results[:limit]
+
+        # Enhance results with graph-based recommendations
+        if self.enable_graph_search and self.graph_builder and final_results:
+            try:
+                enhanced_results = await self._enhance_results_with_graph(final_results)
+                final_results = enhanced_results
+            except Exception as e:
+                logger.warning(f"Graph enhancement failed: {e}")
 
         # Calculate search quality metrics
         result_quality_score = self._calculate_result_quality(
@@ -361,6 +378,59 @@ class SearchEngine:
                 programming_language=result.get("primary_language"),
                 summary=result.get("summary", ""),
                 strategy_used=SearchStrategy.SEMANTIC_SEARCH.value,
+                embedding_model=query_embedding.get("model", "unknown"),
+                quality_score=result.get("quality_score", 0.8),
+                matched_keywords=[],
+                code_elements=[],
+                api_references=[],
+                id=result.get("id"),
+                document_id=result.get("document_id"),
+                start_line=result.get("start_line"),
+                end_line=result.get("end_line"),
+            )
+            search_results.append(search_result)
+
+        return search_results
+        
+    async def _multi_embedding_search(
+        self,
+        query: str,
+        query_analysis: QueryAnalysis,
+        limit: int,
+        filters: Dict[str, Any],
+        force_model: Optional[EmbeddingModel] = None,
+    ) -> List[SearchResult]:
+        """Execute search with specific or auto-selected embedding model."""
+        
+        # Generate query embedding with specified or auto-selected model
+        if force_model:
+            query_embedding = await self.embedding_service.embed_text(query, force_model=force_model)
+        else:
+            query_embedding = await self.embedding_service.embed_text(query)
+
+        if not query_embedding.get("success", False):
+            return []
+
+        # Search using database manager
+        results = await self.database_manager.search_similar_content(
+            embedding=query_embedding["embedding"],
+            limit=limit * 2,  # Get more results for ranking
+            filters=filters,
+        )
+
+        # Convert to SearchResult objects
+        search_results = []
+        for result in results:
+            search_result = SearchResult(
+                url=result.get("url", ""),
+                title=result.get("title", ""),
+                content=result.get("content", ""),
+                similarity_score=result.get("similarity", 0.0),
+                relevance_score=result.get("similarity", 0.0),
+                content_type=result.get("content_type", "general"),
+                programming_language=result.get("primary_language"),
+                summary=result.get("summary", ""),
+                strategy_used=f"multi_embedding_{query_embedding.get('model', 'unknown')}",
                 embedding_model=query_embedding.get("model", "unknown"),
                 quality_score=result.get("quality_score", 0.8),
                 matched_keywords=[],
@@ -631,6 +701,82 @@ class SearchEngine:
             result.strategy_used = SearchStrategy.LANGUAGE_SPECIFIC_SEARCH.value
 
         return results
+    
+    async def _enhance_results_with_graph(self, results: List[SearchResult]) -> List[SearchResult]:
+        """Enhance search results with knowledge graph relationships."""
+        
+        enhanced_results = []
+        
+        for result in results:
+            enhanced_result = result
+            
+            try:
+                # Get graph relationships for this result
+                async with self.database_manager.pool.acquire() as conn:
+                    # Find graph nodes related to this result URL
+                    graph_nodes = await conn.fetch(
+                        """
+                        SELECT gn.* FROM graph_nodes gn 
+                        JOIN documents d ON gn.document_id = d.id 
+                        WHERE d.url = $1
+                        """,
+                        result.url
+                    )
+                    
+                    if graph_nodes:
+                        # Get relationships for these nodes
+                        node_ids = [str(node['id']) for node in graph_nodes]
+                        
+                        relationships = await conn.fetch(
+                            """
+                            SELECT gr.*, 
+                                   source_node.title as source_title,
+                                   target_node.title as target_title,
+                                   target_node.content as target_content,
+                                   target_doc.url as target_url
+                            FROM graph_relationships gr
+                            JOIN graph_nodes source_node ON gr.source_node_id = source_node.id
+                            JOIN graph_nodes target_node ON gr.target_node_id = target_node.id
+                            LEFT JOIN documents target_doc ON target_node.document_id = target_doc.id
+                            WHERE gr.source_node_id = ANY($1) 
+                            AND gr.strength > 0.5
+                            AND gr.relationship_type IN ('EXPLAINS', 'IMPLEMENTS', 'SIMILAR_TO', 'REFERENCES')
+                            ORDER BY gr.strength DESC
+                            LIMIT 5
+                            """,
+                            node_ids
+                        )
+                        
+                        # Add relationship metadata to the result
+                        if relationships:
+                            related_content = []
+                            for rel in relationships:
+                                related_content.append({
+                                    'type': rel['relationship_type'],
+                                    'title': rel['target_title'],
+                                    'url': rel['target_url'],
+                                    'strength': float(rel['strength']),
+                                    'preview': rel['target_content'][:100] + "..." if rel['target_content'] else ""
+                                })
+                            
+                            # Store in result metadata
+                            enhanced_result.api_references = getattr(result, 'api_references', []) + [
+                                f"Related: {rel['title']}" for rel in related_content[:2]
+                            ]
+                            
+                            # Boost relevance score for results with strong relationships
+                            strong_relationships = [r for r in relationships if r['strength'] > 0.7]
+                            if strong_relationships:
+                                enhanced_result.relevance_score *= 1.1
+                                
+            except Exception as e:
+                logger.warning(f"Failed to enhance result {result.url} with graph data: {e}")
+                # Keep original result if enhancement fails
+                enhanced_result = result
+            
+            enhanced_results.append(enhanced_result)
+        
+        return enhanced_results
 
     def _deduplicate_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """Remove duplicate results based on URL."""
@@ -799,3 +945,85 @@ class SearchEngine:
             suggestions["content_types"] = list(content_types)
 
         return suggestions
+    
+    async def get_knowledge_graph_insights(self) -> Dict[str, Any]:
+        """Get knowledge graph insights and statistics."""
+        if not self.graph_builder:
+            return {
+                'error': 'Knowledge graph not enabled',
+                'total_relationships': 0,
+                'average_relationship_strength': 0.0,
+                'graph_connectivity': 0.0
+            }
+        
+        try:
+            # Get graph statistics
+            stats = await self.graph_builder.get_graph_statistics()
+            
+            # Calculate additional insights
+            async with self.database_manager.pool.acquire() as conn:
+                # Get total relationship count
+                total_rels = await conn.fetchval(
+                    "SELECT COUNT(*) FROM graph_relationships"
+                )
+                
+                # Get average relationship strength
+                avg_strength = await conn.fetchval(
+                    "SELECT AVG(strength) FROM graph_relationships"
+                ) or 0.0
+                
+                # Get top relationship types
+                top_rel_types = await conn.fetch(
+                    """
+                    SELECT relationship_type, COUNT(*) as count, AVG(strength) as avg_strength
+                    FROM graph_relationships
+                    GROUP BY relationship_type
+                    ORDER BY count DESC
+                    LIMIT 5
+                    """
+                )
+                
+                # Get nodes with most connections
+                connected_nodes = await conn.fetch(
+                    """
+                    SELECT gn.title, gn.node_type, COUNT(gr.id) as connection_count
+                    FROM graph_nodes gn
+                    LEFT JOIN graph_relationships gr ON gn.id = gr.source_node_id OR gn.id = gr.target_node_id
+                    GROUP BY gn.id, gn.title, gn.node_type
+                    HAVING COUNT(gr.id) > 0
+                    ORDER BY connection_count DESC
+                    LIMIT 5
+                    """
+                )
+                
+            return {
+                'total_relationships': total_rels,
+                'average_relationship_strength': round(float(avg_strength), 2),
+                'graph_connectivity': round(float(avg_strength), 2),  # Simplified connectivity measure
+                'statistics': stats.get('statistics', {}),
+                'top_relationship_types': [
+                    {
+                        'type': rel['relationship_type'],
+                        'count': rel['count'],
+                        'average_strength': round(float(rel['avg_strength']), 2)
+                    }
+                    for rel in top_rel_types
+                ],
+                'most_connected_nodes': [
+                    {
+                        'title': node['title'],
+                        'type': node['node_type'],
+                        'connections': node['connection_count']
+                    }
+                    for node in connected_nodes
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get knowledge graph insights: {e}")
+            return {
+                'error': str(e),
+                'total_relationships': 0,
+                'average_relationship_strength': 0.0,
+                'graph_connectivity': 0.0
+            }
