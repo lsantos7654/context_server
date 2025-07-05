@@ -7,17 +7,19 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from ..core.cache import DocumentCacheService
-from ..core.processing import DocumentProcessor
-from ..core.storage import DatabaseManager
+from ..core.enhanced_processing import EnhancedDocumentProcessor
+from ..core.enhanced_storage import EnhancedDatabaseManager
 from .models import DocumentDelete, DocumentIngest, DocumentsResponse, JobStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_db_manager(request: Request) -> DatabaseManager:
-    """Dependency to get database manager."""
-    return request.app.state.db_manager
+def get_db_manager(request: Request) -> EnhancedDatabaseManager:
+    """Dependency to get enhanced database manager."""
+    if not hasattr(request.app.state, "enhanced_db_manager"):
+        request.app.state.enhanced_db_manager = EnhancedDatabaseManager()
+    return request.app.state.enhanced_db_manager
 
 
 def get_cache_service(request: Request) -> DocumentCacheService:
@@ -27,11 +29,16 @@ def get_cache_service(request: Request) -> DocumentCacheService:
     return request.app.state.cache_service
 
 
-def get_processor(request: Request) -> DocumentProcessor:
-    """Dependency to get document processor."""
-    if not hasattr(request.app.state, "processor"):
-        request.app.state.processor = DocumentProcessor()
-    return request.app.state.processor
+def get_processor(request: Request) -> EnhancedDocumentProcessor:
+    """Dependency to get enhanced document processor."""
+    if not hasattr(request.app.state, "enhanced_processor"):
+        from ..core.multi_embedding_service import MultiEmbeddingService
+
+        embedding_service = MultiEmbeddingService()
+        request.app.state.enhanced_processor = EnhancedDocumentProcessor(
+            embedding_service
+        )
+    return request.app.state.enhanced_processor
 
 
 @router.post("/contexts/{context_name}/documents", status_code=202)
@@ -39,8 +46,8 @@ async def ingest_document(
     context_name: str,
     document_data: DocumentIngest,
     background_tasks: BackgroundTasks,
-    db: DatabaseManager = Depends(get_db_manager),
-    processor: DocumentProcessor = Depends(get_processor),
+    db: EnhancedDatabaseManager = Depends(get_db_manager),
+    processor: EnhancedDocumentProcessor = Depends(get_processor),
     cache_service: DocumentCacheService = Depends(get_cache_service),
 ):
     """Ingest a document into a context (async processing)."""
@@ -85,8 +92,8 @@ async def _process_document_background(
     job_id: str,
     context: dict,
     document_data: DocumentIngest,
-    db: DatabaseManager,
-    processor: DocumentProcessor,
+    db: EnhancedDatabaseManager,
+    processor: EnhancedDocumentProcessor,
     cache_service: DocumentCacheService = None,
 ):
     """Background task for document processing."""
@@ -111,35 +118,10 @@ async def _process_document_background(
         else:
             raise ValueError(f"Unsupported source type: {document_data.source_type}")
 
-        # Store processed documents
+        # Store processed documents using enhanced storage
         for doc in result.documents:
-            doc_id = await db.create_document(
-                context_id=context["id"],
-                url=doc.url,
-                title=doc.title,
-                content=doc.content,
-                metadata=doc.metadata,
-                source_type=document_data.source_type.value,
-            )
-
-            # Store chunks with embeddings and line tracking
-            for i, chunk in enumerate(doc.chunks):
-                await db.create_chunk(
-                    document_id=doc_id,
-                    context_id=context["id"],
-                    content=chunk.content,
-                    embedding=chunk.embedding,
-                    chunk_index=i,
-                    metadata=chunk.metadata,
-                    tokens=chunk.tokens,
-                    start_line=chunk.start_line,
-                    end_line=chunk.end_line,
-                    char_start=chunk.char_start,
-                    char_end=chunk.char_end,
-                )
-
-            # Update document chunk count
-            await db.update_document_chunk_count(doc_id)
+            # Use enhanced document storage with content analysis
+            doc_id = await db.store_enhanced_document(doc, context["id"])
 
             # Cache the document for fast line-based expansion
             if cache_service:
@@ -164,7 +146,7 @@ async def list_documents(
     context_name: str,
     offset: int = 0,
     limit: int = 50,
-    db: DatabaseManager = Depends(get_db_manager),
+    db: EnhancedDatabaseManager = Depends(get_db_manager),
 ):
     """List documents in a context."""
     try:
@@ -188,7 +170,7 @@ async def list_documents(
 async def delete_documents(
     context_name: str,
     delete_data: DocumentDelete,
-    db: DatabaseManager = Depends(get_db_manager),
+    db: EnhancedDatabaseManager = Depends(get_db_manager),
 ):
     """Delete documents from a context."""
     try:
@@ -218,7 +200,9 @@ async def delete_documents(
 
 @router.get("/contexts/{context_name}/documents/{doc_id}/raw")
 async def get_document_raw(
-    context_name: str, doc_id: str, db: DatabaseManager = Depends(get_db_manager)
+    context_name: str,
+    doc_id: str,
+    db: EnhancedDatabaseManager = Depends(get_db_manager),
 ):
     """Get raw document content."""
     try:

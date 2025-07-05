@@ -9,8 +9,33 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
-from sklearn.cluster import DBSCAN, KMeans
-from sklearn.metrics.pairwise import cosine_similarity
+
+try:
+    from sklearn.cluster import DBSCAN, KMeans
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+
+    # Create dummy classes for when sklearn is not available
+    class DBSCAN:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def fit_predict(self, X):
+            return np.zeros(len(X))
+
+    class KMeans:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def fit_predict(self, X):
+            return np.zeros(len(X))
+
+    def cosine_similarity(X, Y=None):
+        return np.eye(len(X))
+
 
 from .content_analysis import ContentAnalysis
 from .enhanced_storage import EnhancedDatabaseManager
@@ -795,6 +820,10 @@ class TopicClusteringEngine:
 
         urls = list(embeddings_map.keys())
         embeddings = np.array(list(embeddings_map.values()))
+
+        if not SKLEARN_AVAILABLE:
+            # Simple fallback: assign all items to cluster 0
+            return {url: 0 for url in urls}
 
         # Try DBSCAN first for automatic cluster number detection
         dbscan = DBSCAN(

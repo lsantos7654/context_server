@@ -5,21 +5,21 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
-from ..core.storage import DatabaseManager
+from ..core.enhanced_storage import EnhancedDatabaseManager
 from .models import ContextCreate, ContextMerge, ContextResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_db_manager(request: Request) -> DatabaseManager:
-    """Dependency to get database manager."""
-    return request.app.state.db_manager
+def get_db_manager(request: Request) -> EnhancedDatabaseManager:
+    """Dependency to get enhanced database manager."""
+    return request.app.state.enhanced_db_manager
 
 
 @router.post("", response_model=ContextResponse, status_code=201)
 async def create_context(
-    context_data: ContextCreate, db: DatabaseManager = Depends(get_db_manager)
+    context_data: ContextCreate, db: EnhancedDatabaseManager = Depends(get_db_manager)
 ):
     """Create a new context."""
     try:
@@ -48,7 +48,7 @@ async def create_context(
 
 
 @router.get("", response_model=list[ContextResponse])
-async def list_contexts(db: DatabaseManager = Depends(get_db_manager)):
+async def list_contexts(db: EnhancedDatabaseManager = Depends(get_db_manager)):
     """List all contexts."""
     try:
         contexts = await db.get_contexts()
@@ -59,7 +59,9 @@ async def list_contexts(db: DatabaseManager = Depends(get_db_manager)):
 
 
 @router.get("/{context_name}", response_model=ContextResponse)
-async def get_context(context_name: str, db: DatabaseManager = Depends(get_db_manager)):
+async def get_context(
+    context_name: str, db: EnhancedDatabaseManager = Depends(get_db_manager)
+):
     """Get a specific context by name."""
     try:
         context = await db.get_context_by_name(context_name)
@@ -76,7 +78,7 @@ async def get_context(context_name: str, db: DatabaseManager = Depends(get_db_ma
 
 @router.delete("/{context_name}", status_code=204)
 async def delete_context(
-    context_name: str, db: DatabaseManager = Depends(get_db_manager)
+    context_name: str, db: EnhancedDatabaseManager = Depends(get_db_manager)
 ):
     """Delete a context and all its data."""
     try:
@@ -101,7 +103,7 @@ async def delete_context(
 
 @router.post("/merge", status_code=201)
 async def merge_contexts(
-    merge_data: ContextMerge, db: DatabaseManager = Depends(get_db_manager)
+    merge_data: ContextMerge, db: EnhancedDatabaseManager = Depends(get_db_manager)
 ):
     """Merge multiple contexts into a target context."""
     # TODO: Implement context merging
@@ -111,7 +113,7 @@ async def merge_contexts(
 
 @router.get("/{context_name}/export")
 async def export_context(
-    context_name: str, db: DatabaseManager = Depends(get_db_manager)
+    context_name: str, db: EnhancedDatabaseManager = Depends(get_db_manager)
 ):
     """Export context data."""
     # TODO: Implement context export using pg_dump
@@ -119,7 +121,7 @@ async def export_context(
 
 
 @router.post("/import")
-async def import_context(db: DatabaseManager = Depends(get_db_manager)):
+async def import_context(db: EnhancedDatabaseManager = Depends(get_db_manager)):
     """Import context data."""
     # TODO: Implement context import from pg_dump
     raise HTTPException(status_code=501, detail="Context import not yet implemented")

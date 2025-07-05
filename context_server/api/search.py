@@ -6,25 +6,30 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..core.cache import DocumentCacheService
-from ..core.embeddings import EmbeddingService
+from ..core.enhanced_storage import EnhancedDatabaseManager
 from ..core.expansion import ContextExpansionService
-from ..core.storage import DatabaseManager
+from ..core.multi_embedding_service import MultiEmbeddingService
+from ..core.multi_modal_search import SearchEngine
 from .models import SearchRequest, SearchResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_db_manager(request: Request) -> DatabaseManager:
-    """Dependency to get database manager."""
-    return request.app.state.db_manager
+def get_db_manager(request: Request) -> EnhancedDatabaseManager:
+    """Dependency to get enhanced database manager."""
+    if not hasattr(request.app.state, "enhanced_db_manager"):
+        request.app.state.enhanced_db_manager = EnhancedDatabaseManager()
+    return request.app.state.enhanced_db_manager
 
 
-def get_embedding_service(request: Request) -> EmbeddingService:
-    """Dependency to get embedding service."""
-    if not hasattr(request.app.state, "embedding_service"):
-        request.app.state.embedding_service = EmbeddingService()
-    return request.app.state.embedding_service
+def get_search_engine(request: Request) -> SearchEngine:
+    """Dependency to get multi-modal search engine."""
+    if not hasattr(request.app.state, "search_engine"):
+        embedding_service = MultiEmbeddingService()
+        db_manager = get_db_manager(request)
+        request.app.state.search_engine = SearchEngine(embedding_service, db_manager)
+    return request.app.state.search_engine
 
 
 async def get_cache_service(request: Request) -> DocumentCacheService:
@@ -55,8 +60,8 @@ async def get_expansion_service(request: Request) -> ContextExpansionService:
 async def search_context(
     context_name: str,
     search_request: SearchRequest,
-    db: DatabaseManager = Depends(get_db_manager),
-    embedding_service: EmbeddingService = Depends(get_embedding_service),
+    db: EnhancedDatabaseManager = Depends(get_db_manager),
+    search_engine: SearchEngine = Depends(get_search_engine),
 ):
     """Search documents within a context."""
     start_time = time.time()
@@ -78,58 +83,18 @@ async def search_context(
             raise HTTPException(status_code=404, detail="Context not found")
 
         context_id = context["id"]
-        results = []
 
-        if search_request.mode.value == "vector":
-            # Pure vector search (without expansion at DB level)
-            query_embedding = await embedding_service.embed_text(search_request.query)
-            results = await db.vector_search(
-                context_id=context_id,
-                query_embedding=query_embedding,
-                limit=search_request.limit,
-                min_similarity=0.1,  # Lower threshold for testing
-                expand_context=0,  # No DB-level expansion
-            )
+        # Use multi-modal search engine
+        search_response = await search_engine.search(
+            query=search_request.query,
+            context_id=context_id,
+            search_type=search_request.mode.value,
+            limit=search_request.limit,
+            filters={},
+            enable_caching=True,
+        )
 
-        elif search_request.mode.value == "fulltext":
-            # Pure full-text search (without expansion at DB level)
-            results = await db.fulltext_search(
-                context_id=context_id,
-                query=search_request.query,
-                limit=search_request.limit,
-                expand_context=0,  # No DB-level expansion
-            )
-
-        elif search_request.mode.value == "hybrid":
-            # Hybrid search - combine vector and full-text (without expansion at DB level)
-            query_embedding = await embedding_service.embed_text(search_request.query)
-
-            # Get results from both methods
-            vector_results = await db.vector_search(
-                context_id=context_id,
-                query_embedding=query_embedding,
-                limit=search_request.limit * 2,  # Get more for merging
-                min_similarity=0.1,  # Lower threshold for testing
-                expand_context=0,  # No DB-level expansion
-            )
-
-            fulltext_results = await db.fulltext_search(
-                context_id=context_id,
-                query=search_request.query,
-                limit=search_request.limit * 2,  # Get more for merging
-                expand_context=0,  # No DB-level expansion
-            )
-
-            # Merge and rank results
-            results = _merge_search_results(
-                vector_results, fulltext_results, search_request.limit
-            )
-
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported search mode: {search_request.mode}",
-            )
+        results = search_response.results
 
         # Add warning for large context expansions
         if search_request.expand_context > 50:
@@ -150,24 +115,25 @@ async def search_context(
         # Format results with enhanced metadata
         formatted_results = []
         for result in results:
-            metadata = result.get("metadata", {})
             formatted_result = {
-                "id": result["id"],
-                "document_id": result.get("document_id"),
-                "title": result["title"],
-                "content": result["content"],
-                "score": result["score"],
-                "metadata": metadata,
-                "url": result.get("url"),
-                "chunk_index": result.get("chunk_index"),
-                "content_type": result.get("content_type", "chunk"),
-                "expansion_info": result.get("expansion_info"),
+                "id": result.id,
+                "document_id": result.document_id,
+                "title": result.title,
+                "content": result.content,
+                "score": result.similarity_score,
+                "metadata": {},  # Will be populated from SearchResult attributes
+                "url": result.url,
+                "chunk_index": getattr(result, "chunk_index", None),
+                "content_type": result.content_type,
+                "expansion_info": getattr(result, "expansion_info", None),
                 # Extract useful metadata to top level for easier access
-                "page_url": metadata.get("page_url", result.get("url")),
-                "source_type": metadata.get("source_type"),
-                "base_url": metadata.get("base_url"),
-                "is_individual_page": metadata.get("is_individual_page", False),
-                "source_title": metadata.get("source_title"),
+                "page_url": result.url,
+                "source_type": getattr(result, "source_type", None),
+                "programming_language": result.programming_language,
+                "quality_score": result.quality_score,
+                "matched_keywords": result.matched_keywords,
+                "code_elements": result.code_elements,
+                "api_references": result.api_references,
             }
             formatted_results.append(formatted_result)
 
@@ -181,10 +147,10 @@ async def search_context(
 
         return SearchResponse(
             results=formatted_results,
-            total=len(formatted_results),
+            total=search_response.total_results,
             query=search_request.query,
             mode=search_request.mode.value,
-            execution_time_ms=execution_time_ms,
+            execution_time_ms=search_response.search_time_ms,
         )
 
     except HTTPException:
@@ -249,7 +215,7 @@ async def get_search_suggestions(
     context_name: str,
     query: str,
     limit: int = 5,
-    db: DatabaseManager = Depends(get_db_manager),
+    db: EnhancedDatabaseManager = Depends(get_db_manager),
 ):
     """Get search query suggestions based on context content."""
     # TODO: Implement search suggestions

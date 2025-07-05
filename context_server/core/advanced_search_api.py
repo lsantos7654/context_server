@@ -160,7 +160,7 @@ class AdvancedSearchAPI:
 
         # Perform core search
         search_response = await self.search_engine.search(
-            query=query, context_id=context_id, limit=limit
+            query=query, limit=limit, filters={"context_id": context_id}
         )
 
         # Generate search metadata

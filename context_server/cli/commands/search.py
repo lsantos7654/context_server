@@ -39,9 +39,11 @@ def search():
     • Vector search: Semantic similarity using embeddings
     • Full-text search: Traditional keyword matching
     • Hybrid search: Combined approach for best results
+    • Enhanced search: Multi-modal search with recommendations and insights
 
     Examples:
         ctx search query "async patterns" my-docs             # Basic hybrid search
+        ctx search enhanced "patterns" docs                   # Enhanced search with recommendations
         ctx search query "rendering" docs --mode vector       # Vector search only
         ctx search query "widgets" docs --expand-context 10   # With context expansion
         ctx search query "data" docs --verbose               # Show all metadata
@@ -171,6 +173,166 @@ def query(
             echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(search_documents())
+
+
+@search.command()
+@click.argument("query")
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.option("--limit", default=5, help="Maximum number of results")
+@click.option(
+    "--format",
+    "output_format",
+    default="rich",
+    type=click.Choice(["rich", "table", "json"]),
+    help="Output format",
+)
+@click.option(
+    "--include-recommendations/--no-recommendations",
+    default=True,
+    help="Include content recommendations",
+)
+@click.option(
+    "--include-clusters/--no-clusters",
+    default=True,
+    help="Include related topic clusters",
+)
+@click.option(
+    "--include-insights/--no-insights",
+    default=True,
+    help="Include knowledge graph insights",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed metadata")
+@rich_help_option("-h", "--help")
+def enhanced(
+    query,
+    context_name,
+    limit,
+    output_format,
+    include_recommendations,
+    include_clusters,
+    include_insights,
+    verbose,
+):
+    """Enhanced search with recommendations and insights.
+
+    Uses the v2 API with multi-modal search, content recommendations,
+    topic clustering, and knowledge graph insights.
+
+    Args:
+        query: Search query text
+        context_name: Name of context to search within
+        limit: Maximum number of results to return
+        output_format: Display format (rich, table, json)
+        include_recommendations: Include content recommendations
+        include_clusters: Include related topic clusters
+        include_insights: Include knowledge graph insights
+        verbose: Show detailed metadata
+    """
+
+    async def enhanced_search():
+        try:
+            echo_info(f"Enhanced search in '{context_name}' for: {query}")
+
+            async with httpx.AsyncClient() as client:
+                # First, get the context ID from the name
+                contexts_response = await client.get(
+                    get_api_url(f"contexts/{context_name}")
+                )
+                if contexts_response.status_code == 404:
+                    echo_error(f"Context '{context_name}' not found")
+                    return
+                elif contexts_response.status_code != 200:
+                    echo_error(f"Failed to get context: {contexts_response.text}")
+                    return
+
+                context = contexts_response.json()
+                context_id = context["id"]
+
+                response = await client.post(
+                    get_api_url("v2/search/enhanced"),
+                    json={
+                        "query": query,
+                        "context_id": context_id,
+                        "limit": limit,
+                        "include_recommendations": include_recommendations,
+                        "include_clusters": include_clusters,
+                        "include_graph_insights": include_insights,
+                        "enable_caching": True,
+                    },
+                    timeout=60.0,
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+
+                    if output_format == "json":
+                        console.print(result)
+                        return
+
+                    # Display search results
+                    search_response = result["search_response"]
+                    results = search_response["results"]
+
+                    if not results:
+                        echo_info("No results found")
+                        return
+
+                    echo_success(
+                        f"Found {search_response['total_results']} result(s) in {search_response['search_time_ms']}ms"
+                    )
+                    console.print()
+
+                    # Display results
+                    if output_format == "table":
+                        display_enhanced_results_table(results)
+                    else:
+                        display_enhanced_results_rich(results, query, verbose)
+
+                    # Display recommendations if included
+                    if include_recommendations and result.get(
+                        "context_recommendations"
+                    ):
+                        display_recommendations(result["context_recommendations"])
+
+                    # Display clusters if included
+                    if include_clusters and result.get("related_clusters"):
+                        display_clusters(result["related_clusters"])
+
+                    # Display insights if included
+                    if include_insights and result.get("knowledge_graph_insights"):
+                        display_insights(result["knowledge_graph_insights"])
+
+                elif response.status_code == 404:
+                    echo_error(f"Context '{context_name}' not found")
+                elif response.status_code == 501:
+                    echo_warning(
+                        "Enhanced search not yet available - falling back to standard search"
+                    )
+                    # Fall back to standard search
+                    from .search import query as standard_query
+
+                    ctx = click.get_current_context()
+                    ctx.invoke(
+                        standard_query,
+                        query=query,
+                        context_name=context_name,
+                        mode="hybrid",
+                        limit=limit,
+                        output_format=output_format,
+                        show_content=True,
+                        expand_context=0,
+                        verbose=verbose,
+                    )
+                else:
+                    echo_error(
+                        f"Enhanced search failed: {response.status_code} - {response.text}"
+                    )
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: context-server server up")
+
+    asyncio.run(enhanced_search())
 
 
 @search.command()
@@ -667,6 +829,176 @@ def highlight_query_terms(text: str, query: str) -> str:
             highlighted = pattern.sub(f"[bold yellow]{term}[/bold yellow]", highlighted)
 
     return highlighted
+
+
+def display_enhanced_results_table(results: list):
+    """Display enhanced search results in table format."""
+    table = Table(title="Enhanced Search Results")
+    table.add_column("Score", style="bold green", width=8)
+    table.add_column("Title", style="bold")
+    table.add_column("Type", style="cyan", width=12)
+    table.add_column("Language", style="magenta", width=10)
+    table.add_column("Quality", style="yellow", width=8)
+
+    for result in results:
+        score = f"{result.get('score', 0):.3f}"
+        title = result.get("title", "")[:40] + (
+            "..." if len(result.get("title", "")) > 40 else ""
+        )
+        content_type = result.get("content_type", "")[:10]
+        language = result.get("programming_language", "")[:8] or "N/A"
+        quality = f"{result.get('quality_score', 0):.2f}"
+
+        table.add_row(score, title, content_type, language, quality)
+
+    console.print(table)
+
+
+def display_enhanced_results_rich(results: list, query: str, verbose: bool = False):
+    """Display enhanced search results in rich format."""
+    for i, result in enumerate(results, 1):
+        score = result.get("score", 0)
+        title = result.get("title", "")
+        content = result.get("content", "")
+        content_type = result.get("content_type", "")
+        language = result.get("programming_language", "")
+        quality_score = result.get("quality_score", 0)
+        matched_keywords = result.get("matched_keywords", [])
+
+        # Create header with enhanced metadata
+        header = f"Result {i} (Score: {score:.3f}, Quality: {quality_score:.2f})"
+        if language:
+            header += f", Language: {language}"
+        if content_type:
+            header += f", Type: {content_type}"
+
+        # Create title section with enhanced info
+        title_text = f"[bold blue]{title}[/bold blue]"
+
+        if matched_keywords:
+            title_text += f"\n[dim yellow]Keywords: {', '.join(matched_keywords[:5])}[/dim yellow]"
+
+        if verbose:
+            # Add comprehensive metadata
+            url = result.get("url", "")
+            if url:
+                title_text += f"\n[dim blue]{url}[/dim blue]"
+
+            code_elements = result.get("code_elements", [])
+            api_references = result.get("api_references", [])
+
+            if code_elements:
+                title_text += (
+                    f"\n[dim green]Code: {', '.join(code_elements[:3])}[/dim green]"
+                )
+            if api_references:
+                title_text += f"\n[dim magenta]APIs: {', '.join(api_references[:3])}[/dim magenta]"
+
+        # Highlight content
+        highlighted_content = highlight_query_terms(content, query)
+
+        # Truncate if too long
+        max_length = 1500
+        if len(highlighted_content) > max_length:
+            highlighted_content = (
+                highlighted_content[:max_length] + "\n\n[dim]... (truncated)[/dim]"
+            )
+
+        panel_content = f"{title_text}\n\n{highlighted_content}"
+
+        panel = Panel(
+            panel_content,
+            title=header,
+            border_style="blue",
+            padding=(1, 2),
+        )
+        console.print(panel)
+        console.print()
+
+
+def display_recommendations(recommendations: dict):
+    """Display content recommendations."""
+    if not recommendations:
+        return
+
+    console.print("\n[bold cyan]📋 Content Recommendations[/bold cyan]")
+
+    primary_recs = recommendations.get("primary_recommendations", [])
+    if primary_recs:
+        table = Table(title="Recommended Content")
+        table.add_column("Title", style="bold")
+        table.add_column("Type", style="cyan")
+        table.add_column("Relevance", style="green")
+        table.add_column("Why Recommended", style="dim")
+
+        for rec in primary_recs[:5]:  # Show top 5
+            title = rec.get("title", "")[:40] + (
+                "..." if len(rec.get("title", "")) > 40 else ""
+            )
+            rec_type = rec.get("recommendation_type", "")
+            relevance = f"{rec.get('relevance_score', 0):.2f}"
+            why = rec.get("why_recommended", "")[:50] + (
+                "..." if len(rec.get("why_recommended", "")) > 50 else ""
+            )
+
+            table.add_row(title, rec_type, relevance, why)
+
+        console.print(table)
+
+    learning_path = recommendations.get("learning_path", [])
+    if learning_path:
+        console.print(
+            f"\n[bold yellow]🎯 Learning Path:[/bold yellow] {' → '.join(learning_path[:3])}"
+        )
+
+    knowledge_gaps = recommendations.get("knowledge_gaps", [])
+    if knowledge_gaps:
+        console.print(
+            f"\n[bold red]🔍 Knowledge Gaps:[/bold red] {', '.join(knowledge_gaps[:3])}"
+        )
+
+
+def display_clusters(clusters: list):
+    """Display related topic clusters."""
+    if not clusters:
+        return
+
+    console.print("\n[bold magenta]🏷️  Related Topic Clusters[/bold magenta]")
+
+    table = Table()
+    table.add_column("Cluster", style="bold")
+    table.add_column("Topics", style="dim")
+    table.add_column("Languages", style="cyan")
+    table.add_column("Quality", style="green")
+
+    for cluster in clusters[:5]:  # Show top 5
+        name = cluster.get("name", "")[:30]
+        topics = ", ".join(cluster.get("topic_keywords", [])[:3])
+        languages = ", ".join(cluster.get("programming_languages", [])[:2]) or "General"
+        quality = f"{cluster.get('quality_score', 0):.2f}"
+
+        table.add_row(name, topics, languages, quality)
+
+    console.print(table)
+
+
+def display_insights(insights: dict):
+    """Display knowledge graph insights."""
+    if not insights:
+        return
+
+    console.print("\n[bold green]🧠 Knowledge Graph Insights[/bold green]")
+
+    # Display key insights as bullet points
+    for key, value in insights.items():
+        if isinstance(value, (int, float)):
+            console.print(f"• {key.replace('_', ' ').title()}: {value}")
+        elif isinstance(value, str):
+            console.print(f"• {key.replace('_', ' ').title()}: {value}")
+        elif isinstance(value, list) and value:
+            console.print(
+                f"• {key.replace('_', ' ').title()}: {', '.join(map(str, value[:3]))}"
+            )
 
 
 # Alias for the query command to avoid naming conflicts

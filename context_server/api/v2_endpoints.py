@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -66,20 +66,69 @@ v2_router = APIRouter(prefix="/api/v2", tags=["v2"])
 
 
 # Dependencies
-async def get_advanced_search_api() -> AdvancedSearchAPI:
+def get_db_manager(request) -> EnhancedDatabaseManager:
+    """Get the enhanced database manager."""
+    if not hasattr(request.app.state, "enhanced_db_manager"):
+        request.app.state.enhanced_db_manager = EnhancedDatabaseManager()
+        # TODO: Initialize properly with async
+    return request.app.state.enhanced_db_manager
+
+
+def get_search_engine(request) -> SearchEngine:
+    """Get the multi-modal search engine."""
+    if not hasattr(request.app.state, "search_engine"):
+        from ..core.multi_embedding_service import MultiEmbeddingService
+
+        embedding_service = MultiEmbeddingService()
+        db_manager = get_db_manager(request)
+        request.app.state.search_engine = SearchEngine(embedding_service, db_manager)
+    return request.app.state.search_engine
+
+
+def get_knowledge_graph_builder(request) -> KnowledgeGraphBuilder:
+    """Get the knowledge graph builder."""
+    if not hasattr(request.app.state, "knowledge_graph_builder"):
+        from ..core.multi_embedding_service import MultiEmbeddingService
+
+        embedding_service = MultiEmbeddingService()
+        db_manager = get_db_manager(request)
+        request.app.state.knowledge_graph_builder = KnowledgeGraphBuilder(
+            embedding_service, db_manager
+        )
+    return request.app.state.knowledge_graph_builder
+
+
+def get_llm_endpoints(request) -> LLMOptimizedEndpoints:
+    """Get the LLM-optimized endpoints service."""
+    if not hasattr(request.app.state, "llm_endpoints"):
+        from ..core.multi_embedding_service import MultiEmbeddingService
+
+        embedding_service = MultiEmbeddingService()
+        db_manager = get_db_manager(request)
+        knowledge_graph_builder = get_knowledge_graph_builder(request)
+        request.app.state.llm_endpoints = LLMOptimizedEndpoints(
+            embedding_service, db_manager, knowledge_graph_builder
+        )
+    return request.app.state.llm_endpoints
+
+
+async def get_advanced_search_api(request) -> AdvancedSearchAPI:
     """Get the advanced search API instance."""
-    # This would be properly configured with dependency injection in a real app
-    # For now, we'll return a mock implementation
-    raise HTTPException(
-        status_code=501,
-        detail="Advanced Search API not implemented yet - requires proper dependency injection setup",
-    )
+    if not hasattr(request.app.state, "advanced_search_api"):
+        search_engine = get_search_engine(request)
+        db_manager = get_db_manager(request)
+        llm_endpoints = get_llm_endpoints(request)
+        knowledge_graph_builder = get_knowledge_graph_builder(request)
+        request.app.state.advanced_search_api = AdvancedSearchAPI(
+            search_engine, db_manager, llm_endpoints, knowledge_graph_builder
+        )
+    return request.app.state.advanced_search_api
 
 
 @v2_router.post("/search/enhanced", response_model=Dict)
 async def enhanced_search(
-    request: EnhancedSearchRequest,
-    api: AdvancedSearchAPI = Depends(get_advanced_search_api),
+    request_data: EnhancedSearchRequest,
+    request: Request,
 ) -> Dict:
     """
     Perform enhanced search with metadata, recommendations, and insights.
@@ -93,14 +142,15 @@ async def enhanced_search(
     - Performance metrics
     """
     try:
+        api = await get_advanced_search_api(request)
         response = await api.enhanced_search(
-            query=request.query,
-            context_id=request.context_id,
-            limit=request.limit,
-            include_recommendations=request.include_recommendations,
-            include_clusters=request.include_clusters,
-            include_graph_insights=request.include_graph_insights,
-            enable_caching=request.enable_caching,
+            query=request_data.query,
+            context_id=request_data.context_id,
+            limit=request_data.limit,
+            include_recommendations=request_data.include_recommendations,
+            include_clusters=request_data.include_clusters,
+            include_graph_insights=request_data.include_graph_insights,
+            enable_caching=request_data.enable_caching,
         )
 
         # Convert response to dictionary for JSON serialization
@@ -193,8 +243,8 @@ async def enhanced_search(
 @v2_router.get("/content/{context_id}/metadata")
 async def get_content_metadata(
     context_id: str,
+    request: Request,
     url: Optional[str] = Query(None, description="Specific URL to get metadata for"),
-    api: AdvancedSearchAPI = Depends(get_advanced_search_api),
 ) -> Union[Dict, List[Dict]]:
     """
     Get detailed metadata for content in a context.
@@ -203,6 +253,7 @@ async def get_content_metadata(
     Otherwise, returns metadata for all content in the context.
     """
     try:
+        api = await get_advanced_search_api(request)
         metadata = await api.get_content_metadata(context_id, url)
 
         if isinstance(metadata, ContentMetadata):
@@ -257,7 +308,7 @@ async def get_content_metadata(
 @v2_router.get("/context/{context_id}/analytics")
 async def get_context_analytics(
     context_id: str,
-    api: AdvancedSearchAPI = Depends(get_advanced_search_api),
+    request: Request,
 ) -> Dict:
     """
     Get comprehensive analytics for a context.
@@ -270,6 +321,7 @@ async def get_context_analytics(
     - Trending topics and temporal insights
     """
     try:
+        api = await get_advanced_search_api(request)
         analytics = await api.get_context_analytics(context_id)
 
         return {
@@ -313,8 +365,8 @@ async def get_context_analytics(
 
 @v2_router.post("/search/similar")
 async def search_similar_content(
-    request: SimilarContentRequest,
-    api: AdvancedSearchAPI = Depends(get_advanced_search_api),
+    request_data: SimilarContentRequest,
+    request: Request,
 ) -> Dict:
     """
     Find content similar to a specific URL.
@@ -323,15 +375,16 @@ async def search_similar_content(
     semantically similar content within the same context.
     """
     try:
+        api = await get_advanced_search_api(request)
         response = await api.search_similar_content(
-            url=request.url,
-            context_id=request.context_id,
-            limit=request.limit,
+            url=request_data.url,
+            context_id=request_data.context_id,
+            limit=request_data.limit,
         )
 
         # Convert response to dictionary (similar to enhanced_search)
         return {
-            "reference_url": request.url,
+            "reference_url": request_data.url,
             "similar_content": [
                 {
                     "url": result.url,
@@ -369,8 +422,8 @@ async def search_similar_content(
 
 @v2_router.post("/context/trending")
 async def get_trending_topics(
-    request: TrendingTopicsRequest,
-    api: AdvancedSearchAPI = Depends(get_advanced_search_api),
+    request_data: TrendingTopicsRequest,
+    request: Request,
 ) -> Dict:
     """
     Get trending topics in a context based on content analysis and search activity.
@@ -378,14 +431,15 @@ async def get_trending_topics(
     Returns topics ranked by frequency, trend scores, and relevance.
     """
     try:
+        api = await get_advanced_search_api(request)
         trending = await api.get_trending_topics(
-            context_id=request.context_id,
-            time_window_days=request.time_window_days,
+            context_id=request_data.context_id,
+            time_window_days=request_data.time_window_days,
         )
 
         return {
-            "context_id": request.context_id,
-            "time_window_days": request.time_window_days,
+            "context_id": request_data.context_id,
+            "time_window_days": request_data.time_window_days,
             "trending_topics": trending,
             "analysis_summary": {
                 "total_topics": len(trending),

@@ -26,12 +26,20 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Context Server API")
 
     # Import here to avoid issues
-    from ..core.storage import DatabaseManager
+    try:
+        from ..core.enhanced_storage import EnhancedDatabaseManager
 
-    # Initialize database
-    db_manager = DatabaseManager()
-    await db_manager.initialize()
-    app.state.db_manager = db_manager
+        # Initialize enhanced database
+        db_manager = EnhancedDatabaseManager()
+        await db_manager.initialize()
+        app.state.db_manager = db_manager
+        app.state.enhanced_db_manager = db_manager
+        logger.info("Enhanced database manager initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize enhanced database manager: {e}")
+        # Fall back to a simpler approach for now
+        app.state.db_manager = None
+        app.state.enhanced_db_manager = None
 
     logger.info("Context Server API started successfully")
 
@@ -123,10 +131,12 @@ def setup_routers():
     from .contexts import router as contexts_router
     from .documents import router as documents_router
     from .search import router as search_router
+    from .v2_endpoints import v2_router
 
     app.include_router(contexts_router, prefix="/api/contexts", tags=["contexts"])
     app.include_router(documents_router, prefix="/api", tags=["documents"])
     app.include_router(search_router, prefix="/api", tags=["search"])
+    app.include_router(v2_router, tags=["v2"])
 
 
 # Setup routers

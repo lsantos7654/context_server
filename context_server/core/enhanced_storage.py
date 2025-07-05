@@ -60,6 +60,18 @@ class EnhancedDatabaseManager:
             await self.pool.close()
             logger.info("Enhanced database connection closed")
 
+    async def is_healthy(self) -> bool:
+        """Check if database connection is healthy."""
+        if not self.pool:
+            return False
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+                return True
+        except Exception as e:
+            logger.warning(f"Database health check failed: {e}")
+            return False
+
     async def _create_enhanced_schema(self):
         """Create enhanced database schema with multi-embedding support."""
         async with self.pool.acquire() as conn:
@@ -257,13 +269,38 @@ class EnhancedDatabaseManager:
                 "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id)"
             )
 
-            # Flexible embedding index - will need to create specific indexes per model/dimension
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_1536 ON chunk_embeddings USING ivfflat (embedding vector_cosine_ops) WHERE dimension = 1536"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_4096 ON chunk_embeddings USING ivfflat (embedding vector_cosine_ops) WHERE dimension = 4096"
-            )
+            # Flexible embedding index - use HNSW for better high-dimensional support
+            try:
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_1536 ON chunk_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 1536"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create HNSW index for 1536 dimensions: {e}")
+                # Fallback to basic index without HNSW
+                try:
+                    await conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_1536_basic ON chunk_embeddings (dimension) WHERE dimension = 1536"
+                    )
+                except Exception as e2:
+                    logger.warning(
+                        f"Failed to create basic index for 1536 dimensions: {e2}"
+                    )
+
+            try:
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_4096 ON chunk_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 4096"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create HNSW index for 4096 dimensions: {e}")
+                # Fallback to basic index without HNSW
+                try:
+                    await conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vector_4096_basic ON chunk_embeddings (dimension) WHERE dimension = 4096"
+                    )
+                except Exception as e2:
+                    logger.warning(
+                        f"Failed to create basic index for 4096 dimensions: {e2}"
+                    )
 
             # Content analysis indexes
             await conn.execute(
@@ -1266,3 +1303,105 @@ class EnhancedDatabaseManager:
         except Exception as e:
             logger.error(f"Failed to search by content type: {e}")
             return []
+
+    # Context management methods for API compatibility
+    async def create_context(
+        self,
+        name: str,
+        description: str = "",
+        embedding_model: str = "text-embedding-ada-002",
+    ) -> dict:
+        """Create a new context."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO contexts (name, description, embedding_model)
+                VALUES ($1, $2, $3)
+                RETURNING id, name, description, embedding_model, created_at, updated_at
+                """,
+                name,
+                description,
+                embedding_model,
+            )
+
+            return {
+                "id": str(row["id"]),
+                "name": row["name"],
+                "description": row["description"],
+                "embedding_model": row["embedding_model"],
+                "created_at": row["created_at"],
+                "document_count": 0,
+                "size_mb": 0.0,
+                "last_updated": row["updated_at"],
+            }
+
+    async def get_context_by_name(self, name: str) -> dict | None:
+        """Get context by name."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, description, embedding_model, created_at, updated_at
+                FROM contexts WHERE name = $1
+                """,
+                name,
+            )
+
+            if row:
+                return {
+                    "id": str(row["id"]),
+                    "name": row["name"],
+                    "description": row["description"],
+                    "embedding_model": row["embedding_model"],
+                    "created_at": row["created_at"],
+                    "document_count": 0,  # TODO: Calculate actual count
+                    "size_mb": 0.0,
+                    "last_updated": row["updated_at"],
+                }
+            return None
+
+    async def get_contexts(self) -> list[dict]:
+        """Get all contexts."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, name, description, embedding_model, created_at, updated_at
+                FROM contexts
+                ORDER BY created_at DESC
+                """
+            )
+
+            return [
+                {
+                    "id": str(row["id"]),
+                    "name": row["name"],
+                    "description": row["description"],
+                    "embedding_model": row["embedding_model"],
+                    "created_at": row["created_at"],
+                    "document_count": 0,  # TODO: Calculate actual count
+                    "size_mb": 0.0,
+                    "last_updated": row["updated_at"],
+                }
+                for row in rows
+            ]
+
+    async def delete_context(self, context_id: str) -> bool:
+        """Delete a context and all its data."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # Delete all related data first
+                await conn.execute(
+                    "DELETE FROM chunk_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE context_id = $1)",
+                    context_id,
+                )
+                await conn.execute(
+                    "DELETE FROM chunks WHERE context_id = $1", context_id
+                )
+                await conn.execute(
+                    "DELETE FROM documents WHERE context_id = $1", context_id
+                )
+
+                # Delete the context
+                result = await conn.execute(
+                    "DELETE FROM contexts WHERE id = $1", context_id
+                )
+                return result != "DELETE 0"
