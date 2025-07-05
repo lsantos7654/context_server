@@ -13,6 +13,7 @@ sys.path.append("/app/src")  # Add src path for imports
 from src.core.crawl4ai_extraction import Crawl4aiExtractor
 
 from .chunking import TextChunker
+from .content_analysis import ContentAnalyzer
 from .embeddings import EmbeddingService
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class DocumentProcessor:
         self.embedding_service = embedding_service or EmbeddingService()
         self.chunker = TextChunker()
         self.extractor = Crawl4aiExtractor()
+        self.content_analyzer = ContentAnalyzer()
 
     async def process_url(
         self, url: str, options: dict | None = None
@@ -84,10 +86,15 @@ class DocumentProcessor:
                     page_url = page_info["url"]
                     page_content = page_info["content"]
 
-                    # Create page-specific metadata
-                    page_metadata = result.metadata.copy()
+                    # Create page-specific metadata (exclude batch-level statistics)
+                    page_metadata = self._create_page_metadata(
+                        result.metadata, page_info
+                    )
                     page_metadata["page_url"] = page_url
                     page_metadata["is_individual_page"] = True
+                    page_metadata[
+                        "extraction_success"
+                    ] = True  # Individual page was successfully extracted
 
                     # Create document title from page URL
                     page_title = self._create_title_from_url(page_url, url)
@@ -248,6 +255,90 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Failed to process content for {title}: {e}")
             raise
+
+    def _create_page_metadata(self, batch_metadata: dict, page_info: dict) -> dict:
+        """Create page-specific metadata excluding batch-level statistics."""
+        # Define batch-level fields that should NOT be copied to individual pages
+        batch_only_fields = {
+            "total_links_found",
+            "filtered_links",
+            "successful_extractions",
+            "extracted_pages",  # Don't include the full page list in each page
+        }
+
+        # Copy base metadata excluding batch statistics
+        page_metadata = {
+            key: value
+            for key, value in batch_metadata.items()
+            if key not in batch_only_fields
+        }
+
+        # Add page-specific information
+        page_metadata.update(
+            {
+                "content_length": len(page_info.get("content", "")),
+                "filename": page_info.get("filename"),
+                "processing_time": batch_metadata.get(
+                    "extraction_time"
+                ),  # Individual processing time if available
+            }
+        )
+
+        # Perform content analysis
+        try:
+            analysis = self.content_analyzer.analyze_content(
+                page_info.get("content", "")
+            )
+            page_metadata.update(
+                {
+                    "content_type": analysis.content_type,
+                    "primary_language": analysis.primary_language,
+                    "summary": analysis.summary,
+                    "code_percentage": analysis.code_percentage,
+                    "detected_patterns": analysis.detected_patterns,
+                    "key_concepts": analysis.key_concepts[:5],  # Limit to top 5
+                    "api_references": analysis.api_references[:10],  # Limit to top 10
+                    "code_blocks_count": len(analysis.code_blocks),
+                }
+            )
+
+            # Store detailed code analysis if significant code content
+            if analysis.code_percentage > 10:
+                page_metadata["code_analysis"] = {
+                    "functions": [
+                        func
+                        for block in analysis.code_blocks
+                        for func in block.functions
+                    ],
+                    "classes": [
+                        cls for block in analysis.code_blocks for cls in block.classes
+                    ],
+                    "imports": [
+                        imp for block in analysis.code_blocks for imp in block.imports
+                    ],
+                    "languages": list(
+                        set(block.language for block in analysis.code_blocks)
+                    ),
+                }
+        except Exception as e:
+            logger.warning(
+                f"Content analysis failed for {page_info.get('url', 'unknown')}: {e}"
+            )
+            # Set basic defaults if analysis fails
+            page_metadata.update(
+                {
+                    "content_type": "general",
+                    "primary_language": None,
+                    "summary": "Content analysis unavailable",
+                    "code_percentage": 0.0,
+                    "detected_patterns": {},
+                    "key_concepts": [],
+                    "api_references": [],
+                    "code_blocks_count": 0,
+                }
+            )
+
+        return page_metadata
 
     def _create_title_from_url(self, page_url: str, base_url: str) -> str:
         """Create a meaningful title from the page URL."""

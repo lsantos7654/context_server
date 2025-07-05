@@ -40,3 +40,6 @@ how can we best retrieve code snippets and examples? Should we investigate a gra
 I'm now trying to think from an llm perspective how can I provide enough endpoints that would allow the llm to get all of the context necessary to solve a problem.
 
 Currently they can semantic search, get more context around the result, and retrieve the entire page. What can we also add that would make search better? What are the advantage of adding a summary and including this in the semantic search as a weight to the page? I can imaging having an endpoint that can just take a question and do semantic search on that query. It would perhaps be advantageous to have some summaries that might answer that question be part of the embedding.
+
+
+Can we just have `ctx claude` which will setup claude with a proper claude.md in the current directory, and allow claude to know how to use this mcp server. It would also know how to scrape pages and list all of the docs and even manage different contexts

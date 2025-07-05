@@ -374,12 +374,41 @@ def display_results_rich(
                     f"\n[dim white]Extracted: {extraction_time[:16]}[/dim white]"
                 )
 
-        # Add extraction statistics if available for crawl4ai sources
+        # Add extraction statistics only for non-individual pages (batch-level info)
+        # Individual pages should show their own extraction success status
         if source_type == "crawl4ai":
-            total_links = metadata.get("total_links_found")
-            successful = metadata.get("successful_extractions")
-            if total_links and successful:
-                title_text += f"\n[dim green]Extraction: {successful}/{total_links} pages successful[/dim green]"
+            if is_individual_page:
+                # Show page-specific extraction status
+                extraction_success = metadata.get("extraction_success", True)
+                status_text = "successful" if extraction_success else "failed"
+                title_text += f"\n[dim green]Page extraction: {status_text}[/dim green]"
+
+                # Show content length for individual pages
+                content_length = metadata.get("content_length")
+                if content_length:
+                    title_text += f"\n[dim white]Content length: {content_length:,} chars[/dim white]"
+
+                # Show enhanced content analysis
+                content_analysis_type = metadata.get("content_type")
+                primary_language = metadata.get("primary_language")
+                code_percentage = metadata.get("code_percentage", 0)
+
+                if content_analysis_type and content_analysis_type != "general":
+                    title_text += (
+                        f"\n[dim cyan]Content type: {content_analysis_type}[/dim cyan]"
+                    )
+                if primary_language:
+                    title_text += f"\n[dim cyan]Language: {primary_language}[/dim cyan]"
+                if code_percentage > 5:
+                    title_text += (
+                        f"\n[dim cyan]Code content: {code_percentage:.1f}%[/dim cyan]"
+                    )
+            else:
+                # Show batch statistics only for non-individual pages
+                total_links = metadata.get("total_links_found")
+                successful = metadata.get("successful_extractions")
+                if total_links and successful:
+                    title_text += f"\n[dim green]Batch extraction: {successful}/{total_links} pages successful[/dim green]"
 
         # Add content type indicator
         if content_type == "expanded_chunk":
@@ -464,23 +493,71 @@ def display_results_rich(
 
             # Crawl4ai specific metadata
             if source_type == "crawl4ai":
-                filtered_links = metadata.get("filtered_links")
-                total_links = metadata.get("total_links_found")
-                successful = metadata.get("successful_extractions")
-
-                if total_links:
-                    title_text += (
-                        f"\n[dim white]• Total Links Found: {total_links}[/dim white]"
-                    )
-                if filtered_links:
-                    title_text += (
-                        f"\n[dim white]• Filtered Links: {filtered_links}[/dim white]"
-                    )
-                if successful:
-                    title_text += f"\n[dim white]• Successful Extractions: {successful}[/dim white]"
-
                 if is_individual_page:
+                    # Individual page metadata
                     title_text += f"\n[dim white]• Individual Page: Yes[/dim white]"
+                    extraction_success = metadata.get("extraction_success", True)
+                    title_text += f"\n[dim white]• Page Extraction Success: {extraction_success}[/dim white]"
+                    content_length = metadata.get("content_length")
+                    if content_length:
+                        title_text += f"\n[dim white]• Page Content Length: {content_length:,} chars[/dim white]"
+
+                    # Enhanced content analysis information
+                    content_analysis_type = metadata.get("content_type")
+                    primary_language = metadata.get("primary_language")
+                    code_percentage = metadata.get("code_percentage")
+                    summary = metadata.get("summary")
+
+                    if content_analysis_type:
+                        title_text += f"\n[dim white]• Content Type: {content_analysis_type}[/dim white]"
+                    if primary_language:
+                        title_text += f"\n[dim white]• Primary Language: {primary_language}[/dim white]"
+                    if code_percentage is not None:
+                        title_text += f"\n[dim white]• Code Percentage: {code_percentage:.1f}%[/dim white]"
+                    if summary and len(summary) > 10:
+                        title_text += f"\n[dim white]• Summary: {summary[:150]}{'...' if len(summary) > 150 else ''}[/dim white]"
+
+                    # Code analysis details
+                    code_blocks_count = metadata.get("code_blocks_count", 0)
+                    if code_blocks_count > 0:
+                        title_text += f"\n[dim white]• Code Blocks: {code_blocks_count}[/dim white]"
+
+                    code_analysis = metadata.get("code_analysis", {})
+                    if code_analysis:
+                        functions = code_analysis.get("functions", [])
+                        classes = code_analysis.get("classes", [])
+                        if functions:
+                            title_text += f"\n[dim white]• Functions: {', '.join(functions[:5])}{'...' if len(functions) > 5 else ''}[/dim white]"
+                        if classes:
+                            title_text += f"\n[dim white]• Classes: {', '.join(classes[:5])}{'...' if len(classes) > 5 else ''}[/dim white]"
+
+                    # Key concepts and patterns
+                    key_concepts = metadata.get("key_concepts", [])
+                    if key_concepts:
+                        title_text += f"\n[dim white]• Key Concepts: {', '.join(key_concepts)}[/dim white]"
+
+                    detected_patterns = metadata.get("detected_patterns", {})
+                    if detected_patterns:
+                        pattern_summary = []
+                        for pattern_type, patterns in detected_patterns.items():
+                            if patterns:
+                                pattern_summary.append(
+                                    f"{pattern_type}: {len(patterns)}"
+                                )
+                        if pattern_summary:
+                            title_text += f"\n[dim white]• Detected Patterns: {', '.join(pattern_summary)}[/dim white]"
+                else:
+                    # Batch-level metadata (only show for non-individual pages)
+                    filtered_links = metadata.get("filtered_links")
+                    total_links = metadata.get("total_links_found")
+                    successful = metadata.get("successful_extractions")
+
+                    if total_links:
+                        title_text += f"\n[dim white]• Total Links Found: {total_links}[/dim white]"
+                    if filtered_links:
+                        title_text += f"\n[dim white]• Filtered Links: {filtered_links}[/dim white]"
+                    if successful:
+                        title_text += f"\n[dim white]• Successful Extractions: {successful}[/dim white]"
 
             # Search-specific metadata
             vector_score = result.get("vector_score")
