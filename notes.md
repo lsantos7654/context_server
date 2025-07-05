@@ -49,4 +49,6 @@ Can we just have `ctx claude` which will setup claude with a proper claude.md in
 
 update audit to check claude.md enforce style guide and remove/consolidate old logic. Check and fix-precommit, this should be the last thing checked and fixed. Only fix pre-commit after the refactor. Come up with an extensive todo list to fix the issues. Everything should be saved to a markdown file. The main focus of these audits are to reduce code size and complexity. We should always take a generalized approach to problems, so whenever we hardcode something this should be a red flag
 
-need a way to download docs from server to local
+need a way to download docs from server to local, --output is broken
+no longer an option to expand context
+weird bug where creating a new context and extracting doesn't automatically show

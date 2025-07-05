@@ -225,3 +225,64 @@ async def get_document_raw(
             f"Failed to get document {doc_id} from context {context_name}: {e}"
         )
         raise HTTPException(status_code=500, detail="Failed to get document")
+
+
+@router.post("/documents/extract-download")
+async def extract_and_download(
+    document_data: DocumentIngest,
+    processor: EnhancedDocumentProcessor = Depends(get_processor),
+):
+    """Extract documents and return content for local download (no database storage)."""
+    try:
+        logger.info(f"Extracting for download: {document_data.source}")
+
+        # Process the document based on source type
+        if document_data.source_type.value == "url":
+            result = await processor.process_url(
+                url=document_data.source, options=document_data.options
+            )
+        elif document_data.source_type.value == "file":
+            result = await processor.process_file(
+                file_path=document_data.source, options=document_data.options
+            )
+        elif document_data.source_type.value == "git":
+            result = await processor.process_git_repo(
+                repo_url=document_data.source, options=document_data.options
+            )
+        else:
+            raise ValueError(f"Unsupported source type: {document_data.source_type}")
+
+        # Return the extracted documents without storing in database
+        documents = []
+        for doc in result.documents:
+            documents.append(
+                {
+                    "title": doc.title,
+                    "url": doc.url,
+                    "content": doc.content,
+                    "metadata": doc.metadata,
+                    "chunks": [
+                        {
+                            "content": chunk.content,
+                            "chunk_index": chunk.metadata.get("chunk_index", 0),
+                            "metadata": chunk.metadata,
+                        }
+                        for chunk in doc.chunks
+                    ],
+                }
+            )
+
+        logger.info(f"Extracted {len(documents)} documents for download")
+
+        return {
+            "documents": documents,
+            "total_documents": len(documents),
+            "source": document_data.source,
+            "source_type": document_data.source_type.value,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to extract for download: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to extract documents: {str(e)}"
+        )

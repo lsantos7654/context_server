@@ -1,9 +1,13 @@
 """Document management commands for Context Server CLI."""
 
 import asyncio
+import re
 import time
+import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import click
 import httpx
@@ -50,7 +54,7 @@ def docs():
 
 @docs.command()
 @click.argument("source")
-@click.argument("context_name", shell_complete=complete_context_name)
+@click.argument("context_name", required=False, shell_complete=complete_context_name)
 @click.option(
     "--source-type",
     type=click.Choice(["url", "file", "git", "local"]),
@@ -61,7 +65,7 @@ def docs():
 @click.option(
     "--output-path",
     type=click.Path(),
-    help="Local directory to extract files to (for local extraction)",
+    help="Local directory to save extracted files to (enables download-only mode for URLs)",
 )
 @click.option(
     "--include-patterns",
@@ -84,21 +88,34 @@ def extract(
     include_patterns,
     exclude_patterns,
 ):
-    """Extract documents from a source into a context.
+    """Extract documents from a source into a context or download locally.
 
-    Processes documents from URLs, files, directories, or git repositories
-    and adds them to the specified context for search and retrieval.
+    Processes documents from URLs, files, directories, or git repositories.
+    Can either add them to a context for search/retrieval or download them locally.
 
     Args:
         source: URL, file path, git repository, or local directory
-        context_name: Name of target context
+        context_name: Name of target context (optional if --output-path is used)
         source_type: Source type (url, file, git, local)
         max_pages: Maximum pages to extract for URLs
         wait: Wait for extraction to complete
-        output_path: Local directory to save extracted files (for local mode)
+        output_path: Local directory to save extracted files
         include_patterns: File patterns to include
         exclude_patterns: File patterns to exclude
+
+    Examples:
+        ctx docs extract https://example.com my-context              # Extract to context
+        ctx docs extract https://example.com --output-path ./output  # Download locally
+        ctx docs extract ./local-dir my-context --output-path ./out  # Copy and extract
     """
+    # Validate arguments
+    if not context_name and not output_path:
+        echo_error("Either context_name or --output-path must be specified")
+        echo_info(
+            "Use --output-path to download files locally without creating a context"
+        )
+        return
+
     # Auto-detect source type if not specified
     if not source_type:
         if source.startswith(("http://", "https://")):
@@ -130,42 +147,62 @@ def extract(
     async def extract_document():
         try:
             echo_info(f"Extracting {source_type}: {source}")
-            echo_info(f"Target context: {context_name}")
 
-            # Prepare request data
-            request_data = {"source_type": source_type, "source": source, "options": {}}
+            # Check if this is download-only mode (output_path provided without context or for non-local sources)
+            download_only = output_path and (not context_name or source_type != "local")
 
-            if source_type == "url":
-                request_data["options"]["max_pages"] = max_pages
-
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    get_api_url(f"contexts/{context_name}/documents"),
-                    json=request_data,
-                    timeout=300.0,  # 5 minute timeout for extraction
+            if download_only:
+                echo_info(f"Download mode - saving to: {output_path}")
+                await extract_and_download_files(
+                    source, source_type, output_path, max_pages
                 )
+            else:
+                if not context_name:
+                    echo_error("Context name is required when not using download mode")
+                    return
 
-                if response.status_code == 202:
-                    result = response.json()
-                    job_id = result["job_id"]
-                    echo_success(f"Extraction started! Job ID: {job_id}")
+                echo_info(f"Target context: {context_name}")
 
-                    if wait:
-                        echo_info("Waiting for extraction to complete...")
-                        await wait_for_extraction(job_id)
-                    else:
-                        echo_info("Extraction running in background")
-                        echo_info(
-                            f"Check status with: context-server docs status {job_id}"
-                        )
+                # Prepare request data
+                request_data = {
+                    "source_type": source_type,
+                    "source": source,
+                    "options": {},
+                }
 
-                elif response.status_code == 404:
-                    echo_error(f"Context '{context_name}' not found")
-                    echo_info("Create it with: context-server context create <name>")
-                else:
-                    echo_error(
-                        f"Failed to start extraction: {response.status_code} - {response.text}"
+                if source_type == "url":
+                    request_data["options"]["max_pages"] = max_pages
+
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        get_api_url(f"contexts/{context_name}/documents"),
+                        json=request_data,
+                        timeout=300.0,  # 5 minute timeout for extraction
                     )
+
+                    if response.status_code == 202:
+                        result = response.json()
+                        job_id = result["job_id"]
+                        echo_success(f"Extraction started! Job ID: {job_id}")
+
+                        if wait:
+                            echo_info("Waiting for extraction to complete...")
+                            await wait_for_extraction(job_id)
+                        else:
+                            echo_info("Extraction running in background")
+                            echo_info(
+                                f"Check status with: context-server docs status {job_id}"
+                            )
+
+                    elif response.status_code == 404:
+                        echo_error(f"Context '{context_name}' not found")
+                        echo_info(
+                            "Create it with: context-server context create <name>"
+                        )
+                    else:
+                        echo_error(
+                            f"Failed to start extraction: {response.status_code} - {response.text}"
+                        )
 
         except httpx.RequestError as e:
             echo_error(f"Connection error: {e}")
@@ -185,8 +222,13 @@ def extract(
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
+@click.option(
+    "--show-ids/--no-ids",
+    default=False,
+    help="Show document IDs (useful for 'ctx docs show' command)",
+)
 @rich_help_option("-h", "--help")
-def list(context_name, offset, limit, output_format):
+def list(context_name, offset, limit, output_format, show_ids):
     """📝 List documents in a context.
 
     Args:
@@ -194,6 +236,12 @@ def list(context_name, offset, limit, output_format):
         offset: Number of documents to skip
         limit: Maximum documents to show
         output_format: Output format (table or json)
+        show_ids: Show document IDs for use with 'ctx docs show'
+
+    Examples:
+        ctx docs list my-context                    # Basic list
+        ctx docs list my-context --show-ids         # With document IDs
+        ctx docs list my-context --limit 10         # Limit results
     """
 
     async def list_documents():
@@ -223,6 +271,10 @@ def list(context_name, offset, limit, output_format):
                         table = Table(
                             title=f"Documents in '{context_name}' ({total} total)"
                         )
+
+                        # Add columns based on show_ids flag
+                        if show_ids:
+                            table.add_column("Document ID", style="dim", no_wrap=True)
                         table.add_column("Title")
                         table.add_column("URL")
                         table.add_column("Chunks")
@@ -234,15 +286,36 @@ def list(context_name, offset, limit, output_format):
                             if len(url) > 50:
                                 url = url[:47] + "..."
 
-                            table.add_row(
-                                doc["title"][:50]
-                                + ("..." if len(doc["title"]) > 50 else ""),
-                                url,
-                                str(doc["chunk_count"]),
-                                str(doc["indexed_at"])[:19],  # Truncate timestamp
+                            # Prepare row data
+                            row_data = []
+                            if show_ids:
+                                # Show first 8 characters of document ID
+                                doc_id = (
+                                    doc["id"][:8] + "..."
+                                    if len(doc["id"]) > 8
+                                    else doc["id"]
+                                )
+                                row_data.append(doc_id)
+
+                            row_data.extend(
+                                [
+                                    doc["title"][:50]
+                                    + ("..." if len(doc["title"]) > 50 else ""),
+                                    url,
+                                    str(doc["chunk_count"]),
+                                    str(doc["indexed_at"])[:19],  # Truncate timestamp
+                                ]
                             )
 
+                            table.add_row(*row_data)
+
                         console.print(table)
+
+                        # Show helpful message when IDs are displayed
+                        if show_ids and documents:
+                            echo_info(
+                                "💡 Use document IDs with: ctx docs show <context_name> <document_id>"
+                            )
 
                         if total > offset + limit:
                             echo_info(
@@ -262,6 +335,253 @@ def list(context_name, offset, limit, output_format):
             echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(list_documents())
+
+
+@docs.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.option(
+    "--output-path",
+    type=click.Path(),
+    help="Directory to save downloaded documents (default: ./downloads)",
+    default="./downloads",
+)
+@click.option(
+    "--document-ids",
+    multiple=True,
+    help="Specific document IDs to download (use 'ctx docs list --show-ids' to see IDs)",
+)
+@click.option(
+    "--all",
+    "download_all",
+    is_flag=True,
+    help="Download all documents from the context",
+)
+@click.option(
+    "--format",
+    "download_format",
+    type=click.Choice(["files", "zip"]),
+    default="files",
+    help="Download format: individual files or ZIP archive",
+)
+@click.option("--force", is_flag=True, help="Skip confirmation prompts")
+@rich_help_option("-h", "--help")
+def download(
+    context_name, output_path, document_ids, download_all, download_format, force
+):
+    """📥 Download documents from a context to local files.
+
+    Downloads documents and saves them as individual files or in a ZIP archive.
+    You can download specific documents by ID or all documents from a context.
+
+    Args:
+        context_name: Context name
+        output_path: Directory to save files
+        document_ids: Specific document IDs to download
+        download_all: Download all documents
+        download_format: Output format (files or zip)
+        force: Skip confirmation prompts
+
+    Examples:
+        ctx docs download my-context                           # Download all as files
+        ctx docs download my-context --format zip              # Download all as ZIP
+        ctx docs download my-context --document-ids abc123     # Download specific docs
+        ctx docs download my-context --output-path ./exports   # Custom output directory
+    """
+    if not document_ids and not download_all:
+        echo_error(
+            "Either specify --document-ids or use --all to download all documents"
+        )
+        echo_info("Use 'ctx docs list --show-ids' to see available document IDs")
+        return
+
+    if document_ids and download_all:
+        echo_error("Cannot use both --document-ids and --all options together")
+        return
+
+    async def download_documents():
+        try:
+            async with httpx.AsyncClient() as client:
+                # First, get the context to verify it exists
+                context_response = await client.get(
+                    get_api_url(f"contexts/{context_name}"),
+                    timeout=30.0,
+                )
+
+                if context_response.status_code == 404:
+                    echo_error(f"Context '{context_name}' not found")
+                    return
+                elif context_response.status_code != 200:
+                    echo_error(f"Failed to get context: {context_response.text}")
+                    return
+
+                # Get documents to download
+                if download_all:
+                    # Get all documents
+                    docs_response = await client.get(
+                        get_api_url(f"contexts/{context_name}/documents"),
+                        params={"limit": 1000},  # Large limit to get all docs
+                        timeout=30.0,
+                    )
+
+                    if docs_response.status_code != 200:
+                        echo_error(f"Failed to get documents: {docs_response.text}")
+                        return
+
+                    docs_data = docs_response.json()
+                    documents = docs_data["documents"]
+                    total_docs = docs_data["total"]
+
+                    if not documents:
+                        echo_info(f"No documents found in context '{context_name}'")
+                        return
+
+                    if not force:
+                        if not confirm_action(
+                            f"Download {len(documents)} document(s) from '{context_name}'?",
+                            default=True,
+                        ):
+                            echo_info("Download cancelled")
+                            return
+
+                    doc_ids_to_download = [doc["id"] for doc in documents]
+                    echo_info(f"Downloading {len(documents)} documents...")
+
+                else:
+                    # Download specific documents
+                    doc_ids_to_download = [*document_ids]  # Convert tuple to list
+                    echo_info(
+                        f"Downloading {len(doc_ids_to_download)} specific document(s)..."
+                    )
+
+                # Create output directory
+                output_dir = Path(output_path)
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                # Download documents
+                downloaded_count = 0
+                failed_count = 0
+
+                if download_format == "zip":
+                    # Create ZIP archive
+                    zip_filename = output_dir / f"{context_name}_documents.zip"
+
+                    with zipfile.ZipFile(
+                        zip_filename, "w", zipfile.ZIP_DEFLATED
+                    ) as zipf:
+                        for doc_id in doc_ids_to_download:
+                            try:
+                                # Get document content
+                                doc_response = await client.get(
+                                    get_api_url(
+                                        f"contexts/{context_name}/documents/{doc_id}/raw"
+                                    ),
+                                    timeout=30.0,
+                                )
+
+                                if doc_response.status_code == 200:
+                                    document = doc_response.json()
+
+                                    # Generate filename from title
+                                    title = document.get("title", "untitled")
+                                    safe_title = re.sub(r'[<>:"/\\|?*]', "_", title)
+                                    filename = f"{safe_title}.txt"
+
+                                    # Add to ZIP with metadata header
+                                    content = f"""<!-- Document: {document.get('title')} -->
+<!-- URL: {document.get('url')} -->
+<!-- ID: {document.get('id')} -->
+<!-- Indexed: {document.get('indexed_at')} -->
+
+{document.get('content', '')}"""
+
+                                    zipf.writestr(filename, content.encode("utf-8"))
+                                    downloaded_count += 1
+
+                                else:
+                                    echo_warning(
+                                        f"Failed to download document {doc_id[:8]}..."
+                                    )
+                                    failed_count += 1
+
+                            except Exception as e:
+                                echo_warning(
+                                    f"Error downloading document {doc_id[:8]}...: {e}"
+                                )
+                                failed_count += 1
+
+                    echo_success(f"Created ZIP archive: {zip_filename}")
+
+                else:
+                    # Save as individual files
+                    for doc_id in doc_ids_to_download:
+                        try:
+                            # Get document content
+                            doc_response = await client.get(
+                                get_api_url(
+                                    f"contexts/{context_name}/documents/{doc_id}/raw"
+                                ),
+                                timeout=30.0,
+                            )
+
+                            if doc_response.status_code == 200:
+                                document = doc_response.json()
+
+                                # Generate safe filename from title
+                                title = document.get("title", "untitled")
+                                safe_title = re.sub(r'[<>:"/\\|?*]', "_", title)
+                                safe_title = safe_title[:100]  # Limit length
+
+                                # Determine file extension
+                                url = document.get("url", "")
+                                if url.endswith((".md", ".markdown")):
+                                    extension = ".md"
+                                elif url.endswith((".html", ".htm")):
+                                    extension = ".html"
+                                elif url.endswith((".py", ".js", ".ts", ".css")):
+                                    extension = url[url.rfind(".") :]
+                                else:
+                                    extension = ".txt"
+
+                                filename = f"{safe_title}_{doc_id[:8]}{extension}"
+                                file_path = output_dir / filename
+
+                                # Write content with metadata header
+                                with open(file_path, "w", encoding="utf-8") as f:
+                                    f.write(
+                                        f"<!-- Document: {document.get('title')} -->\n"
+                                    )
+                                    f.write(f"<!-- URL: {document.get('url')} -->\n")
+                                    f.write(f"<!-- ID: {document.get('id')} -->\n")
+                                    f.write(
+                                        f"<!-- Indexed: {document.get('indexed_at')} -->\n\n"
+                                    )
+                                    f.write(document.get("content", ""))
+
+                                downloaded_count += 1
+                                echo_info(f"Saved: {filename}")
+
+                            else:
+                                echo_warning(
+                                    f"Failed to download document {doc_id[:8]}..."
+                                )
+                                failed_count += 1
+
+                        except Exception as e:
+                            echo_warning(
+                                f"Error downloading document {doc_id[:8]}...: {e}"
+                            )
+                            failed_count += 1
+
+                echo_success(
+                    f"Download completed! Downloaded: {downloaded_count}, Failed: {failed_count}"
+                )
+                echo_info(f"Files saved to: {output_dir}")
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: context-server server up")
+
+    asyncio.run(download_documents())
 
 
 @docs.command()
@@ -689,3 +1009,146 @@ async def handle_local_extraction(
 
     echo_info(f"Files added to context '{context_name}'")
     echo_info(f"Try: context-server search query '<your-query>' {context_name}")
+
+
+async def extract_and_download_files(
+    source: str, source_type: str, output_path: str, max_pages: int = 50
+):
+    """Extract documents and download them locally without storing in database."""
+    try:
+        # Prepare request data
+        request_data = {"source_type": source_type, "source": source, "options": {}}
+
+        if source_type == "url":
+            request_data["options"]["max_pages"] = max_pages
+
+        echo_info("Extracting documents for download...")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                get_api_url("documents/extract-download"),
+                json=request_data,
+                timeout=300.0,  # 5 minute timeout for extraction
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                documents = result["documents"]
+
+                if not documents:
+                    echo_warning("No documents were extracted")
+                    return
+
+                # Create output directory
+                output_dir = Path(output_path)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                echo_info(f"Saving {len(documents)} document(s) to: {output_dir}")
+
+                saved_count = 0
+                for i, doc in enumerate(documents):
+                    try:
+                        # Generate safe filename from title or URL
+                        title = doc.get("title", "").strip()
+                        url = doc.get("url", "")
+
+                        if title:
+                            # Clean title for filename
+                            safe_title = re.sub(r'[<>:"/\\|?*]', "_", title)
+                            safe_title = safe_title[:100]  # Limit length
+                        else:
+                            # Generate from URL
+                            parsed = urlparse(url)
+                            safe_title = parsed.path.split("/")[-1] or parsed.netloc
+                            safe_title = re.sub(r'[<>:"/\\|?*]', "_", safe_title)
+
+                        # Ensure unique filename
+                        base_filename = safe_title or f"document_{i+1}"
+
+                        # Determine file extension based on content or metadata
+                        metadata = doc.get("metadata", {})
+                        content_type = metadata.get("content_type", "")
+
+                        if "markdown" in content_type.lower() or url.endswith(".md"):
+                            extension = ".md"
+                        elif "code" in content_type.lower():
+                            # Try to detect language from metadata
+                            lang = metadata.get("primary_language", "")
+                            if lang == "python":
+                                extension = ".py"
+                            elif lang == "javascript":
+                                extension = ".js"
+                            elif lang == "typescript":
+                                extension = ".ts"
+                            else:
+                                extension = ".txt"
+                        elif url.endswith((".html", ".htm")):
+                            extension = ".html"
+                        else:
+                            extension = ".txt"
+
+                        filename = f"{base_filename}{extension}"
+                        file_path = output_dir / filename
+
+                        # Handle duplicate filenames
+                        counter = 1
+                        while file_path.exists():
+                            name_part = base_filename
+                            file_path = output_dir / f"{name_part}_{counter}{extension}"
+                            counter += 1
+
+                        # Write content to file
+                        content = doc.get("content", "")
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            # Add metadata header
+                            f.write(f"<!-- Source: {url} -->\n")
+                            f.write(f"<!-- Title: {title} -->\n")
+                            f.write(
+                                f"<!-- Extracted: {datetime.now().isoformat()} -->\n\n"
+                            )
+                            f.write(content)
+
+                        saved_count += 1
+                        echo_info(f"Saved: {filename}")
+
+                    except Exception as e:
+                        echo_warning(f"Failed to save document {i+1}: {e}")
+
+                echo_success(
+                    f"Successfully downloaded {saved_count}/{len(documents)} documents to {output_dir}"
+                )
+
+                # Create a summary file
+                summary_path = output_dir / "extraction_summary.json"
+                summary = {
+                    "source": source,
+                    "source_type": source_type,
+                    "extracted_at": datetime.now().isoformat(),
+                    "total_documents": len(documents),
+                    "saved_documents": saved_count,
+                    "documents": [
+                        {
+                            "title": doc.get("title"),
+                            "url": doc.get("url"),
+                            "chunks": len(doc.get("chunks", [])),
+                        }
+                        for doc in documents
+                    ],
+                }
+
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    import json
+
+                    json.dump(summary, f, indent=2, ensure_ascii=False)
+
+                echo_info(f"Extraction summary saved to: {summary_path}")
+
+            else:
+                echo_error(
+                    f"Failed to extract documents: {response.status_code} - {response.text}"
+                )
+
+    except httpx.RequestError as e:
+        echo_error(f"Connection error: {e}")
+        echo_info("Make sure the server is running: context-server server up")
+    except Exception as e:
+        echo_error(f"Failed to download documents: {e}")

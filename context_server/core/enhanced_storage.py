@@ -1580,6 +1580,109 @@ class EnhancedDatabaseManager:
                 "limit": limit,
             }
 
+    async def get_document_by_id(self, context_id: str, doc_id: str) -> dict | None:
+        """Get a specific document by ID within a context."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, url, title, content, indexed_at, chunk_count, metadata, content_analysis
+                FROM documents
+                WHERE context_id = $1 AND id = $2
+                """,
+                uuid.UUID(context_id),
+                uuid.UUID(doc_id),
+            )
+
+            if row:
+                return {
+                    "id": str(row["id"]),
+                    "url": row["url"],
+                    "title": row["title"],
+                    "content": row["content"],
+                    "indexed_at": row["indexed_at"],
+                    "chunk_count": row["chunk_count"],
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "content_analysis": json.loads(row["content_analysis"])
+                    if row["content_analysis"]
+                    else {},
+                }
+            return None
+
+    async def delete_documents(self, context_id: str, document_ids: list[str]) -> int:
+        """Delete documents by IDs within a context."""
+        if not document_ids:
+            return 0
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # Convert string IDs to UUIDs
+                doc_uuids = [uuid.UUID(doc_id) for doc_id in document_ids]
+
+                # Delete chunk embeddings first
+                await conn.execute(
+                    """
+                    DELETE FROM chunk_embeddings
+                    WHERE chunk_id IN (
+                        SELECT c.id FROM chunks c
+                        JOIN documents d ON c.document_id = d.id
+                        WHERE d.context_id = $1 AND d.id = ANY($2)
+                    )
+                    """,
+                    uuid.UUID(context_id),
+                    doc_uuids,
+                )
+
+                # Delete chunks
+                await conn.execute(
+                    """
+                    DELETE FROM chunks
+                    WHERE document_id IN (
+                        SELECT id FROM documents
+                        WHERE context_id = $1 AND id = ANY($2)
+                    )
+                    """,
+                    uuid.UUID(context_id),
+                    doc_uuids,
+                )
+
+                # Delete content analyses
+                await conn.execute(
+                    """
+                    DELETE FROM content_analyses
+                    WHERE document_id IN (
+                        SELECT id FROM documents
+                        WHERE context_id = $1 AND id = ANY($2)
+                    )
+                    """,
+                    uuid.UUID(context_id),
+                    doc_uuids,
+                )
+
+                # Delete documents and get count
+                result = await conn.execute(
+                    """
+                    DELETE FROM documents
+                    WHERE context_id = $1 AND id = ANY($2)
+                    """,
+                    uuid.UUID(context_id),
+                    doc_uuids,
+                )
+
+                # Update context stats
+                await conn.execute(
+                    """
+                    UPDATE contexts
+                    SET document_count = (SELECT COUNT(*) FROM documents WHERE context_id = $1),
+                        total_chunks = (SELECT COUNT(*) FROM chunks WHERE context_id = $1),
+                        updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    uuid.UUID(context_id),
+                )
+
+                # Extract count from result string like "DELETE 3"
+                return int(result.split()[-1]) if result and result.split() else 0
+
     async def store_enhanced_document(self, doc, context_id: str) -> str:
         """Store an enhanced processed document."""
         async with self.pool.acquire() as conn:
