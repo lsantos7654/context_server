@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
@@ -201,7 +202,7 @@ class RelationshipDetector:
                         discovered_method="embedding_similarity",
                         supporting_evidence=evidence,
                         context_elements=context_elements,
-                        discovery_timestamp=asyncio.get_event_loop().time(),
+                        discovery_timestamp=time.time(),
                     )
                     relationships.append(relationship)
 
@@ -282,7 +283,7 @@ class RelationshipDetector:
                                             f"Uses function: {func_name} defined in {func_def}"
                                         ],
                                         context_elements=[element, func_def],
-                                        discovery_timestamp=asyncio.get_event_loop().time(),
+                                        discovery_timestamp=time.time(),
                                     )
                                     relationships.append(relationship)
 
@@ -318,7 +319,7 @@ class RelationshipDetector:
                             discovered_method="api_reference_analysis",
                             supporting_evidence=[f"Both reference API: {api_endpoint}"],
                             context_elements=[api_endpoint],
-                            discovery_timestamp=asyncio.get_event_loop().time(),
+                            discovery_timestamp=time.time(),
                         )
                         relationships.append(relationship)
 
@@ -384,7 +385,7 @@ class RelationshipDetector:
                             f"Shared keywords: {list(shared_keywords)}"
                         ],
                         context_elements=list(shared_keywords),
-                        discovery_timestamp=asyncio.get_event_loop().time(),
+                        discovery_timestamp=time.time(),
                     )
                     relationships.append(relationship)
 
@@ -445,7 +446,7 @@ class RelationshipDetector:
                                     f"Sequential: {keyword1} -> {keyword2}"
                                 ],
                                 context_elements=[keyword1, keyword2],
-                                discovery_timestamp=asyncio.get_event_loop().time(),
+                                discovery_timestamp=time.time(),
                             )
                             relationships.append(relationship)
 
@@ -488,7 +489,7 @@ class RelationshipDetector:
                         discovered_method="cross_reference_analysis",
                         supporting_evidence=evidence,
                         context_elements=[analysis2.title or analysis2.url],
-                        discovery_timestamp=asyncio.get_event_loop().time(),
+                        discovery_timestamp=time.time(),
                     )
                     relationships.append(relationship)
 
@@ -543,7 +544,7 @@ class RelationshipDetector:
                                 f"Shared keywords: {list(shared_keywords)}",
                             ],
                             context_elements=list(shared_keywords),
-                            discovery_timestamp=asyncio.get_event_loop().time(),
+                            discovery_timestamp=time.time(),
                         )
                         relationships.append(relationship)
 
@@ -604,7 +605,7 @@ class RelationshipDetector:
                             f"Shared keywords: {list(shared_keywords)}",
                         ],
                         context_elements=list(shared_keywords),
-                        discovery_timestamp=asyncio.get_event_loop().time(),
+                        discovery_timestamp=time.time(),
                     )
                     relationships.append(relationship)
 

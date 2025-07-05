@@ -1,5 +1,6 @@
 """Unit tests for content relationship mapping and topic clustering functionality."""
 
+import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
@@ -395,8 +396,6 @@ class TestRelationshipDetector:
 
     def test_validate_and_deduplicate(self):
         """Test relationship validation and deduplication."""
-        import asyncio
-
         # Create duplicate and invalid relationships
         relationships = [
             ContentRelationship(
@@ -408,7 +407,7 @@ class TestRelationshipDetector:
                 discovered_method="test",
                 supporting_evidence=[],
                 context_elements=[],
-                discovery_timestamp=asyncio.get_event_loop().time(),
+                discovery_timestamp=time.time(),
             ),
             ContentRelationship(  # Duplicate (reversed)
                 source_url="http://example.com/2",
@@ -419,7 +418,7 @@ class TestRelationshipDetector:
                 discovered_method="test",
                 supporting_evidence=[],
                 context_elements=[],
-                discovery_timestamp=asyncio.get_event_loop().time(),
+                discovery_timestamp=time.time(),
             ),
             ContentRelationship(  # Low confidence - should be filtered
                 source_url="http://example.com/3",
@@ -430,7 +429,7 @@ class TestRelationshipDetector:
                 discovered_method="test",
                 supporting_evidence=[],
                 context_elements=[],
-                discovery_timestamp=asyncio.get_event_loop().time(),
+                discovery_timestamp=time.time(),
             ),
         ]
 
