@@ -242,9 +242,28 @@ class CodePatternAnalyzer:
         elements = []
 
         for pattern in self.error_patterns:
+            logger.debug(f"Processing error pattern: {pattern}")
             matches = re.finditer(pattern, query, re.IGNORECASE)
             for match in matches:
-                elements.extend(match.groups())
+                try:
+                    # Debug logging for match analysis
+                    logger.debug(f"Error pattern match: {match.group(0)}")
+                    logger.debug(f"Error pattern groups: {match.groups()}")
+                    logger.debug(f"Error pattern group types: {[type(g) for g in match.groups()]}")
+                    
+                    # Add non-None groups to elements
+                    for group in match.groups():
+                        logger.debug(f"Processing error group: {repr(group)} (type: {type(group)})")
+                        if group and group.strip():
+                            elements.append(group.strip())
+                            logger.debug(f"Added error element: {repr(group.strip())}")
+                            
+                except Exception as e:
+                    logger.error(f"Error processing error pattern match: {e}")
+                    logger.error(f"Match object: {match}")
+                    logger.error(f"Match groups: {match.groups()}")
+                    logger.error(f"Pattern: {pattern}")
+                    raise
 
         return elements
 
@@ -253,9 +272,28 @@ class CodePatternAnalyzer:
         elements = []
 
         for pattern in self.algorithm_patterns:
+            logger.debug(f"Processing algorithm pattern: {pattern}")
             matches = re.finditer(pattern, query, re.IGNORECASE)
             for match in matches:
-                elements.extend(match.groups())
+                try:
+                    # Debug logging for match analysis
+                    logger.debug(f"Algorithm pattern match: {match.group(0)}")
+                    logger.debug(f"Algorithm pattern groups: {match.groups()}")
+                    logger.debug(f"Algorithm pattern group types: {[type(g) for g in match.groups()]}")
+                    
+                    # Add non-None groups to elements
+                    for group in match.groups():
+                        logger.debug(f"Processing algorithm group: {repr(group)} (type: {type(group)})")
+                        if group and group.strip():
+                            elements.append(group.strip())
+                            logger.debug(f"Added algorithm element: {repr(group.strip())}")
+                            
+                except Exception as e:
+                    logger.error(f"Error processing algorithm pattern match: {e}")
+                    logger.error(f"Match object: {match}")
+                    logger.error(f"Match groups: {match.groups()}")
+                    logger.error(f"Pattern: {pattern}")
+                    raise
 
         return elements
 

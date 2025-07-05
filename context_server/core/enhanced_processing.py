@@ -162,9 +162,11 @@ class EnhancedDocumentProcessor:
 
                     # Perform content analysis first
                     try:
+                        logger.info(f"Starting content analysis for {page_url}")
                         content_analysis = await self.content_analyzer.analyze_content(
                             page_content, page_url
                         )
+                        logger.info(f"Content analysis completed for {page_url}, type: {content_analysis.content_type}")
                         processing_stats["content_types_detected"].add(
                             content_analysis.content_type
                         )
@@ -175,7 +177,9 @@ class EnhancedDocumentProcessor:
                             processing_stats["api_reference_pages"] += 1
 
                     except Exception as e:
-                        logger.warning(f"Content analysis failed for {page_url}: {e}")
+                        logger.error(f"Content analysis failed for {page_url}: {e}")
+                        import traceback
+                        logger.error(f"Content analysis traceback: {traceback.format_exc()}")
                         content_analysis = None
 
                     # Create page-specific metadata

@@ -204,10 +204,20 @@ class ContentAnalyzer:
         try:
             # Use LLM-based analysis if available
             if self.use_llm_analysis and self.llm_analyzer:
-                logger.info("Using LLM-based content analysis")
-                return await self.llm_analyzer.analyze_content_intelligently(
-                    content, url
-                )
+                logger.info(f"Using LLM-based content analysis for {url}")
+                try:
+                    result = await self.llm_analyzer.analyze_content_intelligently(
+                        content, url
+                    )
+                    logger.info(f"LLM analysis completed successfully for {url}")
+                    return result
+                except Exception as llm_e:
+                    logger.error(f"LLM code analysis failed: {llm_e}")
+                    import traceback
+                    logger.error(f"LLM analysis traceback: {traceback.format_exc()}")
+                    # Fall back to legacy analysis
+                    logger.info("Falling back to legacy pattern-based content analysis")
+                    return self._analyze_content_legacy(content)
 
             # Fallback to legacy pattern-based analysis
             logger.info("Using legacy pattern-based content analysis")
@@ -215,6 +225,8 @@ class ContentAnalyzer:
 
         except Exception as e:
             logger.error(f"Content analysis failed: {e}")
+            import traceback
+            logger.error(f"Content analysis traceback: {traceback.format_exc()}")
             # Return minimal analysis on failure
             return ContentAnalysis(
                 content_type="unknown",
@@ -266,11 +278,27 @@ class ContentAnalyzer:
 
         # Find markdown code blocks
         pattern = r"```(\w+)?\n(.*?)```"
+        logger.debug(f"Code block extraction pattern: {pattern}")
         matches = re.finditer(pattern, content, re.DOTALL)
 
         for match in matches:
-            language = match.group(1) or "unknown"
-            code_content = match.group(2).strip()
+            try:
+                # Debug logging for match analysis
+                logger.debug(f"Code block match: {match.group(0)[:100]}...")
+                logger.debug(f"Code block groups: {match.groups()}")
+                logger.debug(f"Code block group types: {[type(g) for g in match.groups()]}")
+                
+                language = match.group(1) or "unknown"
+                code_content = match.group(2).strip()
+                
+                logger.debug(f"Extracted language: {repr(language)}, code_content type: {type(code_content)}")
+                
+            except Exception as e:
+                logger.error(f"Error processing code block match: {e}")
+                logger.error(f"Match object: {match}")
+                logger.error(f"Match groups: {match.groups()}")
+                logger.error(f"Pattern: {pattern}")
+                raise
 
             # Calculate line positions
             start_pos = match.start()

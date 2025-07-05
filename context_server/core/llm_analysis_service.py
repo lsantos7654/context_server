@@ -46,8 +46,12 @@ class LLMAnalysisService:
         """Perform LLM-based content analysis with structured prompts."""
 
         # Skip LLM analysis if service is not available
-        if not self.llm_service or not self.llm_service.available:
-            logger.info("LLM service not available, skipping LLM analysis")
+        if not self.llm_service:
+            logger.info("LLM service not initialized, skipping LLM analysis")
+            return None
+        
+        if not hasattr(self.llm_service, 'available') or not self.llm_service.available:
+            logger.info("LLM service not available (no API key), skipping LLM analysis")
             return None
 
         try:
@@ -95,7 +99,22 @@ Return only valid JSON:"""
 
         try:
             response = await self.llm_service.generate_response(prompt)
-            return json.loads(response)
+            if not response or not response.strip():
+                logger.warning("LLM classification returned empty response")
+                return {}
+            
+            # Clean response - remove any markdown formatting
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            return json.loads(cleaned_response)
+        except json.JSONDecodeError as e:
+            logger.warning(f"LLM classification failed - invalid JSON: {e}. Response: {response[:200] if response else 'Empty'}")
+            return {}
         except Exception as e:
             logger.warning(f"LLM classification failed: {e}")
             return {}
@@ -125,9 +144,30 @@ Return only valid JSON:"""
 
         try:
             response = await self.llm_service.generate_response(code_analysis_prompt)
-            code_analysis = json.loads(response)
+            if not response or not response.strip():
+                logger.warning("LLM code analysis returned empty response")
+                return {
+                    "code_percentage": len(code_blocks) * 10,
+                    "code_blocks": code_blocks,
+                }
+            
+            # Clean response - remove any markdown formatting
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            code_analysis = json.loads(cleaned_response)
             code_analysis["code_blocks"] = code_blocks  # Add extracted blocks
             return code_analysis
+        except json.JSONDecodeError as e:
+            logger.warning(f"LLM code analysis failed - invalid JSON: {e}. Response: {response[:200] if response else 'Empty'}")
+            return {
+                "code_percentage": len(code_blocks) * 10,
+                "code_blocks": code_blocks,
+            }
         except Exception as e:
             logger.warning(f"LLM code analysis failed: {e}")
             return {
@@ -153,7 +193,22 @@ Return only valid JSON:"""
 
         try:
             response = await self.llm_service.generate_response(prompt)
-            return json.loads(response)
+            if not response or not response.strip():
+                logger.warning("LLM concept extraction returned empty response")
+                return {}
+            
+            # Clean response - remove any markdown formatting
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            return json.loads(cleaned_response)
+        except json.JSONDecodeError as e:
+            logger.warning(f"LLM concept extraction failed - invalid JSON: {e}. Response: {response[:200] if response else 'Empty'}")
+            return {}
         except Exception as e:
             logger.warning(f"LLM concept extraction failed: {e}")
             return {}
@@ -175,7 +230,22 @@ Return only valid JSON:"""
 
         try:
             response = await self.llm_service.generate_response(prompt)
-            return json.loads(response)
+            if not response or not response.strip():
+                logger.warning("LLM quality assessment returned empty response")
+                return {"readability_score": 0.8}
+            
+            # Clean response - remove any markdown formatting
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            return json.loads(cleaned_response)
+        except json.JSONDecodeError as e:
+            logger.warning(f"LLM quality assessment failed - invalid JSON: {e}. Response: {response[:200] if response else 'Empty'}")
+            return {"readability_score": 0.8}
         except Exception as e:
             logger.warning(f"LLM quality assessment failed: {e}")
             return {"readability_score": 0.8}
@@ -275,15 +345,31 @@ Return only valid JSON:"""
         ]
 
         for pattern in patterns:
+            logger.debug(f"Processing LLM code block pattern: {pattern}")
             matches = re.finditer(pattern, content, re.DOTALL)
 
             for match in matches:
-                if len(match.groups()) >= 2:
-                    language = match.group(1) or "unknown"
-                    code_content = match.group(2).strip()
-                else:
-                    language = "unknown"
-                    code_content = match.group(1).strip()
+                try:
+                    # Debug logging for match analysis
+                    logger.debug(f"LLM code block match: {match.group(0)[:100]}...")
+                    logger.debug(f"LLM code block groups: {match.groups()}")
+                    logger.debug(f"LLM code block group types: {[type(g) for g in match.groups()]}")
+                    
+                    if len(match.groups()) >= 2:
+                        language = match.group(1) or "unknown"
+                        code_content = match.group(2).strip()
+                        logger.debug(f"LLM two groups - language: {repr(language)}, code_content type: {type(code_content)}")
+                    else:
+                        language = "unknown"
+                        code_content = match.group(1).strip()
+                        logger.debug(f"LLM one group - code_content type: {type(code_content)}")
+                        
+                except Exception as e:
+                    logger.error(f"Error processing LLM code block match: {e}")
+                    logger.error(f"Match object: {match}")
+                    logger.error(f"Match groups: {match.groups()}")
+                    logger.error(f"Pattern: {pattern}")
+                    raise
 
                 # Skip very short snippets
                 if len(code_content) < 10:
@@ -299,9 +385,15 @@ Return only valid JSON:"""
                 lines_in_block = code_content.count("\n")
 
                 # Extract code elements using enhanced methods
-                functions = self._extract_functions_enhanced(code_content, language)
-                classes = self._extract_classes_enhanced(code_content, language)
-                imports = self._extract_imports_enhanced(code_content, language)
+                try:
+                    functions = self._extract_functions_enhanced(code_content, language)
+                    classes = self._extract_classes_enhanced(code_content, language)
+                    imports = self._extract_imports_enhanced(code_content, language)
+                except Exception as e:
+                    logger.warning(f"Failed to extract code elements: {e}")
+                    functions = []
+                    classes = []
+                    imports = []
 
                 code_block = CodeBlock(
                     language=language.lower(),
@@ -880,8 +972,20 @@ Return only valid JSON:"""
 
         if language in patterns:
             for pattern in patterns[language]:
-                matches = re.findall(pattern, code)
-                functions.extend(matches)
+                try:
+                    matches = re.findall(pattern, code)
+                    # Handle both string and tuple results
+                    for match in matches:
+                        if isinstance(match, tuple):
+                            # Multiple groups - add non-empty ones
+                            functions.extend([m for m in match if m and m.strip()])
+                        elif isinstance(match, str):
+                            # Single group - add if non-empty
+                            if match and match.strip():
+                                functions.append(match.strip())
+                except Exception as e:
+                    logger.warning(f"Failed to extract functions with pattern {pattern}: {e}")
+                    continue
 
         return list(set(functions))
 
@@ -903,8 +1007,20 @@ Return only valid JSON:"""
 
         if language in patterns:
             for pattern in patterns[language]:
-                matches = re.findall(pattern, code)
-                classes.extend(matches)
+                try:
+                    matches = re.findall(pattern, code)
+                    # Handle both string and tuple results
+                    for match in matches:
+                        if isinstance(match, tuple):
+                            # Multiple groups - add non-empty ones
+                            classes.extend([m for m in match if m and m.strip()])
+                        elif isinstance(match, str):
+                            # Single group - add if non-empty
+                            if match and match.strip():
+                                classes.append(match.strip())
+                except Exception as e:
+                    logger.warning(f"Failed to extract classes with pattern {pattern}: {e}")
+                    continue
 
         return list(set(classes))
 
@@ -933,8 +1049,20 @@ Return only valid JSON:"""
 
         if language in patterns:
             for pattern in patterns[language]:
-                matches = re.findall(pattern, code)
-                imports.extend(matches)
+                try:
+                    matches = re.findall(pattern, code)
+                    # Handle both string and tuple results
+                    for match in matches:
+                        if isinstance(match, tuple):
+                            # Multiple groups - add non-empty ones
+                            imports.extend([m for m in match if m and m.strip()])
+                        elif isinstance(match, str):
+                            # Single group - add if non-empty
+                            if match and match.strip():
+                                imports.append(match.strip())
+                except Exception as e:
+                    logger.warning(f"Failed to extract imports with pattern {pattern}: {e}")
+                    continue
 
         return list(set(imports))
 

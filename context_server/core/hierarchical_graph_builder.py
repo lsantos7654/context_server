@@ -312,9 +312,40 @@ class HierarchicalGraphBuilder:
 
         block_index = 0
         for pattern in code_block_patterns:
+            logger.debug(f"Processing pattern: {pattern.pattern}")
             for match in pattern.finditer(content):
-                language = match.group(1) if pattern.groups >= 2 else None
-                code_content = match.group(2) if pattern.groups >= 2 else match.group(1)
+                try:
+                    # Debug logging for match analysis
+                    logger.debug(f"Match found: {match.group(0)[:100]}...")
+                    logger.debug(f"Match groups: {match.groups()}")
+                    logger.debug(f"Groups count: {len(match.groups())}")
+                    logger.debug(f"Group types: {[type(g) for g in match.groups()]}")
+                    
+                    # Handle different pattern structures
+                    if len(match.groups()) >= 2:
+                        # Pattern like: ```(language)?\n(content)\n```
+                        language = match.group(1)
+                        code_content = match.group(2)
+                        logger.debug(f"Two groups - language: {repr(language)}, code_content length: {len(code_content) if code_content else 0}")
+                    elif len(match.groups()) == 1:
+                        # Pattern like: <code>(content)</code> or `(content)`
+                        language = None
+                        code_content = match.group(1)
+                        logger.debug(f"One group - code_content length: {len(code_content) if code_content else 0}")
+                    else:
+                        # Pattern without groups
+                        language = None
+                        code_content = match.group(0)
+                        logger.debug(f"No groups - using full match, length: {len(code_content) if code_content else 0}")
+                    
+                    logger.debug(f"Extracted language: {repr(language)}, code_content type: {type(code_content)}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing match in hierarchical_graph_builder: {e}")
+                    logger.error(f"Match object: {match}")
+                    logger.error(f"Match groups: {match.groups()}")
+                    logger.error(f"Pattern: {pattern.pattern}")
+                    raise
 
                 # Skip very short code snippets
                 if len(code_content.strip()) < 10:
