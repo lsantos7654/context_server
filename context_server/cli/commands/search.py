@@ -296,9 +296,12 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
         score = result["score"]
         title = result["title"]
         url = result.get("url", "")
+        page_url = result.get("page_url", url)  # Use page URL if available
         content = result["content"]
         doc_id = result.get("document_id", "N/A")
         content_type = result.get("content_type", "chunk")
+        base_url = result.get("base_url", "")
+        is_individual_page = result.get("is_individual_page", False)
 
         # Create header with score, document ID, and content type
         header = (
@@ -307,19 +310,66 @@ def display_results_rich(results: list, query: str, show_content: bool = True):
 
         # Create title section
         title_text = f"[bold blue]{title}[/bold blue]"
-        if url:
+
+        # Show page URL if different from base URL
+        if page_url and page_url != base_url:
+            title_text += f"\n[dim blue]{page_url}[/dim blue]"
+        elif url:
             title_text += f"\n[dim blue]{url}[/dim blue]"
+
+        # Show base URL if this is an individual page
+        if is_individual_page and base_url and base_url != page_url:
+            title_text += f"\n[dim cyan]From: {base_url}[/dim cyan]"
 
         # Add document ID as a separate line
         title_text += f"\n[dim cyan]Document ID: {doc_id}[/dim cyan]"
+
+        # Add metadata information
+        metadata = result.get("metadata", {})
+        source_type = result.get("source_type", metadata.get("source_type", "Unknown"))
+        chunk_index = result.get("chunk_index", "N/A")
+        extraction_time = metadata.get("extraction_time", "")
+
+        # Add source type and chunk info
+        title_text += (
+            f"\n[dim white]Source: {source_type} | Chunk: {chunk_index}[/dim white]"
+        )
+
+        # Add extraction timestamp if available
+        if extraction_time:
+            # Format the timestamp nicely
+            try:
+                from datetime import datetime
+
+                dt = datetime.fromisoformat(extraction_time.replace("Z", "+00:00"))
+                formatted_time = dt.strftime("%Y-%m-%d %H:%M")
+                title_text += f"\n[dim white]Extracted: {formatted_time}[/dim white]"
+            except:
+                title_text += (
+                    f"\n[dim white]Extracted: {extraction_time[:16]}[/dim white]"
+                )
+
+        # Add extraction statistics if available for crawl4ai sources
+        if source_type == "crawl4ai":
+            total_links = metadata.get("total_links_found")
+            successful = metadata.get("successful_extractions")
+            if total_links and successful:
+                title_text += f"\n[dim green]Extraction: {successful}/{total_links} pages successful[/dim green]"
 
         # Add content type indicator
         if content_type == "expanded_chunk":
             # Show actual line count for expanded context
             line_count = len(content.split("\n"))
-            title_text += (
-                f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
-            )
+            expansion_info = result.get("expansion_info", {})
+            if expansion_info:
+                original_lines = expansion_info.get("original_lines", "Unknown")
+                expanded_lines = expansion_info.get("expanded_lines", "Unknown")
+                title_text += (
+                    f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
+                    f"\n[dim yellow]Original: {original_lines} → Expanded: {expanded_lines}[/dim yellow]"
+                )
+            else:
+                title_text += f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
 
         if show_content:
             # Highlight query terms in content (simple highlighting)

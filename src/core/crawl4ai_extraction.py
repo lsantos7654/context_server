@@ -176,12 +176,8 @@ class Crawl4aiExtractor:
                 if not extracted_contents:
                     return ExtractionResult.error("No content successfully extracted")
 
-                # Combine all content
-                combined_content = "\n\n---\n\n".join(
-                    [item["content"] for item in extracted_contents]
-                )
-
-                metadata = {
+                # Return metadata for all extracted contents instead of combining
+                base_metadata = {
                     "source_type": "crawl4ai",
                     "base_url": url,
                     "total_links_found": len(internal_links),
@@ -198,8 +194,16 @@ class Crawl4aiExtractor:
                     },
                 )
 
+                # For backwards compatibility, combine content but also store individual pages
+                combined_content = "\n\n---\n\n".join(
+                    [item["content"] for item in extracted_contents]
+                )
+
+                # Add individual page info to metadata
+                base_metadata["extracted_pages"] = extracted_contents
+
                 return ExtractionResult(
-                    success=True, content=combined_content, metadata=metadata
+                    success=True, content=combined_content, metadata=base_metadata
                 )
 
         except Exception as e:

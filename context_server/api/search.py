@@ -147,22 +147,29 @@ async def search_context(
                 prefer_boundaries=True,
             )
 
-        # Format results
-        formatted_results = [
-            {
+        # Format results with enhanced metadata
+        formatted_results = []
+        for result in results:
+            metadata = result.get("metadata", {})
+            formatted_result = {
                 "id": result["id"],
                 "document_id": result.get("document_id"),
                 "title": result["title"],
                 "content": result["content"],
                 "score": result["score"],
-                "metadata": result["metadata"],
+                "metadata": metadata,
                 "url": result.get("url"),
                 "chunk_index": result.get("chunk_index"),
                 "content_type": result.get("content_type", "chunk"),
                 "expansion_info": result.get("expansion_info"),
+                # Extract useful metadata to top level for easier access
+                "page_url": metadata.get("page_url", result.get("url")),
+                "source_type": metadata.get("source_type"),
+                "base_url": metadata.get("base_url"),
+                "is_individual_page": metadata.get("is_individual_page", False),
+                "source_title": metadata.get("source_title"),
             }
-            for result in results
-        ]
+            formatted_results.append(formatted_result)
 
         execution_time_ms = int((time.time() - start_time) * 1000)
 

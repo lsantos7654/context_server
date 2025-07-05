@@ -74,16 +74,42 @@ class DocumentProcessor:
             if not result.success:
                 return ProcessingResult(documents=[], success=False, error=result.error)
 
-            # Create a single document from the combined content
-            # In the future, we might want to process individual pages separately
-            document = await self._process_content(
-                content=result.content,
-                url=url,
-                title=f"Documentation from {url}",
-                metadata=result.metadata,
-            )
+            # Create separate documents for each extracted page if available
+            documents = []
+            extracted_pages = result.metadata.get("extracted_pages", [])
 
-            return ProcessingResult(documents=[document], success=True)
+            if extracted_pages:
+                # Process each page as a separate document
+                for page_info in extracted_pages:
+                    page_url = page_info["url"]
+                    page_content = page_info["content"]
+
+                    # Create page-specific metadata
+                    page_metadata = result.metadata.copy()
+                    page_metadata["page_url"] = page_url
+                    page_metadata["is_individual_page"] = True
+
+                    # Create document title from page URL
+                    page_title = self._create_title_from_url(page_url, url)
+
+                    document = await self._process_content(
+                        content=page_content,
+                        url=page_url,  # Use individual page URL
+                        title=page_title,
+                        metadata=page_metadata,
+                    )
+                    documents.append(document)
+            else:
+                # Fallback to single document if no individual pages
+                document = await self._process_content(
+                    content=result.content,
+                    url=url,
+                    title=f"Documentation from {url}",
+                    metadata=result.metadata,
+                )
+                documents = [document]
+
+            return ProcessingResult(documents=documents, success=True)
 
         except Exception as e:
             logger.error(f"Failed to process URL {url}: {e}")
@@ -222,3 +248,28 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Failed to process content for {title}: {e}")
             raise
+
+    def _create_title_from_url(self, page_url: str, base_url: str) -> str:
+        """Create a meaningful title from the page URL."""
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(page_url)
+
+            # Extract path parts and create a title
+            path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+
+            if path_parts:
+                # Use the last meaningful part of the path
+                title_part = path_parts[-1].replace("-", " ").replace("_", " ").title()
+                if title_part and title_part.lower() not in ["index", "home", "main"]:
+                    return f"{title_part} - {parsed.netloc}"
+
+            # Fallback to just the domain and path
+            if parsed.path and parsed.path != "/":
+                return f"{parsed.netloc}{parsed.path}"
+
+            return f"Documentation from {page_url}"
+
+        except Exception:
+            return f"Documentation from {page_url}"
