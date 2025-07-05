@@ -316,6 +316,7 @@ def status(job_id):
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.argument("document_id")
 @click.option("--output-file", help="Save content to file instead of displaying")
+@click.help_option("-h", "--help")
 def show(context_name, document_id, output_file):
     """Show raw document content.
 
@@ -324,9 +325,93 @@ def show(context_name, document_id, output_file):
         document_id: Document ID
         output_file: Output file path
     """
-    # This would require an API endpoint for getting raw document content
-    echo_error("Document content display is not yet implemented")
-    echo_info("Raw document access will be available in a future version")
+
+    async def show_document():
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    get_api_url(f"contexts/{context_name}/documents/{document_id}/raw"),
+                    timeout=30.0,
+                )
+
+                if response.status_code == 200:
+                    document = response.json()
+
+                    if output_file:
+                        # Save to file
+                        with open(output_file, "w", encoding="utf-8") as f:
+                            f.write(document["content"])
+                        echo_success(f"Document content saved to {output_file}")
+                    else:
+                        # Display in terminal
+                        from rich.panel import Panel
+                        from rich.syntax import Syntax
+
+                        # Create header with document info
+                        header = f"Document: {document['title']}"
+                        if document.get("url"):
+                            header += f"\nURL: {document['url']}"
+                        header += f"\nID: {document['id']}"
+                        header += f"\nSource: {document.get('source_type', 'unknown')}"
+                        if document.get("created_at"):
+                            header += f"\nCreated: {document['created_at'][:19]}"
+
+                        # Try to detect if content is markdown/code for syntax highlighting
+                        content = document["content"]
+                        url = document.get("url", "")
+
+                        if url.endswith(".md") or "markdown" in document.get(
+                            "metadata", {}
+                        ):
+                            syntax = Syntax(
+                                content, "markdown", theme="monokai", line_numbers=True
+                            )
+                        elif url.endswith(".py"):
+                            syntax = Syntax(
+                                content, "python", theme="monokai", line_numbers=True
+                            )
+                        elif url.endswith(".js"):
+                            syntax = Syntax(
+                                content,
+                                "javascript",
+                                theme="monokai",
+                                line_numbers=True,
+                            )
+                        elif url.endswith(".html"):
+                            syntax = Syntax(
+                                content, "html", theme="monokai", line_numbers=True
+                            )
+                        else:
+                            syntax = content
+
+                        # Display in panel
+                        panel = Panel(
+                            syntax,
+                            title=f"[bold blue]{document['title']}[/bold blue]",
+                            subtitle=f"[dim]{len(content):,} characters[/dim]",
+                            border_style="blue",
+                            padding=(1, 2),
+                        )
+
+                        # Print header info first
+                        console.print(f"[bold cyan]{header}[/bold cyan]")
+                        console.print()
+                        console.print(panel)
+
+                elif response.status_code == 404:
+                    echo_error(
+                        f"Document '{document_id}' not found in context '{context_name}'"
+                    )
+                else:
+                    echo_error(
+                        f"Failed to get document: {response.status_code} - {response.text}"
+                    )
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: context-server server up")
+
+    asyncio.run(show_document())
 
 
 @docs.command()

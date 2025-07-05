@@ -192,7 +192,23 @@ async def get_document_raw(
     context_name: str, doc_id: str, db: DatabaseManager = Depends(get_db_manager)
 ):
     """Get raw document content."""
-    # TODO: Implement getting raw document content
-    raise HTTPException(
-        status_code=501, detail="Raw document retrieval not yet implemented"
-    )
+    try:
+        # Get context
+        context = await db.get_context_by_name(context_name)
+        if not context:
+            raise HTTPException(status_code=404, detail="Context not found")
+
+        # Get document
+        document = await db.get_document_by_id(context["id"], doc_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        return document
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to get document {doc_id} from context {context_name}: {e}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to get document")
