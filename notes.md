@@ -41,7 +41,10 @@ I'm now trying to think from an llm perspective how can I provide enough endpoin
 
 Currently they can semantic search, get more context around the result, and retrieve the entire page. What can we also add that would make search better? What are the advantage of adding a summary and including this in the semantic search as a weight to the page? I can imaging having an endpoint that can just take a question and do semantic search on that query. It would perhaps be advantageous to have some summaries that might answer that question be part of the embedding.
 
+---
+
+will need to update makefile at some point
 
 Can we just have `ctx claude` which will setup claude with a proper claude.md in the current directory, and allow claude to know how to use this mcp server. It would also know how to scrape pages and list all of the docs and even manage different contexts
 
-update audit to check claude.md enforce style guide and remove/consolidate old logic
+update audit to check claude.md enforce style guide and remove/consolidate old logic. Check and fix-precommit, this should be the last thing checked and fixed. Only fix pre-commit after the refactor. Come up with an extensive todo list to fix the issues. Everything should be saved to a markdown file. The main focus of these audits are to reduce code size and complexity. We should always take a generalized approach to problems, so whenever we hardcode something this should be a red flag

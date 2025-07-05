@@ -681,9 +681,9 @@ class DatabaseManager:
                 "url": row["url"],
                 "content": row["content"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                "created_at": row["indexed_at"].isoformat()
-                if row["indexed_at"]
-                else None,
+                "created_at": (
+                    row["indexed_at"].isoformat() if row["indexed_at"] else None
+                ),
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
             }
@@ -711,9 +711,9 @@ class DatabaseManager:
                 "url": row["url"],
                 "content": row["content"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                "created_at": row["indexed_at"].isoformat()
-                if row["indexed_at"]
-                else None,
+                "created_at": (
+                    row["indexed_at"].isoformat() if row["indexed_at"] else None
+                ),
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
             }

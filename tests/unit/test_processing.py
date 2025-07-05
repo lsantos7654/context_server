@@ -395,7 +395,7 @@ class TestDocumentProcessor:
         mock_extraction_result.content = "Combined content from all pages"
         mock_extraction_result.metadata = {
             "source_type": "crawl4ai",
-            "base_url": "https://example.com"
+            "base_url": "https://example.com",
             # No extracted_pages field
         }
 

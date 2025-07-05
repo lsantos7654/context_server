@@ -732,9 +732,11 @@ class EnhancedDatabaseManager:
                     {
                         "content_type": row["content_type"],
                         "count": row["count"],
-                        "avg_code_percentage": float(row["avg_code_percentage"])
-                        if row["avg_code_percentage"]
-                        else 0.0,
+                        "avg_code_percentage": (
+                            float(row["avg_code_percentage"])
+                            if row["avg_code_percentage"]
+                            else 0.0
+                        ),
                     }
                     for row in content_types
                 ],
@@ -1185,18 +1187,20 @@ class EnhancedDatabaseManager:
                         "id": str(row["id"]),
                         "content": row["content"],
                         "title": row["title"],
-                        "url": row["url"] or row["source_url"]
-                        if "source_url" in row
-                        else row["url"],
+                        "url": (
+                            row["url"] or row["source_url"]
+                            if "source_url" in row
+                            else row["url"]
+                        ),
                         "source_url": row["url"],
                         "score": float(row["score"]),
                         "similarity": float(row["score"]),  # Alias for compatibility
                         "content_type": row["content_type"] or "general",
                         "primary_language": row["primary_language"],
                         "summary": row["summary"] or "",
-                        "metadata": json.loads(row["metadata"])
-                        if row["metadata"]
-                        else {},
+                        "metadata": (
+                            json.loads(row["metadata"]) if row["metadata"] else {}
+                        ),
                     }
                     results.append(result)
 
@@ -1240,18 +1244,20 @@ class EnhancedDatabaseManager:
                         "id": str(row["id"]),
                         "content": row["content"],
                         "title": row["title"],
-                        "url": row["url"] or row["source_url"]
-                        if "source_url" in row
-                        else row["url"],
+                        "url": (
+                            row["url"] or row["source_url"]
+                            if "source_url" in row
+                            else row["url"]
+                        ),
                         "source_url": row["url"],
                         "score": float(row["score"]),
                         "similarity": float(row["score"]),  # Alias for compatibility
                         "content_type": row["content_type"] or "general",
                         "primary_language": row["primary_language"],
                         "summary": row["summary"] or "",
-                        "metadata": json.loads(row["metadata"])
-                        if row["metadata"]
-                        else {},
+                        "metadata": (
+                            json.loads(row["metadata"]) if row["metadata"] else {}
+                        ),
                     }
                     results.append(result)
 

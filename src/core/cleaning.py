@@ -154,12 +154,12 @@ class MarkdownCleaner:
         cleaned_lines = []
         in_navigation = False
         in_toc = False
-        skip_until_content = True
+        skip_until_content = False  # Changed to False to not skip content by default
 
         for line in lines:
             line_stripped = line.strip()
 
-            # Skip initial navigation elements until we find content
+            # Only skip initial navigation if it looks like actual navigation
             if skip_until_content:
                 # Look for actual content markers (headings that aren't navigation)
                 if line_stripped.startswith("# ") and not any(

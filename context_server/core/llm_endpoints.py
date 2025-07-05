@@ -299,12 +299,14 @@ class LLMOptimizedEndpoints:
             "entities": entities,
             "requires_code": question_type
             in ["how_to", "code_example", "troubleshooting"],
-            "complexity": "high"
-            if any(
-                word in question_lower
-                for word in ["advanced", "complex", "optimization", "performance"]
-            )
-            else "medium",
+            "complexity": (
+                "high"
+                if any(
+                    word in question_lower
+                    for word in ["advanced", "complex", "optimization", "performance"]
+                )
+                else "medium"
+            ),
         }
 
     def _extract_entities(self, text: str) -> List[str]:
@@ -803,11 +805,13 @@ This information is compiled from the sources that best match your question."""
             "user_level": user_level,
             "entities": entities,
             "preferred_content_types": preferred_types,
-            "complexity_preference": "low"
-            if user_level == "beginner"
-            else "medium"
-            if user_level == "intermediate"
-            else "high",
+            "complexity_preference": (
+                "low"
+                if user_level == "beginner"
+                else "medium"
+                if user_level == "intermediate"
+                else "high"
+            ),
         }
 
     async def _find_diverse_content(

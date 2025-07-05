@@ -645,9 +645,11 @@ class AdvancedDocumentProcessor:
         recommendations["expected_performance"] = {
             "quality_score": 0.8 if content_analysis.content_type != "general" else 0.7,
             "processing_time": "medium" if len(content.split()) > 1000 else "fast",
-            "storage_efficiency": "high"
-            if recommendations["primary_strategy"] in ["single", "summary_enhanced"]
-            else "medium",
+            "storage_efficiency": (
+                "high"
+                if recommendations["primary_strategy"] in ["single", "summary_enhanced"]
+                else "medium"
+            ),
         }
 
         return recommendations

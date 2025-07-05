@@ -277,9 +277,11 @@ class CompositeEmbeddingGenerator:
                 embedding=result["embedding"],
                 model=result["model"],
                 dimension=result["dimension"],
-                strategy=strategy.value
-                if isinstance(strategy, EmbeddingStrategy)
-                else str(strategy),
+                strategy=(
+                    strategy.value
+                    if isinstance(strategy, EmbeddingStrategy)
+                    else str(strategy)
+                ),
                 metadata={
                     "level": level,
                     "text_length": len(text),
@@ -829,7 +831,9 @@ class EnhancedEmbeddingStrategy:
         return {
             "strategy": "multi_model",
             "multi_model_embeddings": multi_model_results,
-            "primary_embedding": list(multi_model_results.values())[0][0]
-            if multi_model_results
-            else None,
+            "primary_embedding": (
+                list(multi_model_results.values())[0][0]
+                if multi_model_results
+                else None
+            ),
         }

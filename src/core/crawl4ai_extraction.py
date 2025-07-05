@@ -351,3 +351,17 @@ class Crawl4aiExtractor:
             filename = "index.md"
 
         return filename
+
+    def _clean_content(self, content: str) -> str:
+        """Clean content using the internal cleaner.
+
+        This method provides backward compatibility for tests that expect
+        a _clean_content method on the extractor.
+
+        Args:
+            content: Raw content to clean
+
+        Returns:
+            Cleaned content
+        """
+        return self.cleaner.clean_content(content)
