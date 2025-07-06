@@ -33,14 +33,15 @@ def claude():
 
 @claude.command()
 @click.option(
-    "--claude-config-dir",
-    default=None,
-    help="Claude configuration directory (auto-detected if not provided)",
+    "--scope",
+    type=click.Choice(["project", "user", "local"]),
+    default="project",
+    help="MCP server scope (project, user, or local)",
 )
 @click.option(
     "--overwrite",
     is_flag=True,
-    help="Overwrite existing configuration files",
+    help="Remove existing server before adding",
 )
 @click.option(
     "--show-paths",
@@ -48,98 +49,46 @@ def claude():
     help="Show detailed path information during installation",
 )
 @rich_help_option("-h", "--help")
-def install(claude_config_dir, overwrite, show_paths):
-    """Install Context Server MCP integration for Claude.
+def install(scope, overwrite, show_paths):
+    """Install Context Server MCP integration for Claude Code.
 
-    Sets up ~/.config/claude/config.json with Context Server MCP server configuration.
-    This is all you need - no background processes or daemons required.
+    DEPRECATED: Use 'ctx init' instead for simpler project setup.
+
+    This command is deprecated in favor of the simpler 'ctx init' command
+    which automatically sets up MCP integration for the current project.
     """
-    echo_info("Installing Context Server MCP integration for Claude...")
-
-    # Detect Claude configuration directory
-    if claude_config_dir is None:
-        claude_config_dir = _detect_claude_config_dir()
-
-    if claude_config_dir is None:
-        # Create default Claude config directory
-        default_path = Path.home() / ".config" / "claude"
-        default_path.mkdir(parents=True, exist_ok=True)
-        claude_config_dir = str(default_path)
-        echo_info(f"Created Claude configuration directory: {claude_config_dir}")
-
-    claude_config_path = Path(claude_config_dir)
-    echo_info(f"Using Claude configuration directory: {claude_config_path}")
-
-    # Get MCP server script path
-    mcp_script_path = _get_mcp_script_path()
-    if not mcp_script_path:
-        echo_error("MCP server script not found")
-        echo_info("Make sure Context Server is properly installed")
-        return
-
-    if show_paths:
-        echo_info(f"Debug: MCP script path resolved to: {mcp_script_path}")
-        echo_info(f"Debug: Script exists: {mcp_script_path.exists()}")
-        echo_info(f"Debug: Script is file: {mcp_script_path.is_file()}")
-        try:
-            import context_server
-
-            package_path = Path(context_server.__file__).parent.parent
-            echo_info(f"Debug: Context Server package found at: {package_path}")
-        except ImportError:
-            echo_info("Debug: Context Server package not importable")
-
-    # Create Claude configuration file
-    claude_config_file = claude_config_path / "config.json"
-
-    # Load existing configuration or create new
-    if claude_config_file.exists() and not overwrite:
-        try:
-            with open(claude_config_file, "r") as f:
-                config = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            config = {}
-
-        echo_info(f"Updating existing configuration: {claude_config_file}")
-    else:
-        config = {}
-        echo_info(f"Creating new configuration: {claude_config_file}")
-
-    # Ensure mcpServers section exists
-    if "mcpServers" not in config:
-        config["mcpServers"] = {}
-
-    # Add Context Server MCP configuration
-    config["mcpServers"]["context-server"] = {
-        "command": "python",
-        "args": [str(mcp_script_path)],
-        "env": {"CONTEXT_SERVER_URL": "http://localhost:8000"},
-    }
-
-    # Write configuration
-    try:
-        with open(claude_config_file, "w") as f:
-            json.dump(config, f, indent=2)
-
-        echo_success(f"Claude MCP configuration installed: {claude_config_file}")
-    except Exception as e:
-        echo_error(f"Failed to write configuration: {e}")
-        return
-
-    # Show what was configured
-    echo_info("Configuration details:")
-    echo_info(f"  • MCP Server: context-server")
-    echo_info(f"  • Script: {mcp_script_path}")
-    echo_info(f"  • Context Server URL: http://localhost:8000")
-
-    # Show next steps
-    echo_success("Installation complete!")
-    echo_info("Next steps:")
-    echo_info("  1. Start Context Server: ctx server up")
-    echo_info("  2. Restart Claude (if running)")
-    echo_info("  3. Test: Ask Claude to 'list all contexts'")
+    echo_warning("DEPRECATED: 'ctx claude install' is deprecated")
+    echo_info("Use 'ctx init' instead for simpler project setup")
     echo_info("")
-    echo_info("The MCP server will start automatically when Claude connects")
+    echo_info(
+        "The new command automatically configures MCP for your current directory:"
+    )
+    echo_info("  ctx init                    # Set up MCP in current project")
+    echo_info("  ctx init --overwrite        # Update existing configuration")
+    echo_info("")
+    echo_info("Running equivalent 'ctx init' command...")
+
+    # Convert to ctx init equivalent
+    from click.testing import CliRunner
+
+    from ..main import cli
+
+    runner = CliRunner()
+
+    # Run ctx init with overwrite if requested
+    args = ["init"]
+    if overwrite:
+        args.append("--overwrite")
+
+    result = runner.invoke(cli, args)
+
+    if result.exit_code == 0:
+        echo_success("MCP integration set up successfully!")
+        echo_info("Consider using 'ctx init' directly in the future")
+    else:
+        echo_error("Failed to set up MCP integration")
+        if result.output:
+            echo_info(result.output)
 
 
 @claude.command()
@@ -161,11 +110,14 @@ def config():
     asyncio.run(check_server())
 
     # Show MCP server configuration
-    mcp_script_path = _get_mcp_script_path()
-    if mcp_script_path:
-        echo_success(f"MCP Server Script: {mcp_script_path}")
+    mcp_executable_path = _get_mcp_executable_path()
+    if mcp_executable_path:
+        echo_success(f"MCP Server Executable: {mcp_executable_path}")
     else:
-        echo_error("MCP Server Script: Not found")
+        echo_error(
+            "MCP Server Executable: Not found at ~/.local/bin/context-server-mcp"
+        )
+        echo_info("Install with: uv tool install -e .")
 
     # Show Claude configuration
     claude_config_dir = _detect_claude_config_dir()
@@ -185,7 +137,8 @@ def config():
                 echo_success("Context Server MCP: Configured")
                 server_config = config["mcpServers"]["context-server"]
                 echo_info(f"  Command: {server_config['command']}")
-                echo_info(f"  Script: {server_config['args'][0]}")
+                if server_config.get("args"):
+                    echo_info(f"  Args: {server_config['args']}")
                 echo_info(
                     f"  URL: {server_config.get('env', {}).get('CONTEXT_SERVER_URL', 'Not set')}"
                 )
@@ -238,13 +191,14 @@ def test():
     if not asyncio.run(check_server()):
         return
 
-    # Test 2: Check MCP server script
-    echo_info("2. Testing MCP server script...")
-    mcp_script_path = _get_mcp_script_path()
-    if mcp_script_path:
-        echo_success(f"MCP server script found: {mcp_script_path}")
+    # Test 2: Check MCP server executable
+    echo_info("2. Testing MCP server executable...")
+    mcp_executable_path = _get_mcp_executable_path()
+    if mcp_executable_path:
+        echo_success(f"MCP server executable found: {mcp_executable_path}")
     else:
-        echo_error("MCP server script not found")
+        echo_error("MCP server executable not found at ~/.local/bin/context-server-mcp")
+        echo_info("Install with: uv tool install -e .")
         return
 
     # Test 3: Test MCP server startup (quick test)
@@ -333,40 +287,18 @@ def _detect_claude_config_dir() -> Optional[str]:
     return None
 
 
-def _get_mcp_script_path() -> Optional[Path]:
-    """Get the MCP server script path, working from any directory.
+def _get_mcp_executable_path() -> Optional[Path]:
+    """Get the MCP server executable path.
 
     Returns:
-        Path to start_mcp_server.py if found, None otherwise
-
-    Strategy:
-        1. Use installed package location (works anywhere)
-        2. Fall back to current directory (development mode)
-        3. Return None if not found
+        Path to context-server-mcp executable if found, None otherwise
     """
-    try:
-        # Method 1: Use the installed package path (preferred)
-        import context_server
+    # Check for uv tool installation
+    uv_tool_path = Path.home() / ".local" / "bin" / "context-server-mcp"
+    if uv_tool_path.exists() and uv_tool_path.is_file():
+        return uv_tool_path
 
-        project_root = Path(context_server.__file__).parent.parent
-        script_path = project_root / "scripts" / "start_mcp_server.py"
-
-        if script_path.exists() and script_path.is_file():
-            return script_path
-
-        # Method 2: Fallback to current working directory (for development)
-        fallback_path = Path.cwd() / "scripts" / "start_mcp_server.py"
-        if fallback_path.exists() and fallback_path.is_file():
-            return fallback_path
-
-        return None
-
-    except ImportError:
-        # Method 3: Last resort - try current directory
-        fallback_path = Path.cwd() / "scripts" / "start_mcp_server.py"
-        if fallback_path.exists() and fallback_path.is_file():
-            return fallback_path
-        return None
+    return None
 
 
 def _create_claude_documentation(

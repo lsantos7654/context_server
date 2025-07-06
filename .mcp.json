@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "context-server": {
+      "type": "stdio",
+      "command": "/Users/santos/.local/bin/context-server-mcp",
+      "args": [],
+      "env": {
+        "CONTEXT_SERVER_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
