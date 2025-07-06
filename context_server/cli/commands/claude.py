@@ -54,8 +54,13 @@ def claude():
     is_flag=True,
     help="Overwrite existing configuration files",
 )
+@click.option(
+    "--show-paths",
+    is_flag=True,
+    help="Show detailed path information during installation",
+)
 @click.help_option("-h", "--help")
-def install(claude_config_dir, overwrite):
+def install(claude_config_dir, overwrite, show_paths):
     """Install Context Server MCP integration for Claude.
 
     Sets up ~/.config/claude/config.json with Context Server MCP server configuration.
@@ -77,16 +82,24 @@ def install(claude_config_dir, overwrite):
     claude_config_path = Path(claude_config_dir)
     echo_info(f"Using Claude configuration directory: {claude_config_path}")
 
-    # Get project root and MCP server script path
-    project_root = Path.cwd()
-    mcp_script_path = project_root / "scripts" / "start_mcp_server.py"
-
-    if not mcp_script_path.exists():
-        echo_error(f"MCP server script not found: {mcp_script_path}")
-        echo_info(
-            "Make sure you're running this command from the Context Server project root"
-        )
+    # Get MCP server script path
+    mcp_script_path = _get_mcp_script_path()
+    if not mcp_script_path:
+        echo_error("MCP server script not found")
+        echo_info("Make sure Context Server is properly installed")
         return
+
+    if show_paths:
+        echo_info(f"Debug: MCP script path resolved to: {mcp_script_path}")
+        echo_info(f"Debug: Script exists: {mcp_script_path.exists()}")
+        echo_info(f"Debug: Script is file: {mcp_script_path.is_file()}")
+        try:
+            import context_server
+
+            package_path = Path(context_server.__file__).parent.parent
+            echo_info(f"Debug: Context Server package found at: {package_path}")
+        except ImportError:
+            echo_info("Debug: Context Server package not importable")
 
     # Create Claude configuration file
     claude_config_file = claude_config_path / "config.json"
@@ -160,13 +173,11 @@ def config():
     server_running = asyncio.run(check_server())
 
     # Show MCP server configuration
-    project_root = Path.cwd()
-    mcp_script_path = project_root / "scripts" / "start_mcp_server.py"
-
-    if mcp_script_path.exists():
+    mcp_script_path = _get_mcp_script_path()
+    if mcp_script_path:
         echo_success(f"MCP Server Script: {mcp_script_path}")
     else:
-        echo_error(f"MCP Server Script: Not found at {mcp_script_path}")
+        echo_error("MCP Server Script: Not found")
 
     # Show Claude configuration
     claude_config_dir = _detect_claude_config_dir()
@@ -241,13 +252,11 @@ def test():
 
     # Test 2: Check MCP server script
     echo_info("2. Testing MCP server script...")
-    project_root = Path.cwd()
-    mcp_script_path = project_root / "scripts" / "start_mcp_server.py"
-
-    if mcp_script_path.exists():
+    mcp_script_path = _get_mcp_script_path()
+    if mcp_script_path:
         echo_success(f"MCP server script found: {mcp_script_path}")
     else:
-        echo_error(f"MCP server script not found: {mcp_script_path}")
+        echo_error("MCP server script not found")
         return
 
     # Test 3: Test MCP server startup (quick test)
@@ -334,6 +343,42 @@ def _detect_claude_config_dir() -> Optional[str]:
             return str(path)
 
     return None
+
+
+def _get_mcp_script_path() -> Optional[Path]:
+    """Get the MCP server script path, working from any directory.
+
+    Returns:
+        Path to start_mcp_server.py if found, None otherwise
+
+    Strategy:
+        1. Use installed package location (works anywhere)
+        2. Fall back to current directory (development mode)
+        3. Return None if not found
+    """
+    try:
+        # Method 1: Use the installed package path (preferred)
+        import context_server
+
+        project_root = Path(context_server.__file__).parent.parent
+        script_path = project_root / "scripts" / "start_mcp_server.py"
+
+        if script_path.exists() and script_path.is_file():
+            return script_path
+
+        # Method 2: Fallback to current working directory (for development)
+        fallback_path = Path.cwd() / "scripts" / "start_mcp_server.py"
+        if fallback_path.exists() and fallback_path.is_file():
+            return fallback_path
+
+        return None
+
+    except ImportError:
+        # Method 3: Last resort - try current directory
+        fallback_path = Path.cwd() / "scripts" / "start_mcp_server.py"
+        if fallback_path.exists() and fallback_path.is_file():
+            return fallback_path
+        return None
 
 
 def _create_claude_documentation(
