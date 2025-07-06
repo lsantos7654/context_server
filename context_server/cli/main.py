@@ -257,12 +257,6 @@ def register_commands():
     except ImportError as e:
         echo_error(f"Failed to load completion commands: {e}")
 
-    try:
-        from .commands.claude import claude
-
-        cli.add_command(claude)
-    except ImportError as e:
-        echo_error(f"Failed to load claude commands: {e}")
 
 
 # Register commands when module is imported

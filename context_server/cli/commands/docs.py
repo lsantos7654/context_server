@@ -16,6 +16,7 @@ from ..help_formatter import rich_help_option
 from ..utils import (
     APIClient,
     complete_context_name,
+    complete_job_id,
     confirm_action,
     echo_error,
     echo_info,
@@ -301,7 +302,7 @@ def delete(context_name, document_ids, force):
 
 
 @docs.command()
-@click.argument("job_id")
+@click.argument("job_id", shell_complete=complete_job_id)
 @rich_help_option("-h", "--help")
 def status(job_id):
     """Check the status of a document extraction job.

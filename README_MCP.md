@@ -4,9 +4,10 @@ A Model Context Protocol (MCP) server that enables Claude to autonomously manage
 
 ## Overview
 
-This MCP server provides Claude with 13 essential tools to:
+This MCP server provides Claude with 17 essential tools to:
 - **Create and manage contexts** for organizing documentation
-- **Extract documentation** from websites and files
+- **Extract documentation** from websites and files with real-time job tracking
+- **Monitor and control background jobs** with status checks and cancellation
 - **Search and retrieve content** with hybrid vector/fulltext search
 - **Access code snippets** with metadata and line numbers
 - **Manage documents** with listing and deletion capabilities
@@ -93,6 +94,39 @@ Extract content from local files (PDF, txt, md, rst supported).
 await extract_file("my-docs", "/path/to/document.pdf")
 ```
 
+### Job Management
+
+#### `get_job_status(job_id)`
+Check the status and progress of a document extraction job.
+
+```typescript
+const status = await get_job_status("job_20241206_143021_docs")
+// Returns: { status: "processing", progress: 0.65, metadata: { phase: "chunking_and_embedding", processed_pages: 13, total_pages: 20 } }
+```
+
+#### `cancel_job(job_id)`
+Cancel a running document extraction job.
+
+```typescript
+await cancel_job("job_20241206_143021_docs")
+```
+
+#### `get_active_jobs(context_id?)`
+Get all currently active/running jobs, optionally filtered by context.
+
+```typescript
+const activeJobs = await get_active_jobs()
+// or filter by context
+const contextJobs = await get_active_jobs("ctx_abc123")
+```
+
+#### `cleanup_completed_jobs(days?)`
+Clean up old completed or failed jobs (default: 7 days).
+
+```typescript
+await cleanup_completed_jobs(30) // Clean jobs older than 30 days
+```
+
 ### Search and Retrieval
 
 #### `search_context(context_name, query, mode?, limit?)`
@@ -134,25 +168,40 @@ Delete specific documents from a context.
 // 1. Create a context for Ratatui documentation
 await create_context("ratatui-docs", "Ratatui terminal UI framework documentation")
 
-// 2. Extract the official documentation
-await extract_url("ratatui-docs", "https://ratatui.rs/", 50)
+// 2. Extract the official documentation (returns job_id for tracking)
+const extractResult = await extract_url("ratatui-docs", "https://ratatui.rs/", 50)
+const jobId = extractResult.job_id
 
-// 3. Search for table widget examples
-const searchResults = await search_context(
-  "ratatui-docs",
-  "table widget implementation",
-  "hybrid",
-  5
-)
+// 3. Monitor extraction progress
+let status = await get_job_status(jobId)
+while (status.status === "processing") {
+  console.log(`Progress: ${Math.round(status.progress * 100)}% - ${status.metadata?.phase || 'processing'}`)
+  await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds
+  status = await get_job_status(jobId)
+}
 
-// 4. Get specific code snippets
-const snippets = await get_code_snippets("ratatui-docs", searchResults.results[0].document_id)
+if (status.status === "completed") {
+  console.log(`Extraction completed! Processed ${status.result_data?.documents_processed} documents`)
+  
+  // 4. Search for table widget examples
+  const searchResults = await search_context(
+    "ratatui-docs",
+    "table widget implementation",
+    "hybrid",
+    5
+  )
 
-// 5. Retrieve a specific code snippet for implementation
-const tableCode = await get_code_snippet("ratatui-docs", snippets.snippets[0].id)
+  // 5. Get specific code snippets
+  const snippets = await get_code_snippets("ratatui-docs", searchResults.results[0].document_id)
+
+  // 6. Retrieve a specific code snippet for implementation
+  const tableCode = await get_code_snippet("ratatui-docs", snippets.snippets[0].id)
+} else {
+  console.log(`Extraction failed: ${status.error_message}`)
+}
 ```
 
-### Managing Documentation
+### Managing Documentation and Jobs
 
 ```typescript
 // List all available contexts
@@ -166,6 +215,18 @@ const documents = await list_documents("ratatui-docs", 20, 0)
 
 // Clean up outdated documents
 await delete_documents("ratatui-docs", ["doc-id-1", "doc-id-2"])
+
+// Monitor all active extraction jobs
+const activeJobs = await get_active_jobs()
+console.log(`${activeJobs.total} jobs currently running`)
+
+// Cancel a stuck job if needed
+if (activeJobs.active_jobs.some(job => job.status === "processing" && /* job is stuck */)) {
+  await cancel_job("stuck-job-id")
+}
+
+// Clean up old completed jobs (weekly maintenance)
+await cleanup_completed_jobs(7)
 ```
 
 ## Architecture
@@ -173,7 +234,7 @@ await delete_documents("ratatui-docs", ["doc-id-1", "doc-id-2"])
 ### Components
 
 - **`main.py`** - MCP server entry point with tool registration
-- **`tools.py`** - Implementation of all 13 MCP tools
+- **`tools.py`** - Implementation of all 17 MCP tools
 - **`client.py`** - HTTP client for Context Server API communication
 - **`config.py`** - Configuration management
 

@@ -306,6 +306,101 @@ class ContextServerTools:
                     )
             raise
 
+    # Job Management Tools
+
+    async def get_job_status(self, job_id: str) -> dict[str, Any]:
+        """Get the status of a document extraction job.
+
+        Args:
+            job_id: ID of the job to check (returned from extract_url or extract_file)
+
+        Returns:
+            Dictionary with job status, progress, and metadata including current phase
+
+        Raises:
+            ContextServerError: If job not found
+        """
+        try:
+            result = await self.client.get(f"/api/jobs/{job_id}/status")
+            logger.info(f"Retrieved job status: {job_id} - {result.get('status', 'unknown')}")
+            return result
+
+        except ContextServerError as e:
+            if e.status_code == 404:
+                raise ContextServerError(f"Job '{job_id}' not found")
+            raise
+
+    async def cancel_job(self, job_id: str) -> dict[str, Any]:
+        """Cancel a running document extraction job.
+
+        Args:
+            job_id: ID of the job to cancel
+
+        Returns:
+            Dictionary indicating cancellation success
+
+        Raises:
+            ContextServerError: If job not found or cannot be cancelled
+        """
+        try:
+            result = await self.client.delete(f"/api/jobs/{job_id}")
+            logger.info(f"Cancelled job: {job_id}")
+            return result
+
+        except ContextServerError as e:
+            if e.status_code == 404:
+                raise ContextServerError(f"Job '{job_id}' not found")
+            elif e.status_code == 400:
+                raise ContextServerError(f"Cannot cancel job: {e.message}")
+            raise
+
+    async def cleanup_completed_jobs(self, days: int = 7) -> dict[str, Any]:
+        """Clean up completed/failed jobs older than specified days.
+
+        Args:
+            days: Remove jobs completed/failed more than this many days ago
+
+        Returns:
+            Dictionary with cleanup statistics
+
+        Raises:
+            ContextServerError: If cleanup fails
+        """
+        try:
+            data = {"days": days}
+            result = await self.client.post("/api/admin/jobs/cleanup", data)
+            cleaned_count = result.get("deleted_count", 0)
+            logger.info(f"Cleaned up {cleaned_count} old jobs")
+            return result
+
+        except ContextServerError:
+            raise
+
+    async def get_active_jobs(self, context_id: str = None) -> dict[str, Any]:
+        """Get all active jobs, optionally filtered by context.
+
+        Args:
+            context_id: Optional context ID to filter jobs
+
+        Returns:
+            Dictionary with list of active jobs and total count
+
+        Raises:
+            ContextServerError: If request fails
+        """
+        try:
+            params = {}
+            if context_id:
+                params["context_id"] = context_id
+            
+            result = await self.client.get("/api/jobs/active", params)
+            active_count = len(result.get("active_jobs", []))
+            logger.info(f"Retrieved {active_count} active jobs")
+            return result
+
+        except ContextServerError:
+            raise
+
     # Utility Tools
 
     async def list_documents(

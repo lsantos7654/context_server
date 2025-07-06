@@ -213,6 +213,64 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["context_name", "snippet_id"],
             },
         ),
+        # Job Management Tools
+        types.Tool(
+            name="get_job_status",
+            description="Check the status and progress of a document extraction job. Use this to monitor long-running extractions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "ID of the job to check (returned from extract_url or extract_file)",
+                    }
+                },
+                "required": ["job_id"],
+            },
+        ),
+        types.Tool(
+            name="cancel_job",
+            description="Cancel a running document extraction job. Use this to stop long-running or stuck extractions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "ID of the job to cancel",
+                    }
+                },
+                "required": ["job_id"],
+            },
+        ),
+        types.Tool(
+            name="cleanup_completed_jobs",
+            description="Clean up old completed or failed jobs to save database space. Use this for maintenance.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Remove jobs completed/failed more than this many days ago",
+                        "default": 7,
+                    }
+                },
+                "required": [],
+            },
+        ),
+        types.Tool(
+            name="get_active_jobs",
+            description="Get all currently active/running jobs, optionally filtered by context. Use this to monitor ongoing extractions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "context_id": {
+                        "type": "string",
+                        "description": "Optional context ID to filter jobs",
+                    }
+                },
+                "required": [],
+            },
+        ),
         # Utility Tools
         types.Tool(
             name="list_documents",
@@ -296,6 +354,14 @@ async def handle_call_tool(
             result = await tools.get_code_snippets(**arguments)
         elif name == "get_code_snippet":
             result = await tools.get_code_snippet(**arguments)
+        elif name == "get_job_status":
+            result = await tools.get_job_status(**arguments)
+        elif name == "cancel_job":
+            result = await tools.cancel_job(**arguments)
+        elif name == "cleanup_completed_jobs":
+            result = await tools.cleanup_completed_jobs(**arguments)
+        elif name == "get_active_jobs":
+            result = await tools.get_active_jobs(**arguments)
         elif name == "list_documents":
             result = await tools.list_documents(**arguments)
         elif name == "delete_documents":

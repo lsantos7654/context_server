@@ -91,7 +91,7 @@ def up(build, detach):
             echo_info("Waiting for services to be ready...")
             if wait_for_services():
                 echo_success("All services are ready!")
-                echo_info("Configure Claude integration with: ctx claude install")
+                echo_info("Configure Claude integration with: ctx init")
             else:
                 echo_warning("Services may not be fully ready yet")
 
@@ -246,16 +246,16 @@ def status(wait):
                     echo_success("Claude MCP integration is configured")
                 else:
                     echo_warning("Claude MCP integration not configured")
-                    echo_info("Run: ctx claude install")
+                    echo_info("Run: ctx init")
             except Exception:
                 echo_warning("Could not read Claude configuration")
-                echo_info("Run: ctx claude install")
+                echo_info("Run: ctx init")
         else:
             echo_warning("Claude MCP integration not configured")
-            echo_info("Run: ctx claude install")
+            echo_info("Run: ctx init")
     else:
         echo_warning("Claude configuration directory not found")
-        echo_info("Run: ctx claude install")
+        echo_info("Run: ctx init")
 
 
 @server.command()
