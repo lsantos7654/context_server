@@ -14,6 +14,8 @@ from rich.table import Table
 from ..config import get_api_url
 from ..help_formatter import rich_help_option
 from ..utils import (
+    APIClient,
+    complete_context_name,
     echo_error,
     echo_info,
     echo_success,
@@ -24,10 +26,6 @@ from ..utils import (
 console = Console()
 
 
-def complete_context_name(ctx, param, incomplete):
-    """Complete context names by fetching from server."""
-    context_names = get_context_names_sync()
-    return [name for name in context_names if name.startswith(incomplete)]
 
 
 @click.group()
@@ -104,55 +102,48 @@ def query(
     """
 
     async def search_documents():
-        try:
-            echo_info(f"Searching '{context_name}' for: {query}")
-            echo_info(f"Search mode: {mode}")
+        echo_info(f"Searching '{context_name}' for: {query}")
+        echo_info(f"Search mode: {mode}")
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    get_api_url(f"contexts/{context_name}/search"),
-                    json={
-                        "query": query,
-                        "mode": mode,
-                        "limit": limit,
-                    },
-                    timeout=60.0,  # Search can take a while
-                )
+        client = APIClient(timeout=60.0)  # Search can take a while
+        success, response = await client.post(
+            f"contexts/{context_name}/search",
+            {
+                "query": query,
+                "mode": mode,
+                "limit": limit,
+            }
+        )
 
-                if response.status_code == 200:
-                    result = response.json()
-                    results = result["results"]
-                    total = result["total"]
-                    execution_time = result["execution_time_ms"]
+        if success:
+            results = response["results"]
+            total = response["total"]
+            execution_time = response["execution_time_ms"]
 
-                    if output_format == "json":
-                        console.print(result)
-                        return
+            if output_format == "json":
+                console.print(response)
+                return
 
-                    if not results:
-                        echo_info("No results found")
-                        echo_info("Try a different query or search mode")
-                        return
+            if not results:
+                echo_info("No results found")
+                echo_info("Try a different query or search mode")
+                return
 
-                    echo_success(f"Found {total} result(s) in {execution_time}ms")
-                    console.print()  # Empty line
+            echo_success(f"Found {total} result(s) in {execution_time}ms")
+            console.print()  # Empty line
 
-                    if output_format == "table":
-                        display_results_table(results, show_content)
-                    else:  # rich format
-                        display_results_rich(results, query, show_content, verbose)
+            if output_format == "table":
+                display_results_table(results, show_content)
+            else:  # rich format
+                display_results_rich(results, query, show_content, verbose)
 
-                elif response.status_code == 404:
-                    echo_error(f"Context '{context_name}' not found")
-                    echo_info("Create it with: context-server context create <name>")
-                else:
-                    echo_error(
-                        f"Search failed: {response.status_code} - {response.text}"
-                    )
-
-        except httpx.RequestError as e:
-            echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+        else:
+            if "404" in str(response):
+                echo_error(f"Context '{context_name}' not found")
+                echo_info("Create it with: context-server context create <name>")
+            else:
+                echo_error(f"Search failed: {response}")
+                echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(search_documents())
 
@@ -207,45 +198,38 @@ def interactive(context_name, interactive):
             if not query.strip():
                 continue
 
-            # Perform search directly using the async function
+            # Perform search using shared client
             async def search_documents():
-                try:
-                    async with httpx.AsyncClient() as client:
-                        response = await client.post(
-                            get_api_url(f"contexts/{context_name}/search"),
-                            json={
-                                "query": query,
-                                "mode": "hybrid",
-                                "limit": 5,
-                            },
-                            timeout=60.0,
-                        )
+                client = APIClient(timeout=60.0)
+                success, response = await client.post(
+                    f"contexts/{context_name}/search",
+                    {
+                        "query": query,
+                        "mode": "hybrid",
+                        "limit": 5,
+                    }
+                )
 
-                        if response.status_code == 200:
-                            result = response.json()
-                            results = result["results"]
-                            total = result["total"]
-                            execution_time = result["execution_time_ms"]
+                if success:
+                    results = response["results"]
+                    total = response["total"]
+                    execution_time = response["execution_time_ms"]
 
-                            if not results:
-                                echo_info("No results found")
-                                return
+                    if not results:
+                        echo_info("No results found")
+                        return
 
-                            echo_success(
-                                f"Found {total} result(s) in {execution_time}ms"
-                            )
-                            console.print()
-                            display_results_rich(
-                                results, query, True, False
-                            )  # verbose=False for interactive
+                    echo_success(f"Found {total} result(s) in {execution_time}ms")
+                    console.print()
+                    display_results_rich(
+                        results, query, True, False
+                    )  # verbose=False for interactive
 
-                        elif response.status_code == 404:
-                            echo_error(f"Context '{context_name}' not found")
-                        else:
-                            echo_error(f"Search failed: {response.status_code}")
-
-                except httpx.RequestError as e:
-                    echo_error(f"Connection error: {e}")
+                else:
+                    if "404" in str(response):
+                        echo_error(f"Context '{context_name}' not found")
+                    else:
+                        echo_error(f"Search failed: {response}")
 
             asyncio.run(search_documents())
             console.print()  # Empty line between searches

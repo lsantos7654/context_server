@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 import mcp.server.stdio
 import mcp.types as types
@@ -27,7 +27,7 @@ tools: ContextServerTools
 
 
 @server.list_tools()
-async def handle_list_tools() -> List[types.Tool]:
+async def handle_list_tools() -> list[types.Tool]:
     """List available MCP tools."""
     return [
         # Context Management Tools
@@ -262,8 +262,8 @@ async def handle_list_tools() -> List[types.Tool]:
 
 @server.call_tool()
 async def handle_call_tool(
-    name: str, arguments: Dict[str, Any]
-) -> List[types.TextContent]:
+    name: str, arguments: dict[str, Any]
+) -> list[types.TextContent]:
     """Handle MCP tool calls."""
     try:
         # Check if Context Server is healthy

@@ -8,17 +8,13 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://context_user:context_password@postgres:5432/context_server
-      - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=INFO
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - PYTHONPATH=/app
     volumes:
       - ./context_server:/app/context_server
-      - ./src:/app/src  # Mount existing extraction code
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     command: uvicorn context_server.api.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
@@ -42,24 +38,9 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Redis for document caching
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
 
 networks:

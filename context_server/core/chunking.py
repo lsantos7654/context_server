@@ -3,7 +3,6 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class TextChunker:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
-    def chunk_text(self, text: str) -> List[TextChunk]:
+    def chunk_text(self, text: str) -> list[TextChunk]:
         """Split text into chunks with overlaps and line tracking."""
         try:
             # Store original text and line mappings
@@ -102,7 +101,7 @@ class TextChunker:
 
         return "\n".join(cleaned_lines)
 
-    def _split_by_paragraphs(self, text: str) -> List[str]:
+    def _split_by_paragraphs(self, text: str) -> list[str]:
         """Split text by paragraphs, respecting chunk size."""
         paragraphs = re.split(r"\n\s*\n", text)
         chunks = []
@@ -137,7 +136,7 @@ class TextChunker:
 
         return chunks
 
-    def _split_by_sentences(self, text: str) -> List[str]:
+    def _split_by_sentences(self, text: str) -> list[str]:
         """Split text by sentences when paragraphs are too large."""
         # Simple sentence splitting (could be improved with spacy/nltk)
         sentences = re.split(r"(?<=[.!?])\s+", text)
@@ -197,7 +196,7 @@ class TextChunker:
 
         return overlap_text
 
-    def _simple_chunk(self, text: str) -> List[TextChunk]:
+    def _simple_chunk(self, text: str) -> list[TextChunk]:
         """Simple chunking fallback method."""
         chunks = []
 
@@ -218,7 +217,7 @@ class TextChunker:
         # Rough approximation: 1 token ≈ 4 characters for English text
         return len(text) // 4
 
-    def _build_line_to_char_mapping(self) -> List[tuple]:
+    def _build_line_to_char_mapping(self) -> list[tuple]:
         """Build mapping from line numbers to character positions."""
         line_to_char = []
         char_pos = 0
@@ -280,7 +279,7 @@ class TextChunker:
             len(self.lines) - 1, max(0, char_pos // 80)
         )  # Assume ~80 chars per line
 
-    def _simple_chunk_with_lines(self, text: str) -> List[TextChunk]:
+    def _simple_chunk_with_lines(self, text: str) -> list[TextChunk]:
         """Simple chunking fallback method with line tracking."""
         self.original_text = text
         self.lines = text.splitlines()

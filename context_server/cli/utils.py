@@ -3,7 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import click
 import httpx
@@ -16,9 +16,9 @@ console = Console()
 
 
 def run_command(
-    command: List[str],
+    command: list[str],
     cwd: Optional[Path] = None,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     capture_output: bool = False,
     check: bool = True,
 ) -> subprocess.CompletedProcess:
@@ -67,7 +67,7 @@ def check_docker_compose_running() -> bool:
         return False
 
 
-async def check_api_health() -> Tuple[bool, Optional[str]]:
+async def check_api_health() -> tuple[bool, Optional[str]]:
     """Check if the API is healthy."""
     try:
         async with httpx.AsyncClient() as client:
@@ -100,7 +100,7 @@ def get_project_root() -> Path:
 
 
 def print_table(
-    data: List[Dict], title: str = "", headers: Optional[List[str]] = None
+    data: list[dict], title: str = "", headers: Optional[list[str]] = None
 ) -> None:
     """Print data as a rich table."""
     if not data:
@@ -166,28 +166,107 @@ def echo_info(message: str) -> None:
     console.print(f"[blue]ℹ {message}[/blue]")
 
 
-async def get_context_names() -> List[str]:
+class APIClient:
+    """Shared HTTP client for Context Server API requests."""
+    
+    def __init__(self, timeout: float = 30.0):
+        self.timeout = timeout
+    
+    async def get(self, endpoint: str, params: dict = None) -> tuple[bool, dict | list | str]:
+        """Make GET request to API endpoint.
+        
+        Returns:
+            tuple: (success: bool, response: dict|list|str)
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    get_api_url(endpoint), 
+                    params=params
+                )
+                
+                if response.status_code == 200:
+                    return True, response.json()
+                else:
+                    return False, f"HTTP {response.status_code}: {response.text}"
+                    
+        except httpx.RequestError as e:
+            return False, f"Connection error: {e}"
+        except Exception as e:
+            return False, f"Request failed: {e}"
+    
+    async def post(self, endpoint: str, data: dict = None) -> tuple[bool, dict | list | str]:
+        """Make POST request to API endpoint.
+        
+        Returns:
+            tuple: (success: bool, response: dict|list|str)
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    get_api_url(endpoint),
+                    json=data
+                )
+                
+                if response.status_code in [200, 201]:
+                    return True, response.json()
+                else:
+                    return False, f"HTTP {response.status_code}: {response.text}"
+                    
+        except httpx.RequestError as e:
+            return False, f"Connection error: {e}"
+        except Exception as e:
+            return False, f"Request failed: {e}"
+    
+    async def delete(self, endpoint: str, data: dict = None) -> tuple[bool, dict | list | str]:
+        """Make DELETE request to API endpoint.
+        
+        Returns:
+            tuple: (success: bool, response: dict|list|str)
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                if data:
+                    response = await client.delete(
+                        get_api_url(endpoint),
+                        json=data
+                    )
+                else:
+                    response = await client.delete(get_api_url(endpoint))
+                
+                if response.status_code in [200, 204]:
+                    if response.status_code == 204:
+                        return True, {"success": True}
+                    return True, response.json()
+                else:
+                    return False, f"HTTP {response.status_code}: {response.text}"
+                    
+        except httpx.RequestError as e:
+            return False, f"Connection error: {e}"
+        except Exception as e:
+            return False, f"Request failed: {e}"
+
+
+async def get_context_names() -> list[str]:
     """Get list of available context names from the server."""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                get_api_url("contexts"),
-                timeout=5.0,
-            )
-            if response.status_code == 200:
-                contexts = response.json()
-                return [ctx["name"] for ctx in contexts]
-            else:
-                return []
-    except httpx.RequestError:
-        return []
+    client = APIClient(timeout=5.0)
+    success, response = await client.get("contexts")
+    
+    if success and isinstance(response, list):
+        return [ctx["name"] for ctx in response]
+    return []
 
 
-def get_context_names_sync() -> List[str]:
+def get_context_names_sync() -> list[str]:
     """Synchronous wrapper for getting context names."""
     try:
         import asyncio
-
         return asyncio.run(get_context_names())
     except Exception:
         return []
+
+
+def complete_context_name(ctx, param, incomplete):
+    """Complete context names by fetching from server."""
+    context_names = get_context_names_sync()
+    return [name for name in context_names if name.startswith(incomplete)]

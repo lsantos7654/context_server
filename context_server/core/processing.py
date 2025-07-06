@@ -5,14 +5,10 @@ import logging
 import re
 
 # Import existing extraction functionality
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
 
-sys.path.append("/app/src")  # Add src path for imports
-
-from src.core.crawl4ai_extraction import Crawl4aiExtractor
+from .crawl4ai_extraction import Crawl4aiExtractor
 
 from .chunking import TextChunker
 from .embeddings import EmbeddingService
@@ -81,7 +77,7 @@ class CodeSnippetExtractor:
 
     def extract_code_snippets(
         self, content: str, url: str = "", title: str = ""
-    ) -> Tuple[List[dict], str]:
+    ) -> tuple[list[dict], str]:
         """
         Extract code snippets from content and return cleaned content.
 
@@ -149,7 +145,7 @@ class CodeSnippetExtractor:
 
         return snippets, cleaned_content
 
-    def _char_to_line(self, char_pos: int, line_char_map: List[int]) -> int:
+    def _char_to_line(self, char_pos: int, line_char_map: list[int]) -> int:
         """Convert character position to line number."""
         for i, line_start in enumerate(line_char_map):
             if char_pos < line_start + (

@@ -14,6 +14,8 @@ from rich.table import Table
 from ..config import get_api_url
 from ..help_formatter import rich_help_option
 from ..utils import (
+    APIClient,
+    complete_context_name,
     confirm_action,
     echo_error,
     echo_info,
@@ -25,10 +27,6 @@ from ..utils import (
 console = Console()
 
 
-def complete_context_name(ctx, param, incomplete):
-    """Complete context names by fetching from server."""
-    context_names = get_context_names_sync()
-    return [name for name in context_names if name.startswith(incomplete)]
 
 
 @click.group()

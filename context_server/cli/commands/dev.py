@@ -8,6 +8,7 @@ from typing import Optional
 import click
 from rich.console import Console
 
+from ..help_formatter import rich_help_option
 from ..utils import (
     confirm_action,
     echo_error,
@@ -23,7 +24,7 @@ console = Console()
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def dev():
     """🔧 Development commands for Context Server.
 
@@ -42,7 +43,7 @@ def dev():
 
 @dev.command()
 @click.option("--force", is_flag=True, help="Force reinstallation even if venv exists")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def init(force):
     """🚀 Initialize the development environment.
 
@@ -96,7 +97,7 @@ def init(force):
 @click.option("--watch", is_flag=True, help="Run tests in watch mode")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose test output")
 @click.argument("path", required=False)
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def test(coverage, watch, verbose, path):
     """✅ Run tests with optional coverage and watch mode.
 
@@ -119,8 +120,7 @@ def test(coverage, watch, verbose, path):
         cmd.extend(
             [
                 "--cov=context_server",
-                "--cov=src",
-                "--cov-report=html",
+                        "--cov-report=html",
                 "--cov-report=term-missing",
             ]
         )
@@ -141,7 +141,7 @@ def test(coverage, watch, verbose, path):
 
 @dev.command()
 @click.option("--check", is_flag=True, help="Only check formatting, don't modify files")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def format(check):
     """📏 Format code with black and isort.
 
@@ -201,7 +201,7 @@ def lint(fix):
 
     echo_info("Running mypy...")
     try:
-        run_command(["mypy", "context_server/", "src/"])
+        run_command(["mypy", "context_server/"])
         echo_success("MyPy checks passed")
     except Exception as e:
         echo_error(f"MyPy found issues: {e}")
@@ -209,7 +209,7 @@ def lint(fix):
 
     echo_info("Running bandit security checks...")
     try:
-        run_command(["bandit", "-r", "context_server/", "src/", "--skip", "B101"])
+        run_command(["bandit", "-r", "context_server/", "--skip", "B101"])
         echo_success("Bandit security checks passed")
     except Exception as e:
         echo_error(f"Bandit found security issues: {e}")
@@ -352,7 +352,7 @@ def reset():
 @click.argument("url")
 @click.option("--max-pages", default=50, help="Maximum number of pages to analyze")
 @click.option("--show-all", is_flag=True, help="Show all discovered URLs")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def debug_filter(url, max_pages, show_all):
     """🐛 Debug URL filtering for extraction.
 
@@ -365,14 +365,9 @@ def debug_filter(url, max_pages, show_all):
         url: The base URL to analyze (e.g., https://ratatui.rs/)
     """
     import asyncio
-    import sys
-
-    sys.path.append("/app/src")
-
     from urllib.parse import urlparse
 
-    from src.core.crawl4ai_extraction import Crawl4aiExtractor
-    from src.core.utils import URLUtils
+    from ...core.crawl4ai_extraction import Crawl4aiExtractor
 
     async def run_debug():
         echo_info(f"Debugging URL filtering for: {url}")
@@ -426,7 +421,7 @@ def debug_filter(url, max_pages, show_all):
                 # Set logging to DEBUG level to see detailed filtering
                 import logging
 
-                logging.getLogger("src.core.crawl4ai_extraction").setLevel(
+                logging.getLogger("context_server.core.crawl4ai_extraction").setLevel(
                     logging.DEBUG
                 )
 

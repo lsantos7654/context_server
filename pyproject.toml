@@ -33,7 +33,6 @@ dependencies = [
     "rich>=13.0.0",
     "pyyaml>=6.0",
     "docker>=6.0.0",
-    "redis>=5.0.0",
     "mcp>=1.0.0",
 ]
 
@@ -66,7 +65,7 @@ ctx = "context_server.cli.main:cli"
 context-server-mcp = "context_server.mcp_server.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["context_server", "src"]
+packages = ["context_server"]
 
 
 [tool.black]
@@ -107,7 +106,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["context_server"]
 omit = ["*/tests/*", "*/__pycache__/*"]
 
 [tool.coverage.report]

@@ -5,13 +5,14 @@ import asyncio
 import click
 from rich.console import Console
 
+from ..help_formatter import rich_help_option
 from ..utils import echo_error, echo_info, echo_success, echo_warning
 
 console = Console()
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def examples():
     """📚 Example workflows and setups.
 
@@ -30,7 +31,7 @@ def examples():
 
 @examples.command()
 @click.option("--max-pages", default=20, help="Maximum pages to extract")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def rust(max_pages):
     """🦀 Set up Rust standard library documentation.
 
@@ -75,7 +76,7 @@ def rust(max_pages):
 
 @examples.command()
 @click.option("--max-pages", default=30, help="Maximum pages to extract")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def fastapi(max_pages):
     """⚡ Set up FastAPI documentation.
 
@@ -253,7 +254,7 @@ def django(max_pages):
 
 
 @examples.command()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def list_all():
     """📜 List all available example setups."""
     echo_info("Available example setups:")

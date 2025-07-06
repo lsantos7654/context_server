@@ -6,13 +6,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import click
 from rich.console import Console
 from rich.syntax import Syntax
 
 from ..config import get_api_base_url, get_config
+from ..help_formatter import rich_help_option
 from ..utils import (
     check_api_health,
     check_docker_compose_running,
@@ -28,7 +29,7 @@ console = Console()
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def claude():
     """Claude integration setup and testing.
 
@@ -59,7 +60,7 @@ def claude():
     is_flag=True,
     help="Show detailed path information during installation",
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def install(claude_config_dir, overwrite, show_paths):
     """Install Context Server MCP integration for Claude.
 
@@ -155,7 +156,7 @@ def install(claude_config_dir, overwrite, show_paths):
 
 
 @claude.command()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def config():
     """Show current Claude and MCP configuration."""
     echo_info("Context Server MCP Configuration")
@@ -229,7 +230,7 @@ def config():
 
 
 @claude.command()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def test():
     """Test MCP server connection and functionality."""
     echo_info("Testing Context Server MCP integration...")

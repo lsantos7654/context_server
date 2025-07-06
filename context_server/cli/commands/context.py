@@ -9,7 +9,10 @@ from rich.console import Console
 from rich.table import Table
 
 from ..config import get_api_url
+from ..help_formatter import rich_help_option
 from ..utils import (
+    APIClient,
+    complete_context_name,
     confirm_action,
     echo_error,
     echo_info,
@@ -21,14 +24,10 @@ from ..utils import (
 console = Console()
 
 
-def complete_context_name(ctx, param, incomplete):
-    """Complete context names by fetching from server."""
-    context_names = get_context_names_sync()
-    return [name for name in context_names if name.startswith(incomplete)]
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def context():
     """Manage documentation contexts for organizing documents.
 
@@ -51,7 +50,7 @@ def context():
 @click.option(
     "--embedding-model", default="text-embedding-3-small", help="Embedding model to use"
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def create(name, description, embedding_model):
     """Create a new documentation context.
 
@@ -66,48 +65,37 @@ def create(name, description, embedding_model):
     """
 
     async def create_context():
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    get_api_url("contexts"),
-                    json={
-                        "name": name,
-                        "description": description,
-                        "embedding_model": embedding_model,
-                    },
-                    timeout=30.0,
-                )
+        client = APIClient()
+        success, response = await client.post(
+            "contexts",
+            {
+                "name": name,
+                "description": description,
+                "embedding_model": embedding_model,
+            }
+        )
 
-                if response.status_code in [
-                    200,
-                    201,
-                ]:  # Accept both 200 OK and 201 Created
-                    context_data = response.json()
-                    echo_success(f"Context '{name}' created successfully!")
+        if success:
+            echo_success(f"Context '{name}' created successfully!")
 
-                    # Show context details
-                    table = Table(title=f"Context: {name}")
-                    table.add_column("Property")
-                    table.add_column("Value")
+            # Show context details
+            table = Table(title=f"Context: {name}")
+            table.add_column("Property")
+            table.add_column("Value")
 
-                    table.add_row("ID", context_data["id"])
-                    table.add_row("Name", context_data["name"])
-                    table.add_row("Description", context_data["description"] or "None")
-                    table.add_row("Embedding Model", context_data["embedding_model"])
-                    table.add_row("Created", str(context_data["created_at"]))
+            table.add_row("ID", response["id"])
+            table.add_row("Name", response["name"])
+            table.add_row("Description", response["description"] or "None")
+            table.add_row("Embedding Model", response["embedding_model"])
+            table.add_row("Created", str(response["created_at"]))
 
-                    console.print(table)
-
-                elif response.status_code == 409:
-                    echo_error(f"Context '{name}' already exists")
-                else:
-                    echo_error(
-                        f"Failed to create context: {response.status_code} - {response.text}"
-                    )
-
-        except httpx.RequestError as e:
-            echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+            console.print(table)
+        else:
+            if "409" in str(response):
+                echo_error(f"Context '{name}' already exists")
+            else:
+                echo_error(f"Failed to create context: {response}")
+                echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(create_context())
 
@@ -120,7 +108,7 @@ def create(name, description, embedding_model):
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def list(output_format):
     """List all available contexts.
 
@@ -132,50 +120,39 @@ def list(output_format):
     """
 
     async def list_contexts():
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    get_api_url("contexts"),
-                    timeout=30.0,
-                )
+        client = APIClient()
+        success, response = await client.get("contexts")
 
-                if response.status_code == 200:
-                    contexts = response.json()
+        if success:
+            contexts = response
 
-                    if output_format == "json":
-                        console.print(contexts)
-                    else:
-                        if not contexts:
-                            echo_info("No contexts found")
-                            echo_info(
-                                "Create one with: context-server context create <name>"
-                            )
-                            return
+            if output_format == "json":
+                console.print(contexts)
+            else:
+                if not contexts:
+                    echo_info("No contexts found")
+                    echo_info("Create one with: context-server context create <name>")
+                    return
 
-                        table = Table(title="Contexts")
-                        table.add_column("Name")
-                        table.add_column("Description")
-                        table.add_column("Documents")
-                        table.add_column("Model")
-                        table.add_column("Created")
+                table = Table(title="Contexts")
+                table.add_column("Name")
+                table.add_column("Description")
+                table.add_column("Documents")
+                table.add_column("Model")
+                table.add_column("Created")
 
-                        for ctx in contexts:
-                            table.add_row(
-                                ctx["name"],
-                                ctx["description"] or "-",
-                                str(ctx["document_count"]),
-                                ctx["embedding_model"],
-                                str(ctx["created_at"])[:19],  # Truncate timestamp
-                            )
-
-                        console.print(table)
-                else:
-                    echo_error(
-                        f"Failed to list contexts: {response.status_code} - {response.text}"
+                for ctx in contexts:
+                    table.add_row(
+                        ctx["name"],
+                        ctx["description"] or "-",
+                        str(ctx["document_count"]),
+                        ctx["embedding_model"],
+                        str(ctx["created_at"])[:19],  # Truncate timestamp
                     )
 
-        except httpx.RequestError as e:
-            echo_error(f"Connection error: {e}")
+                console.print(table)
+        else:
+            echo_error(f"Failed to list contexts: {response}")
             echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(list_contexts())
@@ -202,50 +179,35 @@ def info(name, output_format):
     """
 
     async def get_context_info():
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    get_api_url(f"contexts/{name}"),
-                    timeout=30.0,
-                )
+        client = APIClient()
+        success, response = await client.get(f"contexts/{name}")
 
-                if response.status_code == 200:
-                    context_data = response.json()
+        if success:
+            context_data = response
 
-                    if output_format == "json":
-                        console.print(context_data)
-                    else:
-                        table = Table(title=f"Context: {name}")
-                        table.add_column("Property")
-                        table.add_column("Value")
+            if output_format == "json":
+                console.print(context_data)
+            else:
+                table = Table(title=f"Context: {name}")
+                table.add_column("Property")
+                table.add_column("Value")
 
-                        table.add_row("ID", context_data["id"])
-                        table.add_row("Name", context_data["name"])
-                        table.add_row(
-                            "Description", context_data["description"] or "None"
-                        )
-                        table.add_row(
-                            "Embedding Model", context_data["embedding_model"]
-                        )
-                        table.add_row(
-                            "Document Count", str(context_data["document_count"])
-                        )
-                        table.add_row("Size", f"{context_data['size_mb']:.1f} MB")
-                        table.add_row("Created", str(context_data["created_at"]))
-                        table.add_row("Last Updated", str(context_data["last_updated"]))
+                table.add_row("ID", context_data["id"])
+                table.add_row("Name", context_data["name"])
+                table.add_row("Description", context_data["description"] or "None")
+                table.add_row("Embedding Model", context_data["embedding_model"])
+                table.add_row("Document Count", str(context_data["document_count"]))
+                table.add_row("Size", f"{context_data['size_mb']:.1f} MB")
+                table.add_row("Created", str(context_data["created_at"]))
+                table.add_row("Last Updated", str(context_data["last_updated"]))
 
-                        console.print(table)
-
-                elif response.status_code == 404:
-                    echo_error(f"Context '{name}' not found")
-                else:
-                    echo_error(
-                        f"Failed to get context info: {response.status_code} - {response.text}"
-                    )
-
-        except httpx.RequestError as e:
-            echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+                console.print(table)
+        else:
+            if "404" in str(response):
+                echo_error(f"Context '{name}' not found")
+            else:
+                echo_error(f"Failed to get context info: {response}")
+                echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(get_context_info())
 
@@ -253,7 +215,7 @@ def info(name, output_format):
 @context.command()
 @click.argument("name", shell_complete=complete_context_name)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def delete(name, force):
     """Delete a context and all its documents.
 
@@ -272,25 +234,17 @@ def delete(name, force):
         return
 
     async def delete_context():
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.delete(
-                    get_api_url(f"contexts/{name}"),
-                    timeout=30.0,
-                )
+        client = APIClient()
+        success, response = await client.delete(f"contexts/{name}")
 
-                if response.status_code == 200:
-                    echo_success(f"Context '{name}' deleted successfully!")
-                elif response.status_code == 404:
-                    echo_error(f"Context '{name}' not found")
-                else:
-                    echo_error(
-                        f"Failed to delete context: {response.status_code} - {response.text}"
-                    )
-
-        except httpx.RequestError as e:
-            echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+        if success:
+            echo_success(f"Context '{name}' deleted successfully!")
+        else:
+            if "404" in str(response):
+                echo_error(f"Context '{name}' not found")
+            else:
+                echo_error(f"Failed to delete context: {response}")
+                echo_info("Make sure the server is running: context-server server up")
 
     asyncio.run(delete_context())
 

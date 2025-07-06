@@ -7,13 +7,14 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+from ..help_formatter import rich_help_option
 from ..utils import confirm_action, echo_error, echo_info, echo_success, echo_warning
 
 console = Console()
 
 
 @click.group()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def completion():
     """🐚 Shell completion setup commands.
 
@@ -34,7 +35,7 @@ def completion():
     help="Shell to install completion for (auto-detected if not specified)",
 )
 @click.option("--force", is_flag=True, help="Overwrite existing completion files")
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def install(shell, force):
     """⚙️ Install shell completion for context-server and ctx commands.
 
@@ -326,7 +327,7 @@ end"""
 
 
 @completion.command()
-@click.help_option("-h", "--help")
+@rich_help_option("-h", "--help")
 def status():
     """🔎 Show completion installation status."""
     echo_info("Checking completion installation status...")

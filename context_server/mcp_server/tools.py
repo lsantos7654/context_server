@@ -1,7 +1,7 @@
 """MCP tools for Context Server integration."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from .client import ContextServerClient, ContextServerError
 
@@ -22,7 +22,7 @@ class ContextServerTools:
         name: str,
         description: str = "",
         embedding_model: str = "text-embedding-3-small",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new context for storing documentation.
 
         Args:
@@ -52,7 +52,7 @@ class ContextServerTools:
                 raise ContextServerError(f"Context '{name}' already exists")
             raise
 
-    async def list_contexts(self) -> List[Dict[str, Any]]:
+    async def list_contexts(self) -> list[dict[str, Any]]:
         """List all available contexts.
 
         Returns:
@@ -66,7 +66,7 @@ class ContextServerTools:
         except ContextServerError:
             raise
 
-    async def get_context(self, context_name: str) -> Dict[str, Any]:
+    async def get_context(self, context_name: str) -> dict[str, Any]:
         """Get detailed information about a specific context.
 
         Args:
@@ -88,7 +88,7 @@ class ContextServerTools:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
-    async def delete_context(self, context_name: str) -> Dict[str, Any]:
+    async def delete_context(self, context_name: str) -> dict[str, Any]:
         """Delete a context and all its data.
 
         Args:
@@ -117,7 +117,7 @@ class ContextServerTools:
 
     async def extract_url(
         self, context_name: str, url: str, max_pages: int = 50
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Extract and index documentation from a website URL.
 
         Args:
@@ -149,7 +149,7 @@ class ContextServerTools:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
-    async def extract_file(self, context_name: str, file_path: str) -> Dict[str, Any]:
+    async def extract_file(self, context_name: str, file_path: str) -> dict[str, Any]:
         """Extract and index content from a local file.
 
         Args:
@@ -180,7 +180,7 @@ class ContextServerTools:
 
     async def search_context(
         self, context_name: str, query: str, mode: str = "hybrid", limit: int = 10
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Search for content within a context.
 
         Args:
@@ -211,7 +211,7 @@ class ContextServerTools:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
-    async def get_document(self, context_name: str, doc_id: str) -> Dict[str, Any]:
+    async def get_document(self, context_name: str, doc_id: str) -> dict[str, Any]:
         """Get raw content of a specific document.
 
         Args:
@@ -241,7 +241,7 @@ class ContextServerTools:
                     )
             raise
 
-    async def get_code_snippets(self, context_name: str, doc_id: str) -> Dict[str, Any]:
+    async def get_code_snippets(self, context_name: str, doc_id: str) -> dict[str, Any]:
         """Get all code snippets from a specific document.
 
         Args:
@@ -276,7 +276,7 @@ class ContextServerTools:
 
     async def get_code_snippet(
         self, context_name: str, snippet_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get a specific code snippet by ID.
 
         Args:
@@ -310,7 +310,7 @@ class ContextServerTools:
 
     async def list_documents(
         self, context_name: str, limit: int = 50, offset: int = 0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List documents in a context.
 
         Args:
@@ -339,8 +339,8 @@ class ContextServerTools:
             raise
 
     async def delete_documents(
-        self, context_name: str, document_ids: List[str]
-    ) -> Dict[str, Any]:
+        self, context_name: str, document_ids: list[str]
+    ) -> dict[str, Any]:
         """Delete specific documents from a context.
 
         Args:

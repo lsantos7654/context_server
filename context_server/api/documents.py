@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 # Cache service removed in simplification
 from ..core.processing import DocumentProcessor
 from ..core.storage import DatabaseManager
+from .error_handlers import handle_document_errors
 from .models import DocumentDelete, DocumentIngest, DocumentsResponse, JobStatus
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ def get_processor(request: Request) -> DocumentProcessor:
 
 
 @router.post("/contexts/{context_name}/documents", status_code=202)
+@handle_document_errors("ingest")
 async def ingest_document(
     context_name: str,
     document_data: DocumentIngest,
@@ -39,40 +41,31 @@ async def ingest_document(
     processor: DocumentProcessor = Depends(get_processor),
 ):
     """Ingest a document into a context (async processing)."""
-    try:
-        # Verify context exists
-        context = await db.get_context_by_name(context_name)
-        if not context:
-            raise HTTPException(status_code=404, detail="Context not found")
+    # Verify context exists
+    context = await db.get_context_by_name(context_name)
+    if not context:
+        raise HTTPException(status_code=404, detail="Context not found")
 
-        # Create processing job
-        job_id = f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{context_name}"
+    # Create processing job
+    job_id = f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{context_name}"
 
-        # Start background processing
-        background_tasks.add_task(
-            _process_document_background,
-            job_id,
-            context,
-            document_data,
-            db,
-            processor,
-        )
+    # Start background processing
+    background_tasks.add_task(
+        _process_document_background,
+        job_id,
+        context,
+        document_data,
+        db,
+        processor,
+    )
 
-        logger.info(f"Started document ingestion job: {job_id}")
+    logger.info(f"Started document ingestion job: {job_id}")
 
-        return {
-            "job_id": job_id,
-            "status": "processing",
-            "message": f"Document ingestion started for {document_data.source}",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to start document ingestion: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to start document ingestion"
-        )
+    return {
+        "job_id": job_id,
+        "status": "processing",
+        "message": f"Document ingestion started for {document_data.source}",
+    }
 
 
 async def _process_document_background(
@@ -164,6 +157,7 @@ async def _process_document_background(
 
 
 @router.get("/contexts/{context_name}/documents", response_model=DocumentsResponse)
+@handle_document_errors("list")
 async def list_documents(
     context_name: str,
     offset: int = 0,
@@ -171,21 +165,14 @@ async def list_documents(
     db: DatabaseManager = Depends(get_db_manager),
 ):
     """List documents in a context."""
-    try:
-        # Verify context exists
-        context = await db.get_context_by_name(context_name)
-        if not context:
-            raise HTTPException(status_code=404, detail="Context not found")
+    # Verify context exists
+    context = await db.get_context_by_name(context_name)
+    if not context:
+        raise HTTPException(status_code=404, detail="Context not found")
 
-        # Get documents
-        result = await db.get_documents(context["id"], offset=offset, limit=limit)
-        return DocumentsResponse(**result)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to list documents for context {context_name}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list documents")
+    # Get documents
+    result = await db.get_documents(context["id"], offset=offset, limit=limit)
+    return DocumentsResponse(**result)
 
 
 @router.delete("/contexts/{context_name}/documents", status_code=200)
