@@ -346,3 +346,127 @@ def reset():
         echo_success("Development environment reset successfully!")
     else:
         echo_error("Failed to reset development environment")
+
+
+@dev.command()
+@click.argument("url")
+@click.option("--max-pages", default=50, help="Maximum number of pages to analyze")
+@click.option("--show-all", is_flag=True, help="Show all discovered URLs")
+@click.help_option("-h", "--help")
+def debug_filter(url, max_pages, show_all):
+    """🐛 Debug URL filtering for extraction.
+
+    Analyzes how the URL filtering logic processes a given URL and shows
+    exactly which URLs would be included or excluded during extraction.
+
+    This helps debug issues where expected URLs are not being extracted.
+
+    Args:
+        url: The base URL to analyze (e.g., https://ratatui.rs/)
+    """
+    import asyncio
+    import sys
+
+    sys.path.append("/app/src")
+
+    from urllib.parse import urlparse
+
+    from src.core.crawl4ai_extraction import Crawl4aiExtractor
+    from src.core.utils import URLUtils
+
+    async def run_debug():
+        echo_info(f"Debugging URL filtering for: {url}")
+        echo_info(f"Max pages limit: {max_pages}")
+
+        try:
+            # Create extractor instance
+            extractor = Crawl4aiExtractor()
+
+            # Import crawl4ai for link discovery
+            from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
+
+            echo_info("Discovering links...")
+
+            async with AsyncWebCrawler() as crawler:
+                # Get initial page and discover links
+                initial_result = await crawler.arun(
+                    url=url,
+                    config=CrawlerRunConfig(
+                        js_code=["window.scrollTo(0, document.body.scrollHeight);"],
+                        wait_for="css:body",
+                        exclude_external_links=True,
+                        cache_mode=CacheMode.ENABLED,
+                        delay_before_return_html=2.0,
+                    ),
+                )
+
+                if not initial_result.success:
+                    echo_error(f"Failed to fetch initial page: {initial_result.error}")
+                    return
+
+                # Extract internal links
+                internal_links = initial_result.links.get("internal", [])
+                echo_success(f"Discovered {len(internal_links)} internal links")
+
+                if show_all:
+                    echo_info("All discovered URLs:")
+                    for i, link in enumerate(internal_links[:20], 1):  # Show first 20
+                        if isinstance(link, dict):
+                            link_url = link.get("href", "")
+                        else:
+                            link_url = str(link)
+                        console.print(f"  {i:2d}. {link_url}")
+
+                    if len(internal_links) > 20:
+                        console.print(f"  ... and {len(internal_links) - 20} more")
+
+                # Test the filtering logic with debug output
+                echo_info("Running URL filtering analysis...")
+
+                # Set logging to DEBUG level to see detailed filtering
+                import logging
+
+                logging.getLogger("src.core.crawl4ai_extraction").setLevel(
+                    logging.DEBUG
+                )
+
+                filtered_links = extractor._filter_documentation_links(
+                    internal_links, url, max_pages
+                )
+
+                echo_success(f"Filtering complete: {len(filtered_links)} URLs selected")
+
+                # Show final selected URLs
+                echo_info("Final selected URLs:")
+                for i, link_url in enumerate(filtered_links, 1):
+                    console.print(f"  {i:2d}. {link_url}")
+
+                # Special analysis for table widget
+                table_urls = []
+                for link in internal_links:
+                    if isinstance(link, dict):
+                        link_url = link.get("href", "")
+                    else:
+                        link_url = str(link)
+
+                    if "table" in link_url.lower():
+                        table_urls.append(link_url)
+
+                if table_urls:
+                    echo_info(f"\nTable-related URLs analysis:")
+                    for table_url in table_urls:
+                        if table_url in filtered_links:
+                            console.print(f"  ✅ INCLUDED: {table_url}")
+                        else:
+                            console.print(f"  ❌ EXCLUDED: {table_url}")
+                else:
+                    echo_warning("No table-related URLs found in discovered links")
+
+        except Exception as e:
+            echo_error(f"Debug analysis failed: {e}")
+            import traceback
+
+            console.print(traceback.format_exc())
+
+    # Run async function
+    asyncio.run(run_debug())

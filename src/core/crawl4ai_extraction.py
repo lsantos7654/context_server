@@ -54,8 +54,8 @@ class Crawl4aiExtractor:
     - Navigation-based discovery
     """
 
-    def __init__(self, output_dir: Path | None = None):
-        """Initialize extractor with optional output directory."""
+    def __init__(self, output_dir: Path | None = None, config: dict | None = None):
+        """Initialize extractor with optional output directory and configuration."""
         self.output_dir = FileUtils.ensure_directory(output_dir or Path("output"))
 
         # Keep Docling for non-URL document processing (PDFs, etc.)
@@ -63,6 +63,21 @@ class Crawl4aiExtractor:
 
         # Initialize markdown cleaner for enhanced content processing
         self.cleaner = MarkdownCleaner()
+
+        # Configuration for filtering behavior
+        self.config = config or {}
+        self.filtering_config = self.config.get("filtering", {})
+
+        # Configure custom priority patterns
+        self.custom_high_priority = self.filtering_config.get(
+            "high_priority_patterns", []
+        )
+        self.custom_medium_priority = self.filtering_config.get(
+            "medium_priority_patterns", []
+        )
+        self.custom_skip_patterns = self.filtering_config.get(
+            "additional_skip_patterns", []
+        )
 
     async def extract_from_url(self, url: str, max_pages: int = 50) -> ExtractionResult:
         """Extract content from URL using crawl4ai."""
@@ -107,16 +122,40 @@ class Crawl4aiExtractor:
                     f"filtered to {len(doc_links)} documentation links"
                 )
 
+                # Validate extraction completeness
+                validation_result = self._validate_extraction_completeness(
+                    doc_links,
+                    [
+                        link["href"] if isinstance(link, dict) else link
+                        for link in internal_links
+                    ],
+                    url,
+                )
+
+                # Log validation warnings
+                if validation_result["warnings"]:
+                    for warning in validation_result["warnings"]:
+                        logger.warning(f"Extraction validation: {warning}")
+
+                if validation_result["missing_important_urls"]:
+                    logger.warning(
+                        f"Missing {len(validation_result['missing_important_urls'])} "
+                        f"important URLs (first 3): "
+                        f"{validation_result['missing_important_urls'][:3]}"
+                    )
+
                 # If no links found, just extract the single page
                 if not doc_links:
                     doc_links = [url]
 
                 # Extract content from all documentation links
+                url_list = [
+                    link["href"] if isinstance(link, dict) else link
+                    for link in doc_links
+                ]
+
                 results = await crawler.arun_many(
-                    urls=[
-                        link["href"] if isinstance(link, dict) else link
-                        for link in doc_links
-                    ],
+                    urls=url_list,
                     config=CrawlerRunConfig(
                         exclude_external_links=True,
                         cache_mode=CacheMode.ENABLED,
@@ -132,10 +171,11 @@ class Crawl4aiExtractor:
                 for i, result in enumerate(results):
                     if result.success and result.markdown:
                         content = result.markdown
-                        page_url = (
-                            doc_links[i]["href"]
-                            if isinstance(doc_links[i], dict)
-                            else doc_links[i]
+                        # Get the URL from the result object itself to ensure correct mapping
+                        page_url = result.url if hasattr(result, "url") else url_list[i]
+
+                        logger.debug(
+                            f"Processing result {i}: URL={page_url}, content_length={len(content)}"
                         )
 
                         # Clean and validate content using enhanced cleaner
@@ -197,6 +237,7 @@ class Crawl4aiExtractor:
                     "filtered_links": len(doc_links),
                     "successful_extractions": successful_extractions,
                     "extraction_time": datetime.now().isoformat(),
+                    "validation_result": validation_result,
                 }
 
                 logger.info(
@@ -254,6 +295,7 @@ class Crawl4aiExtractor:
     ) -> list:
         """Filter links to focus on documentation content."""
         if not links:
+            logger.info("No links to filter")
             return []
 
         # Convert to URLs if they're link objects
@@ -264,27 +306,42 @@ class Crawl4aiExtractor:
             else:
                 urls.append(str(link))
 
+        logger.info(f"Starting URL filtering with {len(urls)} discovered URLs")
+
+        # Debug: Log some example URLs
+        sample_urls = urls[:10] if len(urls) <= 10 else urls[:5] + ["..."] + urls[-5:]
+        logger.info(f"Sample URLs: {sample_urls}")
+
         # Parse the base URL to understand what section we're targeting
         parsed_base = urlparse(base_url)
         base_path = parsed_base.path.rstrip("/")
 
-        # Filter and prioritize URLs
-        prioritized_urls = []
-        related_urls = []
+        logger.info(f"Base URL: {base_url}, Base path: {base_path}")
+
+        # Filter and prioritize URLs with smart prioritization
+        high_priority_urls = []  # Critical content (widgets, core examples)
+        medium_priority_urls = []  # Documentation, tutorials
+        low_priority_urls = []  # Other content
+        skipped_urls = []
+        skip_reasons = {}
 
         for url in urls:
             if not url or not isinstance(url, str):
+                skipped_urls.append(url)
+                skip_reasons[str(url)] = "empty_or_not_string"
                 continue
 
             # Skip external links (double-check)
             if not URLUtils.is_same_domain(base_url, url):
+                skipped_urls.append(url)
+                skip_reasons[url] = "external_domain"
                 continue
 
             parsed_url = urlparse(url)
             url_path = parsed_url.path.rstrip("/")
 
-            # Skip common non-documentation patterns
-            skip_patterns = [
+            # Skip common non-documentation patterns (configurable)
+            default_skip_patterns = [
                 "/login",
                 "/signup",
                 "/settings",
@@ -297,36 +354,103 @@ class Crawl4aiExtractor:
                 ".gif",
                 ".pdf",
                 ".zip",
-                "/api/",
                 "/admin/",
                 "/dashboard/",
                 "#",  # Skip anchors
             ]
+            skip_patterns = default_skip_patterns + self.custom_skip_patterns
 
-            if any(pattern in url.lower() for pattern in skip_patterns):
+            skip_pattern_matched = None
+            for pattern in skip_patterns:
+                if pattern in url.lower():
+                    skip_pattern_matched = pattern
+                    break
+
+            if skip_pattern_matched:
+                skipped_urls.append(url)
+                skip_reasons[url] = f"skip_pattern:{skip_pattern_matched}"
+                continue
+
+            # Skip showcase and highlights
+            if url_path.startswith("/showcase") or url_path.startswith("/highlights"):
+                skipped_urls.append(url)
+                if url_path.startswith("/showcase"):
+                    skip_reasons[url] = "showcase_path"
+                elif url_path.startswith("/highlights"):
+                    skip_reasons[url] = "highlights_path"
+                continue
+
+            # Smart prioritization based on content type
+            priority_assigned = False
+
+            # HIGH PRIORITY: Widgets and core examples - these are critical for development (configurable)
+            default_high_priority_patterns = [
+                "/examples/widgets/",
+                "/widgets/",
+                "/components/",
+            ]
+            high_priority_patterns = (
+                default_high_priority_patterns + self.custom_high_priority
+            )
+
+            for pattern in high_priority_patterns:
+                if pattern in url_path:
+                    high_priority_urls.append(url)
+                    logger.debug(f"HIGH PRIORITY: {url} (matches {pattern})")
+                    priority_assigned = True
+                    break
+
+            if priority_assigned:
+                continue
+
+            # MEDIUM PRIORITY: Documentation, tutorials, examples (configurable)
+            default_medium_priority_patterns = [
+                "/tutorials/",
+                "/examples/",
+                "/docs/",
+                "/guide/",
+                "/reference/",
+                "/installation/",
+            ]
+            medium_priority_patterns = (
+                default_medium_priority_patterns + self.custom_medium_priority
+            )
+
+            for pattern in medium_priority_patterns:
+                if pattern in url_path:
+                    medium_priority_urls.append(url)
+                    logger.debug(f"MEDIUM PRIORITY: {url} (matches {pattern})")
+                    priority_assigned = True
+                    break
+
+            if priority_assigned:
                 continue
 
             # Prioritize URLs that are "under" the target path
             if base_path and base_path != "/":
                 if url_path.startswith(base_path):
-                    # This URL is under our target section - high priority
-                    prioritized_urls.append(url)
-                elif (
-                    url_path != "/"
-                    and not url_path.startswith("/showcase")
-                    and not url_path.startswith("/highlights")
-                ):
-                    # This is a related documentation URL - lower priority
-                    related_urls.append(url)
+                    # This URL is under our target section - medium priority
+                    medium_priority_urls.append(url)
+                    logger.debug(f"MEDIUM PRIORITY: {url} (under target path)")
+                elif url_path != "/":
+                    # This is other documentation - low priority
+                    low_priority_urls.append(url)
+                    logger.debug(f"LOW PRIORITY: {url} (other documentation)")
+                else:
+                    skipped_urls.append(url)
+                    skip_reasons[url] = "root_path"
             else:
-                # If targeting root, include all documentation
-                if not url_path.startswith("/showcase") and not url_path.startswith(
-                    "/highlights"
-                ):
-                    prioritized_urls.append(url)
+                # If targeting root, this is general content - low priority
+                if url_path != "/":
+                    low_priority_urls.append(url)
+                    logger.debug(f"LOW PRIORITY: {url} (general content)")
+                else:
+                    # Root path gets medium priority
+                    medium_priority_urls.append(url)
+                    logger.debug(f"MEDIUM PRIORITY: {url} (root path)")
 
-        # Combine prioritized and related URLs, with prioritized first
-        all_urls = prioritized_urls + related_urls
+        # Combine URLs in priority order: high -> medium -> low
+        all_urls = high_priority_urls + medium_priority_urls + low_priority_urls
 
         # Remove duplicates while preserving order
         unique_urls = list(dict.fromkeys(all_urls))
@@ -338,12 +462,114 @@ class Crawl4aiExtractor:
         # Limit to max_pages
         limited_urls = unique_urls[:max_pages]
 
+        # Log filtering statistics
         logger.info(
-            f"Filtered {len(urls)} links to {len(limited_urls)} documentation URLs "
-            f"(prioritized: {len(prioritized_urls)}, related: {len(related_urls)})"
+            f"URL Filtering Results:"
+            f"\n  - Discovered: {len(urls)}"
+            f"\n  - High Priority: {len(high_priority_urls)}"
+            f"\n  - Medium Priority: {len(medium_priority_urls)}"
+            f"\n  - Low Priority: {len(low_priority_urls)}"
+            f"\n  - Skipped: {len(skipped_urls)}"
+            f"\n  - After dedup: {len(unique_urls)}"
+            f"\n  - Final (after limit): {len(limited_urls)}"
         )
 
+        # Log specific table widget URL if it's being looked for
+        table_urls = [url for url in urls if "table" in url.lower()]
+        if table_urls:
+            logger.info(f"Found {len(table_urls)} table-related URLs:")
+            for table_url in table_urls:
+                if table_url in limited_urls:
+                    logger.info(f"  ✓ INCLUDED: {table_url}")
+                elif table_url in skip_reasons:
+                    logger.warning(
+                        f"  ✗ SKIPPED: {table_url} (reason: {skip_reasons[table_url]})"
+                    )
+                else:
+                    logger.warning(f"  ? UNKNOWN: {table_url}")
+
+        # Log some examples of skipped URLs for debugging
+        if skipped_urls:
+            skip_examples = {}
+            for url in skipped_urls[:20]:  # Limit examples
+                reason = skip_reasons.get(url, "unknown")
+                if reason not in skip_examples:
+                    skip_examples[reason] = []
+                skip_examples[reason].append(url)
+
+            logger.debug("Skip examples by reason:")
+            for reason, urls_list in skip_examples.items():
+                example_urls = urls_list[:3]  # Show up to 3 examples per reason
+                logger.debug(f"  {reason}: {example_urls}")
+
         return limited_urls
+
+    def _validate_extraction_completeness(
+        self, extracted_urls: list[str], all_discovered_urls: list[str], base_url: str
+    ) -> dict:
+        """Validate that important URLs were not missed during extraction."""
+        validation_result = {
+            "missing_important_urls": [],
+            "warnings": [],
+            "coverage_stats": {},
+        }
+
+        # Convert extracted URLs to a set for faster lookup
+        extracted_set = set(extracted_urls)
+
+        # Check for missing widget/component URLs if this looks like a documentation site
+        if any(
+            pattern in base_url.lower()
+            for pattern in ["docs", "documentation", "guide", "tutorial"]
+        ):
+            # Look for important patterns that should be included
+            important_patterns = [
+                ("widgets", "Widget documentation"),
+                ("components", "Component documentation"),
+                ("api", "API documentation"),
+                ("examples", "Code examples"),
+            ]
+
+            for pattern, description in important_patterns:
+                discovered_with_pattern = [
+                    url for url in all_discovered_urls if pattern in url.lower()
+                ]
+                extracted_with_pattern = [
+                    url for url in extracted_urls if pattern in url.lower()
+                ]
+
+                if discovered_with_pattern and len(extracted_with_pattern) < len(
+                    discovered_with_pattern
+                ):
+                    missing_count = len(discovered_with_pattern) - len(
+                        extracted_with_pattern
+                    )
+                    validation_result["warnings"].append(
+                        f"Only {len(extracted_with_pattern)}/{len(discovered_with_pattern)} "
+                        f"{description} URLs were extracted ({missing_count} missing)"
+                    )
+
+                    # List specific missing URLs for important patterns
+                    if pattern in ["widgets", "components"]:
+                        missing_urls = [
+                            url
+                            for url in discovered_with_pattern
+                            if url not in extracted_set
+                        ]
+                        validation_result["missing_important_urls"].extend(missing_urls)
+
+        # Calculate coverage statistics
+        validation_result["coverage_stats"] = {
+            "total_discovered": len(all_discovered_urls),
+            "total_extracted": len(extracted_urls),
+            "coverage_percentage": round(
+                (len(extracted_urls) / len(all_discovered_urls)) * 100, 1
+            )
+            if all_discovered_urls
+            else 0,
+        }
+
+        return validation_result
 
     def _create_filename_from_url(self, url: str) -> str:
         """Create safe filename from URL."""
