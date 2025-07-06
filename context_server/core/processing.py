@@ -168,6 +168,41 @@ class DocumentProcessor:
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
 
+    def _extract_links_from_chunk(self, chunk_content: str) -> dict:
+        """Extract links from chunk content and return link metadata."""
+        import re
+        from urllib.parse import urljoin, urlparse
+
+        links_in_chunk = {}
+
+        # Pattern for markdown links: [text](url)
+        markdown_pattern = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+
+        # Pattern for raw URLs (basic HTTP/HTTPS)
+        url_pattern = re.compile(r"https?://[^\s\]]+")
+
+        # Find markdown links
+        for match in markdown_pattern.finditer(chunk_content):
+            text = match.group(1)
+            href = match.group(2)
+            if href and not href.startswith("#"):  # Skip anchors
+                links_in_chunk[href] = {"text": text, "href": href}
+
+        # Find raw URLs (that aren't already captured in markdown)
+        for match in url_pattern.finditer(chunk_content):
+            href = match.group(0)
+            # Only add if not already captured as markdown link
+            if href not in links_in_chunk and not href.endswith(")"):
+                links_in_chunk[href] = {
+                    "text": href,  # Use URL as text for raw URLs
+                    "href": href,
+                }
+
+        return {
+            "total_links_in_chunk": len(links_in_chunk),
+            "links_in_chunk": links_in_chunk,
+        }
+
     async def process_url(
         self, url: str, options: dict | None = None
     ) -> ProcessingResult:
@@ -196,6 +231,10 @@ class DocumentProcessor:
                     page_metadata = result.metadata.copy()
                     page_metadata["page_url"] = page_url
                     page_metadata["is_individual_page"] = True
+
+                    # Add link counts if available
+                    if "link_counts" in page_info:
+                        page_metadata.update(page_info["link_counts"])
 
                     # Create document title from page URL
                     page_title = self._create_title_from_url(page_url, url)
@@ -329,11 +368,15 @@ class DocumentProcessor:
 
                 # Create processed chunks
                 for chunk, embedding in zip(batch, embeddings):
+                    # Extract links from this chunk
+                    chunk_link_data = self._extract_links_from_chunk(chunk.content)
+
                     processed_chunk = ProcessedChunk(
                         content=chunk.content,
                         embedding=embedding,
                         metadata={
                             **chunk.metadata,
+                            **chunk_link_data,  # Add chunk-level link data
                             "source_url": url,
                             "source_title": title,
                         },
