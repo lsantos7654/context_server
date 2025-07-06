@@ -26,12 +26,12 @@ def cli(ctx, verbose, no_color, config_file):
     and perform semantic search across your documentation.
 
     Examples:
-        ctx server up                              # Start the server
-        ctx context create my-docs                 # Create a new context
-        ctx docs extract https://... my-docs       # Extract documentation
-        ctx search query "async patterns" docs     # Search documentation
-        ctx docs list my-docs                      # List documents
-        ctx search query "concepts" docs --expand-context 50  # Get more context
+        ctx server up                             # Start the server
+        ctx claude install                        # Set up Claude integration
+        ctx context create my-docs                # Create a new context
+        ctx docs extract https://... my-docs      # Extract documentation
+        ctx search query "async patterns" docs   # Search documentation
+        ctx docs list my-docs                     # List documents
     """
     # Ensure context object exists
     ctx.ensure_object(dict)
@@ -135,6 +135,13 @@ def register_commands():
         cli.add_command(completion)
     except ImportError as e:
         echo_error(f"Failed to load completion commands: {e}")
+
+    try:
+        from .commands.claude import claude
+
+        cli.add_command(claude)
+    except ImportError as e:
+        echo_error(f"Failed to load claude commands: {e}")
 
 
 # Register commands when module is imported

@@ -97,3 +97,7 @@ site/
 
 # Pre-commit
 .pre-commit-cache/
+
+# Context Server runtime files
+.mcp_server.pid
+CLAUDE_SETUP.md

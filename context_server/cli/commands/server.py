@@ -1,7 +1,13 @@
 """Server management commands for Context Server CLI."""
 
 import asyncio
+import json
+import os
+import signal
+import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -20,6 +26,7 @@ from ..utils import (
     echo_info,
     echo_success,
     echo_warning,
+    get_project_root,
     run_command,
 )
 
@@ -54,7 +61,7 @@ def up(build, detach):
     """Start the Context Server services.
 
     Launches PostgreSQL database and FastAPI server using Docker Compose.
-    Services will be available once startup is complete.
+    Once running, Claude can connect via MCP if configured.
     """
     if not check_docker_running():
         echo_error("Docker is not running. Please start Docker first.")
@@ -83,6 +90,7 @@ def up(build, detach):
             echo_info("Waiting for services to be ready...")
             if wait_for_services():
                 echo_success("All services are ready!")
+                echo_info("💡 Configure Claude integration with: ctx claude install")
             else:
                 echo_warning("Services may not be fully ready yet")
 
@@ -184,6 +192,8 @@ def logs(service, follow, tail):
 def status(wait):
     """🔎 Check server status and health.
 
+    Shows status of Context Server, Docker services, and MCP server.
+
     Args:
         wait: Wait for services to be ready
     """
@@ -199,7 +209,7 @@ def status(wait):
     # Check Docker Compose
     if not check_docker_compose_running():
         echo_error("Docker Compose services are not running")
-        echo_info("Run: context-server server up")
+        echo_info("Run: ctx server up")
         return
 
     echo_success("Docker Compose services are running")
@@ -221,6 +231,30 @@ def status(wait):
                 echo_error(f"API is not healthy: {error}")
 
         asyncio.run(check_health())
+
+    # Check MCP configuration
+    echo_info("Checking Claude MCP configuration...")
+    claude_config_dir = _detect_claude_config_dir()
+    if claude_config_dir:
+        claude_config_file = Path(claude_config_dir) / "config.json"
+        if claude_config_file.exists():
+            try:
+                with open(claude_config_file, "r") as f:
+                    config = json.load(f)
+                if "mcpServers" in config and "context-server" in config["mcpServers"]:
+                    echo_success("Claude MCP integration is configured")
+                else:
+                    echo_warning("Claude MCP integration not configured")
+                    echo_info("Run: ctx claude install")
+            except Exception:
+                echo_warning("Could not read Claude configuration")
+                echo_info("Run: ctx claude install")
+        else:
+            echo_warning("Claude MCP integration not configured")
+            echo_info("Run: ctx claude install")
+    else:
+        echo_warning("Claude configuration directory not found")
+        echo_info("Run: ctx claude install")
 
 
 @server.command()
@@ -371,3 +405,21 @@ def wait_for_services(timeout: int = 60, check_interval: float = 2.0) -> bool:
                 time.sleep(check_interval)
 
     return False
+
+
+def _detect_claude_config_dir() -> Optional[str]:
+    """Detect Claude configuration directory."""
+    possible_paths = [
+        # macOS
+        Path.home() / "Library" / "Application Support" / "Claude",
+        # Linux
+        Path.home() / ".config" / "claude",
+        # Windows
+        Path.home() / "AppData" / "Roaming" / "Claude",
+    ]
+
+    for path in possible_paths:
+        if path.exists():
+            return str(path)
+
+    return None
