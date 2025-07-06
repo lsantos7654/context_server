@@ -119,6 +119,8 @@ class SearchResult(BaseModel):
     document_id: str | None = None
     title: str
     content: str
+    summary: str | None = None
+    summary_model: str | None = None
     score: float
     metadata: dict
     url: str | None = None

@@ -193,6 +193,8 @@ async def _process_document_background(
                             chunk_index=i,
                             metadata=chunk.metadata,
                             tokens=chunk.tokens,
+                            summary=chunk.summary,
+                            summary_model=chunk.summary_model,
                             start_line=chunk.start_line,
                             end_line=chunk.end_line,
                             char_start=chunk.char_start,

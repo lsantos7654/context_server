@@ -101,6 +101,8 @@ async def search_context(
             "document_id": result.get("document_id"),
             "title": result["title"],
             "content": result["content"],
+            "summary": result.get("summary"),
+            "summary_model": result.get("summary_model"),
             "score": result["score"],
             "metadata": metadata,
             "url": result.get("url"),
@@ -180,6 +182,7 @@ def _merge_search_results(
         final_results.append(result)
 
     return final_results
+
 
 
 @router.get("/contexts/{context_name}/search/suggestions")

@@ -195,6 +195,8 @@ class DatabaseManager:
                     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                     context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
+                    summary TEXT,  -- LLM-generated summary for compact responses
+                    summary_model VARCHAR(50),  -- Model used to generate summary
                     embedding vector(1536),  -- OpenAI embedding dimension
                     chunk_index INTEGER NOT NULL,
                     metadata JSONB DEFAULT '{}',
@@ -539,6 +541,8 @@ class DatabaseManager:
         chunk_index: int,
         metadata: dict = None,
         tokens: int = None,
+        summary: str = None,
+        summary_model: str = None,
         start_line: int = None,
         end_line: int = None,
         char_start: int = None,
@@ -551,10 +555,12 @@ class DatabaseManager:
 
             chunk_id = await conn.fetchval(
                 """
-                INSERT INTO chunks (document_id, context_id, content, embedding, chunk_index, metadata, tokens, start_line, end_line, char_start, char_end)
-                VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11)
+                INSERT INTO chunks (document_id, context_id, content, summary, summary_model, embedding, chunk_index, metadata, tokens, start_line, end_line, char_start, char_end)
+                VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13)
                 ON CONFLICT (document_id, chunk_index) DO UPDATE SET
                     content = EXCLUDED.content,
+                    summary = EXCLUDED.summary,
+                    summary_model = EXCLUDED.summary_model,
                     embedding = EXCLUDED.embedding,
                     metadata = EXCLUDED.metadata,
                     tokens = EXCLUDED.tokens,
@@ -567,6 +573,8 @@ class DatabaseManager:
                 uuid.UUID(document_id),
                 uuid.UUID(context_id),
                 content,
+                summary,
+                summary_model,
                 embedding_str,
                 chunk_index,
                 json.dumps(metadata or {}),
@@ -688,7 +696,7 @@ class DatabaseManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
+                    c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
                     c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                     c.start_line, c.end_line, c.char_start, c.char_end,
                     LENGTH(d.content) as parent_page_size,
@@ -718,6 +726,8 @@ class DatabaseManager:
                     "id": str(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
+                    "summary": row["summary"],
+                    "summary_model": row["summary_model"],
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
@@ -762,7 +772,7 @@ class DatabaseManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
+                    c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
                     c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                     c.start_line, c.end_line, c.char_start, c.char_end,
                     LENGTH(d.content) as parent_page_size,
@@ -791,6 +801,8 @@ class DatabaseManager:
                     "id": str(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
+                    "summary": row["summary"],
+                    "summary_model": row["summary_model"],
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),

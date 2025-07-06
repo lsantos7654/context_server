@@ -181,7 +181,7 @@ class ContextServerTools:
     async def search_context(
         self, context_name: str, query: str, mode: str = "hybrid", limit: int = 10
     ) -> dict[str, Any]:
-        """Search for content within a context.
+        """Search for content within a context with compact summaries.
 
         Args:
             context_name: Name of context to search
@@ -190,7 +190,7 @@ class ContextServerTools:
             limit: Maximum number of results to return
 
         Returns:
-            Dictionary with search results including content and metadata
+            Dictionary with compact search results optimized for MCP responses
 
         Raises:
             ContextServerError: If context not found or search fails
@@ -201,10 +201,49 @@ class ContextServerTools:
             result = await self.client.post(
                 f"/api/contexts/{context_name}/search", data
             )
+            
+            # Transform results to compact format for MCP
+            compact_results = []
+            for item in result.get("results", []):
+                # Use summary if available, otherwise truncate content
+                display_content = item.get("summary")
+                if not display_content:
+                    # Fallback to truncated content
+                    content = item.get("content", "")
+                    display_content = content[:150] + "..." if len(content) > 150 else content
+                
+                # Count code snippets but don't include full content
+                code_snippets = item.get("metadata", {}).get("code_snippets", [])
+                code_snippets_count = len(code_snippets) if code_snippets else 0
+                
+                compact_result = {
+                    "id": item.get("id"),
+                    "document_id": item.get("document_id"),
+                    "title": item.get("title"),
+                    "summary": display_content,
+                    "score": item.get("score"),
+                    "url": item.get("url"),
+                    "has_summary": bool(item.get("summary")),
+                    "code_snippets_count": code_snippets_count,
+                    "content_type": item.get("content_type", "chunk"),
+                    "chunk_index": item.get("chunk_index"),
+                }
+                compact_results.append(compact_result)
+            
+            # Return compact response
+            compact_response = {
+                "results": compact_results,
+                "total": result.get("total", len(compact_results)),
+                "query": result.get("query", query),
+                "mode": result.get("mode", mode),
+                "execution_time_ms": result.get("execution_time_ms", 0),
+                "note": "Content summarized for MCP. Use get_document for full content."
+            }
+            
             logger.info(
-                f"Search completed: {len(result.get('results', []))} results for '{query}' in {context_name}"
+                f"MCP search completed: {len(compact_results)} compact results for '{query}' in {context_name}"
             )
-            return result
+            return compact_response
 
         except ContextServerError as e:
             if e.status_code == 404:

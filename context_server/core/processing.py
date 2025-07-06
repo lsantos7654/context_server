@@ -11,6 +11,7 @@ from pathlib import Path
 from .chunking import TextChunker
 from .crawl4ai_extraction import Crawl4aiExtractor
 from .embeddings import EmbeddingService
+from .summarization import SummarizationService
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,8 @@ class ProcessedChunk:
     embedding: list[float]
     metadata: dict
     tokens: int
+    summary: str = None
+    summary_model: str = None
     start_line: int = None
     end_line: int = None
     char_start: int = None
@@ -157,8 +160,9 @@ class CodeSnippetExtractor:
 class DocumentProcessor:
     """Processes documents using existing extraction pipeline and creates embeddings."""
 
-    def __init__(self, embedding_service: EmbeddingService | None = None):
+    def __init__(self, embedding_service: EmbeddingService | None = None, summarization_service: SummarizationService | None = None):
         self.embedding_service = embedding_service or EmbeddingService()
+        self.summarization_service = summarization_service or SummarizationService()
         self.chunker = TextChunker()
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
@@ -468,14 +472,38 @@ class DocumentProcessor:
                     # Create dummy embeddings for testing
                     embeddings = [[0.0] * 1536 for _ in batch]
 
+                # Generate summaries for the batch
+                summaries = []
+                summary_model = None
+                if self.summarization_service.client:
+                    try:
+                        chunk_data = [(f"chunk_{i}", chunk.content) for i, chunk in enumerate(batch)]
+                        summary_results = await self.summarization_service.summarize_chunks_batch(
+                            chunk_data, batch_size=5
+                        )
+                        summaries = [result[1] for result in summary_results]  # Extract summaries
+                        summary_model = self.summarization_service.model
+                        logger.debug(f"Generated {len([s for s in summaries if s])} summaries for batch")
+                    except Exception as e:
+                        logger.warning(f"Failed to generate summaries: {e}")
+                        summaries = [None] * len(batch)
+                else:
+                    logger.debug("Summarization service not available, using fallback")
+                    summaries = [
+                        self.summarization_service.get_fallback_summary(chunk.content)
+                        for chunk in batch
+                    ]
+
                 # Create processed chunks
-                for chunk, embedding in zip(batch, embeddings):
+                for chunk, embedding, summary in zip(batch, embeddings, summaries):
                     # Extract links from this chunk
                     chunk_link_data = self._extract_links_from_chunk(chunk.content)
 
                     processed_chunk = ProcessedChunk(
                         content=chunk.content,
                         embedding=embedding,
+                        summary=summary,
+                        summary_model=summary_model,
                         metadata={
                             **chunk.metadata,
                             **chunk_link_data,  # Add chunk-level link data

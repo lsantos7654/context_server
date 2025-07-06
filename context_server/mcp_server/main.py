@@ -132,7 +132,7 @@ async def handle_list_tools() -> list[types.Tool]:
         # Search and Retrieval Tools
         types.Tool(
             name="search_context",
-            description="Search for content within a context. Use hybrid mode for best results, vector for semantic search, fulltext for exact matches.",
+            description="Search for content within a context with compact summaries. Returns LLM-generated summaries (~100 chars) instead of full content for faster responses. Use get_document to retrieve full content when needed.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -161,7 +161,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_document",
-            description="Get the full raw content of a specific document. Use this when you need the complete document text.",
+            description="Get the full raw content of a specific document. Use this when search_context returns summaries and you need the complete document text for detailed analysis or code examples.",
             inputSchema={
                 "type": "object",
                 "properties": {

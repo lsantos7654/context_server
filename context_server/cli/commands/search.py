@@ -249,7 +249,8 @@ def display_results_table(results: list, show_content: bool = True):
     table.add_column("URL", style="blue")
 
     if show_content:
-        table.add_column("Content", style="dim", width=50)
+        table.add_column("Summary", style="yellow", width=30)
+        table.add_column("Content", style="dim", width=40)
 
     for result in results:
         score = f"{result['score']:.3f}"
@@ -268,10 +269,15 @@ def display_results_table(results: list, show_content: bool = True):
         row = [score, str(doc_id), title, url]
 
         if show_content:
-            content = result["content"][:200] + (
-                "..." if len(result["content"]) > 200 else ""
+            # Show summary if available
+            summary = result.get("summary", "")
+            summary_display = summary[:120] + ("..." if len(summary) > 120 else "") if summary else ""
+            
+            # Show truncated content
+            content = result["content"][:150] + (
+                "..." if len(result["content"]) > 150 else ""
             )
-            row.append(content)
+            row.extend([summary_display, content])
 
         table.add_row(*row)
 
@@ -323,6 +329,10 @@ def display_results_rich(
         title_text += (
             f"\n[dim white]Chunk {chunk_index} • Score: {score:.4f}[/dim white]"
         )
+        
+        # Show summary availability  
+        if result.get("summary"):
+            title_text += f"\n[green]✓ Summary available[/green]"
 
         # Add document size if available
         doc_size = document_metadata.get("size", 0)
@@ -415,6 +425,18 @@ def display_results_rich(
                         )
 
         if show_content:
+            # Show summary if available
+            summary = result.get("summary", "")
+            summary_model = result.get("summary_model", "")
+            content_section = ""
+            
+            if summary:
+                summary_header = "[bold yellow]Summary"
+                if summary_model:
+                    summary_header += f" ({summary_model})"
+                summary_header += ":[/bold yellow]"
+                content_section += f"{summary_header}\n[italic yellow]{summary}[/italic yellow]\n\n"
+            
             # Highlight query terms in content (simple highlighting)
             highlighted_content = highlight_query_terms(content, query)
 
@@ -429,8 +451,11 @@ def display_results_rich(
                     + f"\n\n[dim]... (content truncated, showing first {max_display_length:,} characters)[/dim]"
                 )
 
-            # Create panel with content
-            panel_content = f"{title_text}\n\n{highlighted_content}"
+            # Add content section
+            content_section += f"[bold white]Content:[/bold white]\n{highlighted_content}"
+
+            # Create panel with summary and content
+            panel_content = f"{title_text}\n\n{content_section}"
         else:
             panel_content = title_text
 
