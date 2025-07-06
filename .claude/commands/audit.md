@@ -4,6 +4,10 @@
 
 Please perform a comprehensive audit of this Python codebase using this template. Focus on identifying opportunities for improvement, code duplication, and architectural simplifications.
 
+**IMPORTANT**: Reference @CLAUDE.md for code styling standards and architecture patterns. After completing the refactor, run `pre-commit run --all-files` to fix all linting and formatting issues.
+
+**LEAN SYSTEM APPROACH**: This audit should focus on reducing complexity. Don't be afraid to delete unused code, old markdown files, or redundant features. Assume everything has been saved and pushed to GitHub - you are free to delete files that add no value.
+
 ## 1. Codebase Overview Analysis
 
 ### Current Structure Assessment
@@ -298,6 +302,16 @@ After completing the audit:
 3. **Update Documentation**: Reflect architectural decisions
 4. **Set up Monitoring**: Add metrics for identified issues
 5. **Schedule Reviews**: Plan regular architecture reviews
+
+## 13. Post-Refactor Quality Assurance
+
+After implementing any refactoring changes:
+
+1. **Run Pre-commit**: Execute `pre-commit run --all-files` to ensure all code meets standards
+2. **Fix All Issues**: Address any linting, formatting, or type checking errors
+3. **Test Everything**: Run full test suite to ensure no regressions
+4. **Update CLAUDE.md**: Document any new patterns or architectural decisions
+5. **Clean Up**: Remove any temporary files, unused imports, or dead code
 
 ## Deliverables
 
