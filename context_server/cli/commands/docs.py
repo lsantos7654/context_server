@@ -33,7 +33,7 @@ def docs():
     """Extract and manage documents within contexts.
 
     Commands for processing documents from various sources including
-    URLs, files, directories, and git repositories.
+    URLs, files, and local directories.
 
     Examples:
         ctx docs extract https://docs.rust-lang.org rust-docs    # Extract from URL
@@ -49,7 +49,7 @@ def docs():
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option(
     "--source-type",
-    type=click.Choice(["url", "file", "git", "local"]),
+    type=click.Choice(["url", "file", "local"]),
     help="Source type (auto-detected if not specified)",
 )
 @click.option("--max-pages", default=50, help="Maximum pages to extract for URLs")
@@ -82,13 +82,13 @@ def extract(
 ):
     """Extract documents from a source into a context.
 
-    Processes documents from URLs, files, directories, or git repositories
+    Processes documents from URLs, files, or local directories
     and adds them to the specified context for search and retrieval.
 
     Args:
-        source: URL, file path, git repository, or local directory
+        source: URL, file path, or local directory
         context_name: Name of target context
-        source_type: Source type (url, file, git, local)
+        source_type: Source type (url, file, local)
         max_pages: Maximum pages to extract for URLs
         wait: Wait for extraction to complete
         output_path: Local directory to save extracted files (for local mode)
@@ -99,10 +99,6 @@ def extract(
     if not source_type:
         if source.startswith(("http://", "https://")):
             source_type = "url"
-        elif source.startswith(
-            ("git://", "git@", "https://github.com", "https://gitlab.com")
-        ):
-            source_type = "git"
         elif Path(source).exists():
             if Path(source).is_dir():
                 source_type = "local"
@@ -151,13 +147,11 @@ def extract(
                         await wait_for_extraction(job_id)
                     else:
                         echo_info("Extraction running in background")
-                        echo_info(
-                            f"Check status with: context-server docs status {job_id}"
-                        )
+                        echo_info(f"Check status with: ctx docs status {job_id}")
 
                 elif response.status_code == 404:
                     echo_error(f"Context '{context_name}' not found")
-                    echo_info("Create it with: context-server context create <name>")
+                    echo_info("Create it with: ctx context create <name>")
                 else:
                     echo_error(
                         f"Failed to start extraction: {response.status_code} - {response.text}"
@@ -165,7 +159,7 @@ def extract(
 
         except httpx.RequestError as e:
             echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+            echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(extract_document())
 
@@ -212,7 +206,7 @@ def list(context_name, offset, limit, output_format):
                         if not documents:
                             echo_info(f"No documents found in context '{context_name}'")
                             echo_info(
-                                "Extract some with: context-server docs extract <source> <context>"
+                                "Extract some with: ctx docs extract <source> <context>"
                             )
                             return
 
@@ -255,7 +249,7 @@ def list(context_name, offset, limit, output_format):
 
         except httpx.RequestError as e:
             echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+            echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(list_documents())
 
@@ -301,22 +295,98 @@ def delete(context_name, document_ids, force):
 
         except httpx.RequestError as e:
             echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+            echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(delete_documents())
 
 
 @docs.command()
 @click.argument("job_id")
+@rich_help_option("-h", "--help")
 def status(job_id):
     """Check the status of a document extraction job.
 
     Args:
         job_id: Extraction job ID
     """
-    # This would require an API endpoint for job status
-    echo_error("Job status checking is not yet implemented")
-    echo_info("Job status tracking will be available in a future version")
+
+    async def get_job_status():
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    get_api_url(f"jobs/{job_id}/status"),
+                    timeout=10.0,
+                )
+
+                if response.status_code == 200:
+                    job_data = response.json()
+
+                    # Create a status table
+                    from rich.panel import Panel
+                    from rich.table import Table
+
+                    table = Table(title=f"Job Status: {job_id}")
+                    table.add_column("Property", style="cyan")
+                    table.add_column("Value", style="white")
+
+                    table.add_row("Status", job_data["status"])
+                    table.add_row("Progress", f"{int(job_data['progress'] * 100)}%")
+                    table.add_row("Type", job_data["type"])
+                    table.add_row(
+                        "Started",
+                        job_data["started_at"][:19]
+                        if job_data["started_at"]
+                        else "N/A",
+                    )
+                    table.add_row(
+                        "Updated",
+                        job_data["updated_at"][:19]
+                        if job_data["updated_at"]
+                        else "N/A",
+                    )
+
+                    if job_data["completed_at"]:
+                        table.add_row("Completed", job_data["completed_at"][:19])
+
+                    if job_data["error_message"]:
+                        table.add_row("Error", job_data["error_message"])
+
+                    console.print(table)
+
+                    # Show metadata if available
+                    if job_data["metadata"]:
+                        metadata = job_data["metadata"]
+                        if "phase" in metadata:
+                            echo_info(f"Current phase: {metadata['phase']}")
+                        if "source" in metadata:
+                            echo_info(f"Source: {metadata['source']}")
+
+                    # Show result data if completed
+                    if job_data["status"] == "completed" and job_data["result_data"]:
+                        result_data = job_data["result_data"]
+                        echo_success("Extraction Results:")
+                        echo_info(
+                            f"  Documents processed: {result_data.get('documents_processed', 0)}"
+                        )
+                        echo_info(
+                            f"  Total chunks: {result_data.get('total_chunks', 0)}"
+                        )
+                        echo_info(
+                            f"  Code snippets: {result_data.get('total_code_snippets', 0)}"
+                        )
+
+                elif response.status_code == 404:
+                    echo_error(f"Job '{job_id}' not found")
+                else:
+                    echo_error(
+                        f"Failed to get job status: {response.status_code} - {response.text}"
+                    )
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: ctx server up")
+
+    asyncio.run(get_job_status())
 
 
 @docs.command()
@@ -416,7 +486,7 @@ def show(context_name, document_id, output_file):
 
         except httpx.RequestError as e:
             echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+            echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(show_document())
 
@@ -425,7 +495,7 @@ def show(context_name, document_id, output_file):
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option(
     "--source-type",
-    type=click.Choice(["url", "file", "git"]),
+    type=click.Choice(["url", "file"]),
     help="Filter by source type",
 )
 @click.option("--since", help="Show documents indexed since date (YYYY-MM-DD)")
@@ -477,15 +547,15 @@ def count(context_name, source_type, since):
 
         except httpx.RequestError as e:
             echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: context-server server up")
+            echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(count_documents())
 
 
 async def wait_for_extraction(
-    job_id: str, check_interval: float = 5.0, timeout: int = 300
+    job_id: str, check_interval: float = 2.0, timeout: int = 600
 ):
-    """Wait for extraction job to complete.
+    """Wait for extraction job to complete by polling job status API.
 
     Args:
         job_id: Job ID to monitor
@@ -500,21 +570,84 @@ async def wait_for_extraction(
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Extracting documents...", total=None)
+        task = progress.add_task("Starting extraction...", total=None)
+        last_status = None
 
         while time.time() - start_time < timeout:
-            # In a real implementation, this would check job status via API
-            # For now, we'll just wait a reasonable amount of time
+            try:
+                # Poll job status from API
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        get_api_url(f"jobs/{job_id}/status"),
+                        timeout=10.0,
+                    )
+
+                    if response.status_code == 200:
+                        job_data = response.json()
+                        status = job_data["status"]
+                        progress_pct = job_data["progress"]
+
+                        # Update progress display based on job metadata
+                        if "metadata" in job_data and job_data["metadata"]:
+                            metadata = job_data["metadata"]
+                            phase = metadata.get("phase", "processing")
+
+                            if phase == "crawling":
+                                description = f"Crawling: {metadata.get('url', '...')}"
+                            elif phase == "content_extracted":
+                                pages = metadata.get("pages_found", 0)
+                                description = (
+                                    f"Found {pages} pages, processing content..."
+                                )
+                            elif phase == "chunking_and_embedding":
+                                processed = metadata.get("processed_pages", 0)
+                                total = metadata.get("total_pages", 1)
+                                description = f"Chunking and embedding ({processed}/{total} pages)"
+                            elif phase == "storing_documents":
+                                stored = metadata.get("stored_docs", 0)
+                                total = metadata.get("total_docs", 1)
+                                description = f"Storing documents ({stored}/{total})"
+                            else:
+                                description = (
+                                    f"Processing... ({int(progress_pct * 100)}%)"
+                                )
+                        else:
+                            description = f"Processing... ({int(progress_pct * 100)}%)"
+
+                        progress.update(task, description=description)
+
+                        if status == "completed":
+                            echo_success("Document extraction completed!")
+                            result_data = job_data.get("result_data", {})
+                            if result_data:
+                                docs_count = result_data.get("documents_processed", 0)
+                                chunks_count = result_data.get("total_chunks", 0)
+                                echo_info(
+                                    f"Processed {docs_count} documents with {chunks_count} chunks"
+                                )
+                            return
+                        elif status == "failed":
+                            error_msg = job_data.get("error_message", "Unknown error")
+                            echo_error(f"Document extraction failed: {error_msg}")
+                            return
+
+                        last_status = status
+
+                    elif response.status_code == 404:
+                        echo_error(f"Job {job_id} not found")
+                        return
+                    else:
+                        echo_warning(
+                            f"Failed to get job status: {response.status_code}"
+                        )
+
+            except httpx.RequestError as e:
+                echo_warning(f"Connection error while checking job status: {e}")
+
             await asyncio.sleep(check_interval)
 
-            # Simulate completion after 30 seconds (placeholder)
-            if time.time() - start_time > 30:
-                progress.update(task, description="Extraction completed!")
-                echo_success("Document extraction completed!")
-                return
-
-        echo_warning("Extraction may still be running in the background")
-        echo_info("Check server logs for progress")
+        echo_warning("Extraction timed out, but may still be running in the background")
+        echo_info(f"Check status with: ctx docs status {job_id}")
 
 
 async def handle_local_extraction(
@@ -684,7 +817,7 @@ async def handle_local_extraction(
         echo_warning(f"Errors: {total_errors} files")
 
     echo_info(f"Files added to context '{context_name}'")
-    echo_info(f"Try: context-server search query '<your-query>' {context_name}")
+    echo_info(f"Try: ctx search query '<your-query>' {context_name}")
 
 
 @docs.command()

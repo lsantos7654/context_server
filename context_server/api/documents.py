@@ -75,85 +75,223 @@ async def _process_document_background(
     db: DatabaseManager,
     processor: DocumentProcessor,
 ):
-    """Background task for document processing."""
+    """Background task for document processing with real progress tracking and cancellation support."""
     try:
-        logger.info(
-            f"Processing document: {document_data.source} for context {context['name']}"
-        )
+        # Add overall job timeout (30 minutes)
+        job_timeout = 1800  # 30 minutes
 
-        # Process the document based on source type
-        if document_data.source_type.value == "url":
-            result = await processor.process_url(
-                url=document_data.source, options=document_data.options
-            )
-        elif document_data.source_type.value == "file":
-            result = await processor.process_file(
-                file_path=document_data.source, options=document_data.options
-            )
-        elif document_data.source_type.value == "git":
-            result = await processor.process_git_repo(
-                repo_url=document_data.source, options=document_data.options
-            )
-        else:
-            raise ValueError(f"Unsupported source type: {document_data.source_type}")
+        async def _check_cancellation():
+            """Check if job has been cancelled"""
+            job_status = await db.get_job_status(job_id)
+            return job_status and job_status.get("status") == "cancelled"
 
-        # Store processed documents
-        for doc in result.documents:
-            doc_id = await db.create_document(
+        async def _process_with_cancellation_checks():
+            # Check for cancellation before starting
+            if await _check_cancellation():
+                logger.info(f"Job {job_id} was cancelled before processing started")
+                return
+
+            # Create the job record
+            await db.create_job(
+                job_id=job_id,
+                job_type="document_extraction",
                 context_id=context["id"],
-                url=doc.url,
-                title=doc.title,
-                content=doc.content,
-                metadata=doc.metadata,
-                source_type=document_data.source_type.value,
+                metadata={
+                    "source": document_data.source,
+                    "source_type": document_data.source_type.value,
+                    "options": document_data.options,
+                },
             )
 
-            # Store chunks with embeddings and line tracking
-            for i, chunk in enumerate(doc.chunks):
-                await db.create_chunk(
-                    document_id=doc_id,
-                    context_id=context["id"],
-                    content=chunk.content,
-                    embedding=chunk.embedding,
-                    chunk_index=i,
-                    metadata=chunk.metadata,
-                    tokens=chunk.tokens,
-                    start_line=chunk.start_line,
-                    end_line=chunk.end_line,
-                    char_start=chunk.char_start,
-                    char_end=chunk.char_end,
+            logger.info(
+                f"Processing document: {document_data.source} for context {context['name']}"
+            )
+
+            # Update job to processing status
+            await db.update_job_progress(job_id, 0.1, status="processing")
+
+            # Check for cancellation before main processing
+            if await _check_cancellation():
+                logger.info(f"Job {job_id} was cancelled during setup")
+                return
+
+            # Process the document based on source type
+            if document_data.source_type.value == "url":
+                result = await processor.process_url(
+                    url=document_data.source,
+                    options=document_data.options,
+                    job_id=job_id,
+                    db=db,
+                )
+            elif document_data.source_type.value == "file":
+                result = await processor.process_file(
+                    file_path=document_data.source,
+                    options=document_data.options,
+                    job_id=job_id,
+                    db=db,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported source type: {document_data.source_type}"
                 )
 
-            # Store code snippets with embeddings
-            for snippet in doc.code_snippets:
-                await db.create_code_snippet(
-                    document_id=doc_id,
-                    context_id=context["id"],
-                    content=snippet.content,
-                    language=snippet.language,
-                    embedding=snippet.embedding,
-                    metadata=snippet.metadata,
-                    start_line=snippet.start_line,
-                    end_line=snippet.end_line,
-                    char_start=snippet.char_start,
-                    char_end=snippet.char_end,
-                    snippet_type=snippet.metadata.get("type", "code_block"),
+            # Check for cancellation after processing
+            if await _check_cancellation():
+                logger.info(f"Job {job_id} was cancelled after processing")
+                return
+
+            if not result.success:
+                await db.complete_job(job_id, error_message=result.error)
+                return
+
+            # Process and store documents individually for fault tolerance
+            await db.update_job_progress(
+                job_id,
+                0.8,
+                metadata={
+                    "phase": "storing_documents",
+                    "documents_extracted": len(result.documents),
+                },
+            )
+
+            total_docs = len(result.documents)
+            stored_docs = 0
+            failed_docs = []
+            total_chunks = 0
+            total_code_snippets = 0
+
+            # Store processed documents one by one to preserve partial work
+            for doc_idx, doc in enumerate(result.documents):
+                # Check for cancellation before each document
+                if await _check_cancellation():
+                    logger.info(
+                        f"Job {job_id} was cancelled during document storage ({stored_docs}/{total_docs} completed)"
+                    )
+                    return
+                try:
+                    # Store document with timeout protection
+                    doc_id = await asyncio.wait_for(
+                        db.create_document(
+                            context_id=context["id"],
+                            url=doc.url,
+                            title=doc.title,
+                            content=doc.content,
+                            metadata=doc.metadata,
+                            source_type=document_data.source_type.value,
+                        ),
+                        timeout=30.0,  # 30 second timeout per document
+                    )
+
+                    # Store chunks with embeddings and line tracking
+                    chunk_count = len(doc.chunks)
+                    for i, chunk in enumerate(doc.chunks):
+                        await db.create_chunk(
+                            document_id=doc_id,
+                            context_id=context["id"],
+                            content=chunk.content,
+                            embedding=chunk.embedding,
+                            chunk_index=i,
+                            metadata=chunk.metadata,
+                            tokens=chunk.tokens,
+                            start_line=chunk.start_line,
+                            end_line=chunk.end_line,
+                            char_start=chunk.char_start,
+                            char_end=chunk.char_end,
+                        )
+
+                    # Store code snippets with embeddings
+                    snippet_count = len(doc.code_snippets)
+                    for snippet in doc.code_snippets:
+                        await db.create_code_snippet(
+                            document_id=doc_id,
+                            context_id=context["id"],
+                            content=snippet.content,
+                            language=snippet.language,
+                            embedding=snippet.embedding,
+                            metadata=snippet.metadata,
+                            start_line=snippet.start_line,
+                            end_line=snippet.end_line,
+                            char_start=snippet.char_start,
+                            char_end=snippet.char_end,
+                            snippet_type=snippet.metadata.get("type", "code_block"),
+                        )
+
+                    # Update document chunk count
+                    await db.update_document_chunk_count(doc_id)
+
+                    # Track successful storage
+                    stored_docs += 1
+                    total_chunks += chunk_count
+                    total_code_snippets += snippet_count
+
+                    logger.info(
+                        f"Successfully stored document {doc_idx + 1}/{total_docs}: {doc.title}"
+                    )
+
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Timeout storing document {doc_idx + 1}/{total_docs}: {doc.title}"
+                    )
+                    failed_docs.append(
+                        {"url": doc.url, "title": doc.title, "error": "Storage timeout"}
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to store document {doc_idx + 1}/{total_docs}: {doc.title} - {e}"
+                    )
+                    failed_docs.append(
+                        {"url": doc.url, "title": doc.title, "error": str(e)}
+                    )
+
+                # Update progress after each document (successful or failed)
+                storage_progress = 0.8 + (0.2 * ((doc_idx + 1) / total_docs))
+                await db.update_job_progress(
+                    job_id,
+                    storage_progress,
+                    metadata={
+                        "phase": "storing_documents",
+                        "stored_docs": stored_docs,
+                        "failed_docs": len(failed_docs),
+                        "total_docs": total_docs,
+                    },
                 )
 
-            # Update document chunk count
-            await db.update_document_chunk_count(doc_id)
+            # Complete the job with comprehensive results
+            result_data = {
+                "documents_processed": stored_docs,
+                "documents_failed": len(failed_docs),
+                "total_chunks": total_chunks,
+                "total_code_snippets": total_code_snippets,
+            }
 
-            # Note: Documents are no longer cached during extraction
-            # Caching now only happens during search when expand-context is requested
-            # This improves memory usage and follows the intended design
+            # Add failure details if any
+            if failed_docs:
+                result_data["failed_documents"] = failed_docs
+                logger.warning(
+                    f"Job {job_id} completed with {len(failed_docs)} failed documents"
+                )
 
-        logger.info(
-            f"Completed processing job: {job_id}, processed {len(result.documents)} documents"
-        )
+            await db.complete_job(job_id, result_data=result_data)
+
+            logger.info(
+                f"Completed processing job: {job_id}, processed {stored_docs} documents"
+            )
+
+        # Apply timeout to the entire processing function
+        try:
+            await asyncio.wait_for(
+                _process_with_cancellation_checks(), timeout=job_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Job {job_id} timed out after {job_timeout}s")
+            await db.complete_job(
+                job_id, error_message=f"Job timed out after {job_timeout} seconds"
+            )
 
     except Exception as e:
         logger.error(f"Failed to process document in job {job_id}: {e}")
-        # TODO: Store job status/errors in database for tracking
+        # Store job failure in database
+        await db.complete_job(job_id, error_message=str(e))
 
 
 @router.get("/contexts/{context_name}/documents", response_model=DocumentsResponse)

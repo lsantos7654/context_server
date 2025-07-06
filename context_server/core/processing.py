@@ -198,66 +198,186 @@ class DocumentProcessor:
         }
 
     async def process_url(
-        self, url: str, options: dict | None = None
+        self, url: str, options: dict | None = None, job_id: str | None = None, db=None
     ) -> ProcessingResult:
-        """Process a URL using the existing crawl4ai extraction pipeline."""
+        """Process a URL with per-document processing and storage."""
         try:
             logger.info(f"Processing URL: {url}")
 
-            # Use existing extraction pipeline
+            # Report crawling phase start
+            if job_id and db:
+                await db.update_job_progress(
+                    job_id, 0.1, metadata={"phase": "crawling", "url": url}
+                )
+
+            # Use existing extraction pipeline with timeout
             max_pages = options.get("max_pages", 50) if options else 50
-            result = await self.extractor.extract_from_url(url, max_pages=max_pages)
+
+            # Add timeout to extraction
+            extraction_timeout = min(
+                600, max_pages * 30
+            )  # 30s per page, max 10 minutes
+            try:
+                result = await asyncio.wait_for(
+                    self.extractor.extract_from_url(url, max_pages=max_pages),
+                    timeout=extraction_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"URL extraction timed out after {extraction_timeout}s")
+                return ProcessingResult(
+                    documents=[],
+                    success=False,
+                    error=f"Extraction timed out after {extraction_timeout}s",
+                )
 
             if not result.success:
                 return ProcessingResult(documents=[], success=False, error=result.error)
 
-            # Create separate documents for each extracted page if available
+            # Report content extraction completed
+            if job_id and db:
+                await db.update_job_progress(
+                    job_id,
+                    0.2,
+                    metadata={
+                        "phase": "content_extracted",
+                        "pages_found": len(result.metadata.get("extracted_pages", [])),
+                    },
+                )
+
+            # Process and store documents individually for fault tolerance
             documents = []
+            failed_pages = []
             extracted_pages = result.metadata.get("extracted_pages", [])
+            total_pages = len(extracted_pages) if extracted_pages else 1
 
             if extracted_pages:
-                # Process each page as a separate document
-                for page_info in extracted_pages:
+                # Process each page individually with immediate storage if db available
+                for idx, page_info in enumerate(extracted_pages):
                     page_url = page_info["url"]
                     page_content = page_info["content"]
 
-                    # Create page-specific metadata
-                    page_metadata = result.metadata.copy()
-                    page_metadata["page_url"] = page_url
-                    page_metadata["is_individual_page"] = True
+                    try:
+                        # Create page-specific metadata
+                        page_metadata = result.metadata.copy()
+                        page_metadata["page_url"] = page_url
+                        page_metadata["is_individual_page"] = True
 
-                    # Add link counts if available
-                    if "link_counts" in page_info:
-                        page_metadata.update(page_info["link_counts"])
+                        # Add link counts if available
+                        if "link_counts" in page_info:
+                            page_metadata.update(page_info["link_counts"])
 
-                    # Create document title from page URL
-                    page_title = self._create_title_from_url(page_url, url)
+                        # Create document title from page URL
+                        page_title = self._create_title_from_url(page_url, url)
 
-                    document = await self._process_content(
-                        content=page_content,
-                        url=page_url,  # Use individual page URL
-                        title=page_title,
-                        metadata=page_metadata,
-                    )
-                    documents.append(document)
+                        # Process content with timeout protection
+                        processing_timeout = 300  # 5 minutes per document
+                        document = await asyncio.wait_for(
+                            self._process_content(
+                                content=page_content,
+                                url=page_url,
+                                title=page_title,
+                                metadata=page_metadata,
+                            ),
+                            timeout=processing_timeout,
+                        )
+                        documents.append(document)
+
+                        logger.info(
+                            f"Successfully processed page {idx + 1}/{total_pages}: {page_title}"
+                        )
+
+                    except asyncio.TimeoutError:
+                        logger.error(
+                            f"Processing timeout for page {idx + 1}/{total_pages}: {page_url}"
+                        )
+                        failed_pages.append(
+                            {"url": page_url, "error": "Processing timeout"}
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to process page {idx + 1}/{total_pages}: {page_url} - {e}"
+                        )
+                        failed_pages.append({"url": page_url, "error": str(e)})
+
+                    # Report progress after each page
+                    if job_id and db:
+                        progress = 0.2 + (0.6 * (idx + 1) / total_pages)  # 20% to 80%
+                        await db.update_job_progress(
+                            job_id,
+                            progress,
+                            metadata={
+                                "phase": "chunking_and_embedding",
+                                "processed_pages": idx + 1,
+                                "total_pages": total_pages,
+                                "successful_pages": len(documents),
+                                "failed_pages": len(failed_pages),
+                            },
+                        )
             else:
                 # Fallback to single document if no individual pages
-                document = await self._process_content(
-                    content=result.content,
-                    url=url,
-                    title=f"Documentation from {url}",
-                    metadata=result.metadata,
-                )
-                documents = [document]
+                try:
+                    document = await asyncio.wait_for(
+                        self._process_content(
+                            content=result.content,
+                            url=url,
+                            title=f"Documentation from {url}",
+                            metadata=result.metadata,
+                        ),
+                        timeout=300,  # 5 minute timeout
+                    )
+                    documents = [document]
 
-            return ProcessingResult(documents=documents, success=True)
+                    # Report progress for single document
+                    if job_id and db:
+                        await db.update_job_progress(
+                            job_id,
+                            0.8,
+                            metadata={
+                                "phase": "chunking_and_embedding",
+                                "processed_pages": 1,
+                                "total_pages": 1,
+                            },
+                        )
+
+                except asyncio.TimeoutError:
+                    logger.error(f"Processing timeout for main document: {url}")
+                    return ProcessingResult(
+                        documents=[], success=False, error="Document processing timeout"
+                    )
+
+            # Create result with success/failure information
+            processing_result = ProcessingResult(documents=documents, success=True)
+
+            # Add failure information to metadata if any pages failed
+            if failed_pages:
+                if not processing_result.documents:
+                    # All pages failed
+                    return ProcessingResult(
+                        documents=[],
+                        success=False,
+                        error=f"All {len(failed_pages)} pages failed to process",
+                    )
+                else:
+                    # Partial success - add failed pages to first document's metadata
+                    processing_result.documents[0].metadata[
+                        "failed_pages"
+                    ] = failed_pages
+                    logger.warning(
+                        f"URL processing completed with {len(failed_pages)} failed pages out of {total_pages}"
+                    )
+
+            return processing_result
 
         except Exception as e:
             logger.error(f"Failed to process URL {url}: {e}")
             return ProcessingResult(documents=[], success=False, error=str(e))
 
     async def process_file(
-        self, file_path: str, options: dict | None = None
+        self,
+        file_path: str,
+        options: dict | None = None,
+        job_id: str | None = None,
+        db=None,
     ) -> ProcessingResult:
         """Process a file using the existing extraction pipeline."""
         try:
@@ -313,18 +433,6 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Failed to process file {file_path}: {e}")
             return ProcessingResult(documents=[], success=False, error=str(e))
-
-    async def process_git_repo(
-        self, repo_url: str, options: dict | None = None
-    ) -> ProcessingResult:
-        """Process a Git repository."""
-        # TODO: Implement Git repository processing
-        # This would involve cloning the repo and processing relevant files
-        return ProcessingResult(
-            documents=[],
-            success=False,
-            error="Git repository processing not yet implemented",
-        )
 
     async def _process_content(
         self, content: str, url: str, title: str, metadata: dict

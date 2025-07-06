@@ -11,7 +11,6 @@ class SourceType(str, Enum):
 
     URL = "url"
     FILE = "file"
-    GIT = "git"
 
 
 class SearchMode(str, Enum):

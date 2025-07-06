@@ -5,6 +5,7 @@ Replaces the complex tiered extraction system with a single, unified approach
 using crawl4ai for all URL-based extraction.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -80,174 +81,215 @@ class Crawl4aiExtractor:
         )
 
     async def extract_from_url(self, url: str, max_pages: int = 50) -> ExtractionResult:
-        """Extract content from URL using crawl4ai."""
-        try:
-            logger.info(
-                "Starting crawl4ai extraction",
-                extra={"url": url, "max_pages": max_pages},
-            )
+        """Extract content from URL using crawl4ai with retry logic."""
+        max_retries = 3
+        retry_delay = 2
 
-            async with AsyncWebCrawler() as crawler:
-                # First, get the main page and discover all internal links
-                initial_result = await crawler.arun(
-                    url=url,
-                    config=CrawlerRunConfig(
-                        # Wait for dynamic content to load
-                        js_code=["window.scrollTo(0, document.body.scrollHeight);"],
-                        wait_for="css:body",
-                        # Only get internal links for this domain
-                        exclude_external_links=True,
-                        # Cache for efficiency
-                        cache_mode=CacheMode.ENABLED,
-                        # Give time for JavaScript to execute
-                        delay_before_return_html=2.0,
-                    ),
-                )
-
-                if not initial_result.success:
-                    return ExtractionResult.error(
-                        f"Failed to fetch initial page: {initial_result.error}"
-                    )
-
-                # Extract internal links
-                internal_links = initial_result.links.get("internal", [])
-
-                # Filter and limit links
-                doc_links = self._filter_documentation_links(
-                    internal_links, url, max_pages
-                )
-
+        for attempt in range(max_retries):
+            try:
                 logger.info(
-                    f"Found {len(internal_links)} internal links, "
-                    f"filtered to {len(doc_links)} documentation links"
+                    "Starting crawl4ai extraction",
+                    extra={"url": url, "max_pages": max_pages, "attempt": attempt + 1},
                 )
 
-                # Validate extraction completeness
-                validation_result = self._validate_extraction_completeness(
-                    doc_links,
-                    [
-                        link["href"] if isinstance(link, dict) else link
-                        for link in internal_links
-                    ],
-                    url,
-                )
-
-                # Log validation warnings
-                if validation_result["warnings"]:
-                    for warning in validation_result["warnings"]:
-                        logger.warning(f"Extraction validation: {warning}")
-
-                if validation_result["missing_important_urls"]:
-                    logger.warning(
-                        f"Missing {len(validation_result['missing_important_urls'])} "
-                        f"important URLs (first 3): "
-                        f"{validation_result['missing_important_urls'][:3]}"
+                # Initialize crawler with minimal config to avoid BrowserConfig errors
+                # Simplified configuration to avoid multiple browser_config arguments
+                async with AsyncWebCrawler(verbose=False) as crawler:
+                    # First, get the main page and discover all internal links
+                    initial_result = await crawler.arun(
+                        url=url,
+                        config=CrawlerRunConfig(
+                            # Wait for dynamic content to load
+                            js_code=["window.scrollTo(0, document.body.scrollHeight);"],
+                            wait_for="css:body",
+                            # Only get internal links for this domain
+                            exclude_external_links=True,
+                            # Cache for efficiency
+                            cache_mode=CacheMode.ENABLED,
+                            # Give time for JavaScript to execute but not too long
+                            delay_before_return_html=1.5,
+                            # Disable verbose to avoid BrowserConfig issues
+                            verbose=False,
+                            # Add timeout to prevent hanging
+                            page_timeout=30000,  # 30 seconds
+                        ),
                     )
 
-                # If no links found, just extract the single page
-                if not doc_links:
-                    doc_links = [url]
-
-                # Extract content from all documentation links
-                results = await crawler.arun_many(
-                    urls=[
-                        link["href"] if isinstance(link, dict) else link
-                        for link in doc_links
-                    ],
-                    config=CrawlerRunConfig(
-                        exclude_external_links=True,
-                        cache_mode=CacheMode.ENABLED,
-                        # Don't need to wait as long for individual pages
-                        delay_before_return_html=1.0,
-                    ),
-                )
-
-                # Process results and save files
-                extracted_contents = []
-                successful_extractions = 0
-
-                for i, result in enumerate(results):
-                    if result.success and result.markdown:
-                        content = result.markdown
-                        page_url = (
-                            doc_links[i]["href"]
-                            if isinstance(doc_links[i], dict)
-                            else doc_links[i]
-                        )
-
-                        # Clean and validate content using enhanced cleaner
-                        cleaned_content = self.cleaner.clean_content(content)
-
-                        if len(cleaned_content.strip()) < 100:  # Skip tiny pages
-                            logger.debug(f"Skipping {page_url} - content too short")
-                            continue
-
-                        # Save individual file
-                        if self.output_dir:
-                            filename = self._create_filename_from_url(page_url)
-                            file_path = self.output_dir / filename
-                            file_path.write_text(cleaned_content, encoding="utf-8")
-                            logger.debug(f"Saved {file_path}")
-
-                        extracted_contents.append(
-                            {
-                                "url": page_url,
-                                "content": cleaned_content,
-                                "filename": filename if self.output_dir else None,
-                            }
-                        )
-                        successful_extractions += 1
-                    else:
-                        page_url = (
-                            doc_links[i]["href"]
-                            if isinstance(doc_links[i], dict)
-                            else doc_links[i]
-                        )
+                    if not initial_result.success:
                         error_msg = (
-                            result.error
-                            if hasattr(result, "error")
-                            else "Unknown error"
+                            f"Failed to fetch initial page: {initial_result.error}"
                         )
-                        logger.debug(f"Failed to extract {page_url}: {error_msg}")
+                        if attempt < max_retries - 1:
+                            logger.warning(
+                                f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                            )
+                            await asyncio.sleep(retry_delay)
+                            continue
+                        else:
+                            return ExtractionResult.error(error_msg)
 
-                if not extracted_contents:
-                    return ExtractionResult.error("No content successfully extracted")
+                    # Extract internal links
+                    internal_links = initial_result.links.get("internal", [])
 
-                # Return metadata for all extracted contents instead of combining
-                base_metadata = {
-                    "source_type": "crawl4ai",
-                    "base_url": url,
-                    "total_links_found": len(internal_links),
-                    "filtered_links": len(doc_links),
-                    "successful_extractions": successful_extractions,
-                    "extraction_time": datetime.now().isoformat(),
-                }
+                    # Filter and limit links
+                    doc_links = self._filter_documentation_links(
+                        internal_links, url, max_pages
+                    )
 
-                logger.info(
-                    "Crawl4ai extraction completed",
-                    extra={
+                    logger.info(
+                        f"Found {len(internal_links)} internal links, "
+                        f"filtered to {len(doc_links)} documentation links"
+                    )
+
+                    # Validate extraction completeness
+                    validation_result = self._validate_extraction_completeness(
+                        doc_links,
+                        [
+                            link["href"] if isinstance(link, dict) else link
+                            for link in internal_links
+                        ],
+                        url,
+                    )
+
+                    # Log validation warnings
+                    if validation_result["warnings"]:
+                        for warning in validation_result["warnings"]:
+                            logger.warning(f"Extraction validation: {warning}")
+
+                    if validation_result["missing_important_urls"]:
+                        logger.warning(
+                            f"Missing {len(validation_result['missing_important_urls'])} "
+                            f"important URLs (first 3): "
+                            f"{validation_result['missing_important_urls'][:3]}"
+                        )
+
+                    # If no links found, just extract the single page
+                    if not doc_links:
+                        doc_links = [url]
+
+                    # Extract content from all documentation links with timeout
+                    results = await crawler.arun_many(
+                        urls=[
+                            link["href"] if isinstance(link, dict) else link
+                            for link in doc_links
+                        ],
+                        config=CrawlerRunConfig(
+                            exclude_external_links=True,
+                            cache_mode=CacheMode.ENABLED,
+                            # Don't need to wait as long for individual pages
+                            delay_before_return_html=0.8,
+                            # Disable verbose to avoid BrowserConfig issues
+                            verbose=False,
+                            # Add timeout for individual pages
+                            page_timeout=20000,  # 20 seconds per page
+                        ),
+                    )
+
+                    # Process results and save files
+                    extracted_contents = []
+                    successful_extractions = 0
+
+                    for i, result in enumerate(results):
+                        if result.success and result.markdown:
+                            content = result.markdown
+                            page_url = (
+                                doc_links[i]["href"]
+                                if isinstance(doc_links[i], dict)
+                                else doc_links[i]
+                            )
+
+                            # Clean and validate content using enhanced cleaner
+                            cleaned_content = self.cleaner.clean_content(content)
+
+                            if len(cleaned_content.strip()) < 100:  # Skip tiny pages
+                                logger.debug(f"Skipping {page_url} - content too short")
+                                continue
+
+                            # Save individual file
+                            if self.output_dir:
+                                filename = self._create_filename_from_url(page_url)
+                                file_path = self.output_dir / filename
+                                file_path.write_text(cleaned_content, encoding="utf-8")
+                                logger.debug(f"Saved {file_path}")
+
+                            extracted_contents.append(
+                                {
+                                    "url": page_url,
+                                    "content": cleaned_content,
+                                    "filename": filename if self.output_dir else None,
+                                }
+                            )
+                            successful_extractions += 1
+                        else:
+                            page_url = (
+                                doc_links[i]["href"]
+                                if isinstance(doc_links[i], dict)
+                                else doc_links[i]
+                            )
+                            error_msg = (
+                                result.error
+                                if hasattr(result, "error")
+                                else "Unknown error"
+                            )
+                            logger.debug(f"Failed to extract {page_url}: {error_msg}")
+
+                    if not extracted_contents:
+                        error_msg = "No content successfully extracted"
+                        if attempt < max_retries - 1:
+                            logger.warning(
+                                f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                            )
+                            await asyncio.sleep(retry_delay)
+                            continue
+                        else:
+                            return ExtractionResult.error(error_msg)
+
+                    # Return metadata for all extracted contents instead of combining
+                    base_metadata = {
+                        "source_type": "crawl4ai",
+                        "base_url": url,
+                        "total_links_found": len(internal_links),
+                        "filtered_links": len(doc_links),
                         "successful_extractions": successful_extractions,
-                        "total_links": len(doc_links),
-                    },
-                )
+                        "extraction_time": datetime.now().isoformat(),
+                    }
 
-                # For backwards compatibility, combine content but also store individual pages
-                combined_content = "\n\n---\n\n".join(
-                    [item["content"] for item in extracted_contents]
-                )
+                    logger.info(
+                        "Crawl4ai extraction completed",
+                        extra={
+                            "successful_extractions": successful_extractions,
+                            "total_links": len(doc_links),
+                        },
+                    )
 
-                # Add individual page info to metadata
-                base_metadata["extracted_pages"] = extracted_contents
+                    # For backwards compatibility, combine content but also store individual pages
+                    combined_content = "\n\n---\n\n".join(
+                        [item["content"] for item in extracted_contents]
+                    )
 
-                return ExtractionResult(
-                    success=True, content=combined_content, metadata=base_metadata
-                )
+                    # Add individual page info to metadata
+                    base_metadata["extracted_pages"] = extracted_contents
 
-        except Exception as e:
-            logger.error(
-                "Crawl4ai extraction failed", extra={"url": url, "error": str(e)}
-            )
-            return ExtractionResult.error(f"Crawl4ai extraction failed: {e}")
+                    return ExtractionResult(
+                        success=True, content=combined_content, metadata=base_metadata
+                    )
+
+            except Exception as e:
+                error_msg = f"Crawl4ai extraction failed: {e}"
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(
+                        "Crawl4ai extraction failed after all retries",
+                        extra={"url": url, "error": str(e), "attempts": max_retries},
+                    )
+                    return ExtractionResult.error(
+                        f"Crawl4ai extraction failed after {max_retries} attempts: {e}"
+                    )
 
     def extract_from_pdf(self, file_path: str | Path) -> ExtractionResult:
         """Extract content from PDF file using Docling."""

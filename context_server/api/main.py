@@ -122,10 +122,12 @@ async def reinitialize_database():
 def setup_routers():
     from .contexts import router as contexts_router
     from .documents import router as documents_router
+    from .jobs import router as jobs_router
     from .search import router as search_router
 
     app.include_router(contexts_router, prefix="/api/contexts", tags=["contexts"])
     app.include_router(documents_router, prefix="/api", tags=["documents"])
+    app.include_router(jobs_router, prefix="/api", tags=["jobs"])
     app.include_router(search_router, prefix="/api", tags=["search"])
 
 
