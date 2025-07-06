@@ -2,28 +2,15 @@
 
 import asyncio
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 
 import click
 from rich.console import Console
-from rich.syntax import Syntax
 
-from ..config import get_api_base_url, get_config
+from ..config import get_api_base_url
 from ..help_formatter import rich_help_option
-from ..utils import (
-    check_api_health,
-    check_docker_compose_running,
-    confirm_action,
-    echo_error,
-    echo_info,
-    echo_success,
-    echo_warning,
-    run_command,
-)
+from ..utils import check_api_health, echo_error, echo_info, echo_success, echo_warning
 
 console = Console()
 
@@ -134,7 +121,7 @@ def install(claude_config_dir, overwrite, show_paths):
         with open(claude_config_file, "w") as f:
             json.dump(config, f, indent=2)
 
-        echo_success(f"✅ Claude MCP configuration installed: {claude_config_file}")
+        echo_success(f"Claude MCP configuration installed: {claude_config_file}")
     except Exception as e:
         echo_error(f"Failed to write configuration: {e}")
         return
@@ -146,13 +133,13 @@ def install(claude_config_dir, overwrite, show_paths):
     echo_info(f"  • Context Server URL: http://localhost:8000")
 
     # Show next steps
-    echo_success("🎉 Installation complete!")
+    echo_success("Installation complete!")
     echo_info("Next steps:")
     echo_info("  1. Start Context Server: ctx server up")
     echo_info("  2. Restart Claude (if running)")
     echo_info("  3. Test: Ask Claude to 'list all contexts'")
     echo_info("")
-    echo_info("💡 The MCP server will start automatically when Claude connects")
+    echo_info("The MCP server will start automatically when Claude connects")
 
 
 @claude.command()
@@ -171,7 +158,7 @@ def config():
             echo_error(f"Context Server: Not available ({error})")
         return healthy
 
-    server_running = asyncio.run(check_server())
+    asyncio.run(check_server())
 
     # Show MCP server configuration
     mcp_script_path = _get_mcp_script_path()
@@ -390,7 +377,7 @@ def _create_claude_documentation(
 
 This document provides complete setup instructions for integrating Claude with Context Server using the MCP (Model Context Protocol) server.
 
-## ✅ Setup Complete
+## Setup Complete
 
 Your Claude integration has been automatically configured with the following settings:
 
@@ -398,7 +385,7 @@ Your Claude integration has been automatically configured with the following set
 - **MCP Server Script**: `{mcp_script_path}`
 - **Context Server URL**: `{get_api_base_url()}`
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Start Context Server
 
@@ -419,7 +406,7 @@ In Claude, you should see the Context Server MCP tools available. Test with:
 Can you create a context called "test-docs" and list all available contexts?
 ```
 
-## 🛠️ Available Tools
+## Available Tools
 
 Claude now has access to these Context Server tools:
 
@@ -443,7 +430,7 @@ Claude now has access to these Context Server tools:
 - `list_documents()` - List documents with pagination
 - `delete_documents()` - Remove specific documents
 
-## 📋 Example Workflows
+## Example Workflows
 
 ### Building a Ratatui Application
 
@@ -466,7 +453,7 @@ Can you:
 4. Get the full content of the most relevant document
 ```
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Claude doesn't see the MCP tools
 
@@ -516,7 +503,7 @@ Can you:
    cat "{claude_config_file}"
    ```
 
-## 🎯 Advanced Usage
+## Advanced Usage
 
 ### Autonomous Documentation Management
 
@@ -534,13 +521,13 @@ Claude can now autonomously:
 3. **Code Discovery**: Search for implementation patterns and examples
 4. **Implementation**: Get specific code snippets with metadata
 
-## 📚 Resources
+## Resources
 
 - [Context Server Documentation](./README.md)
 - [MCP Server Documentation](./README_MCP.md)
 - [CLI Commands Reference](./context_server/cli/)
 
-## 🆘 Getting Help
+## Getting Help
 
 If you encounter issues:
 

@@ -5,7 +5,7 @@ from rich.console import Console
 
 from .config import get_config, set_config
 from .help_formatter import rich_help_option
-from .utils import echo_error, echo_info
+from .utils import check_api_health, echo_error, echo_info
 
 console = Console()
 
@@ -67,33 +67,57 @@ def version(ctx):
 @click.pass_context
 def config(ctx):
     """Show current configuration."""
+    import asyncio
+
+    from rich.panel import Panel
+    from rich.table import Table
+
     config = ctx.obj["config"]
 
-    console.print("[bold]Context Server Configuration[/bold]")
-    console.print(f"Server: {config.server.host}:{config.server.port}")
-    console.print(f"Database: {config.server.database_url}")
-    console.print(f"Config Directory: {config.config_dir}")
-    console.print(f"Verbose: {config.verbose}")
-    console.print(f"Color: {config.color}")
+    # Create main configuration table
+    config_table = Table(title="Context Server Configuration", show_header=False)
+    config_table.add_column("Setting", style="bold cyan", width=20)
+    config_table.add_column("Value", style="white")
+
+    config_table.add_row("Server Host", f"{config.server.host}:{config.server.port}")
+    config_table.add_row("Database URL", config.server.database_url)
+    config_table.add_row("Config Directory", str(config.config_dir))
+    config_table.add_row("Verbose Mode", "✓" if config.verbose else "✗")
+    config_table.add_row("Color Output", "✓" if config.color else "✗")
 
     if config.server.openai_api_key:
-        console.print(
-            f"OpenAI API Key: {'*' * 20}...{config.server.openai_api_key[-8:]}"
-        )
+        masked_key = f"{'*' * 20}...{config.server.openai_api_key[-8:]}"
+        config_table.add_row("OpenAI API Key", f"[green]{masked_key}[/green]")
     else:
-        console.print("OpenAI API Key: Not set")
+        config_table.add_row("OpenAI API Key", "[red]Not configured[/red]")
+
+    # Check server status
+    async def get_status():
+        try:
+            healthy, error = await check_api_health()
+            return (
+                "[green]Running[/green]" if healthy else f"[red]Offline[/red] ({error})"
+            )
+        except Exception as e:
+            return f"[red]Error[/red] ({str(e)})"
+
+    status = asyncio.run(get_status())
+    config_table.add_row("Server Status", status)
+
+    # Display in a panel
+    panel = Panel(
+        config_table,
+        title="[bold blue]Context Server[/bold blue]",
+        subtitle="Use 'ctx server up' to start services",
+        border_style="blue",
+    )
+
+    console.print(panel)
 
 
 # Import and register command groups
 def register_commands():
     """Register all command groups."""
-    try:
-        from .commands.dev import dev
-
-        cli.add_command(dev)
-    except ImportError as e:
-        echo_error(f"Failed to load dev commands: {e}")
-
     try:
         from .commands.server import server
 
@@ -121,13 +145,6 @@ def register_commands():
         cli.add_command(search)
     except ImportError as e:
         echo_error(f"Failed to load search commands: {e}")
-
-    try:
-        from .commands.examples import examples
-
-        cli.add_command(examples)
-    except ImportError as e:
-        echo_error(f"Failed to load examples commands: {e}")
 
     try:
         from .commands.completion import completion

@@ -18,7 +18,7 @@ class ContextServerError(Exception):
         self,
         message: str,
         status_code: Optional[int] = None,
-        details: Optional[Dict] = None,
+        details: Optional[dict] = None,
     ):
         self.message = message
         self.status_code = status_code
@@ -55,7 +55,7 @@ class ContextServerClient:
             raise ContextServerError(f"Request failed: {str(e)}")
 
     async def get(
-        self, endpoint: str, params: Optional[Dict] = None
+        self, endpoint: str, params: Optional[dict] = None
     ) -> Union[dict[str, Any], list[Any]]:
         """Make a GET request to the Context Server API."""
         url = f"{self.base_url}{endpoint}"

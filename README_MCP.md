@@ -139,9 +139,9 @@ await extract_url("ratatui-docs", "https://ratatui.rs/", 50)
 
 // 3. Search for table widget examples
 const searchResults = await search_context(
-  "ratatui-docs", 
-  "table widget implementation", 
-  "hybrid", 
+  "ratatui-docs",
+  "table widget implementation",
+  "hybrid",
   5
 )
 

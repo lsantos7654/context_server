@@ -5,7 +5,6 @@ Unit tests for smart_extract module.
 from unittest.mock import patch
 
 import pytest
-
 from src.core.crawl4ai_extraction import ExtractionResult
 from src.smart_extract import SmartExtractor
 

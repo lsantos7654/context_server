@@ -1,14 +1,13 @@
 """Shell completion commands for Context Server CLI."""
 
 import os
-import subprocess
 from pathlib import Path
 
 import click
 from rich.console import Console
 
 from ..help_formatter import rich_help_option
-from ..utils import confirm_action, echo_error, echo_info, echo_success, echo_warning
+from ..utils import echo_error, echo_info, echo_success, echo_warning
 
 console = Console()
 
@@ -16,14 +15,14 @@ console = Console()
 @click.group()
 @rich_help_option("-h", "--help")
 def completion():
-    """🐚 Shell completion setup commands.
+    """Shell completion setup commands.
 
     Commands for installing shell completion for bash, zsh, and fish.
 
     Examples:
-        ⚙️ ctx completion install        # Auto-install completion
-        📜 ctx completion show bash     # Show bash completion script
-        🔎 ctx completion status       # Check installation status
+        ctx completion install        # Auto-install completion
+        ctx completion show bash     # Show bash completion script
+        ctx completion status       # Check installation status
     """
     pass
 
@@ -37,7 +36,7 @@ def completion():
 @click.option("--force", is_flag=True, help="Overwrite existing completion files")
 @rich_help_option("-h", "--help")
 def install(shell, force):
-    """⚙️ Install shell completion for context-server and ctx commands.
+    """Install shell completion for context-server and ctx commands.
 
     Args:
         shell: Target shell (bash, zsh, fish)
@@ -74,7 +73,7 @@ def install(shell, force):
     help="Shell to uninstall completion for",
 )
 def uninstall(shell):
-    """🗚️ Uninstall shell completion.
+    """Uninstall shell completion.
 
     Args:
         shell: Target shell (bash, zsh, fish)
@@ -109,7 +108,7 @@ def uninstall(shell):
     help="Shell to show completion for",
 )
 def show(shell):
-    """📜 Show completion script for manual installation.
+    """Show completion script for manual installation.
 
     Args:
         shell: Target shell (bash, zsh, fish)
@@ -329,7 +328,7 @@ end"""
 @completion.command()
 @rich_help_option("-h", "--help")
 def status():
-    """🔎 Show completion installation status."""
+    """Show completion installation status."""
     echo_info("Checking completion installation status...")
 
     shells = ["bash", "zsh", "fish"]

@@ -27,8 +27,6 @@ from ..utils import (
 console = Console()
 
 
-
-
 @click.group()
 @rich_help_option("-h", "--help")
 def docs():
@@ -185,7 +183,7 @@ def extract(
 )
 @rich_help_option("-h", "--help")
 def list(context_name, offset, limit, output_format):
-    """📝 List documents in a context.
+    """List documents in a context.
 
     Args:
         context_name: Context name
@@ -267,7 +265,7 @@ def list(context_name, offset, limit, output_format):
 @click.argument("document_ids", nargs=-1, required=True)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 def delete(context_name, document_ids, force):
-    """🗚️ Delete documents from a context.
+    """Delete documents from a context.
 
     Args:
         context_name: Context name
@@ -311,7 +309,7 @@ def delete(context_name, document_ids, force):
 @docs.command()
 @click.argument("job_id")
 def status(job_id):
-    """🕰️ Check the status of a document extraction job.
+    """Check the status of a document extraction job.
 
     Args:
         job_id: Extraction job ID
@@ -327,7 +325,7 @@ def status(job_id):
 @click.option("--output-file", help="Save content to file instead of displaying")
 @rich_help_option("-h", "--help")
 def show(context_name, document_id, output_file):
-    """📄 Show raw document content.
+    """Show raw document content.
 
     Args:
         context_name: Context name
@@ -432,7 +430,7 @@ def show(context_name, document_id, output_file):
 )
 @click.option("--since", help="Show documents indexed since date (YYYY-MM-DD)")
 def count(context_name, source_type, since):
-    """📊 Count documents in a context.
+    """Count documents in a context.
 
     Args:
         context_name: Context name
@@ -687,3 +685,114 @@ async def handle_local_extraction(
 
     echo_info(f"Files added to context '{context_name}'")
     echo_info(f"Try: context-server search query '<your-query>' {context_name}")
+
+
+@docs.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.argument("document_id")
+@click.option(
+    "--output-format",
+    "-f",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format",
+)
+@rich_help_option("-h", "--help")
+def code_snippets(context_name, document_id, output_format):
+    """List code snippets from a document.
+
+    Args:
+        context_name: Context name
+        document_id: Document ID
+        output_format: Output format (table or json)
+    """
+    import asyncio
+    import json
+
+    from rich.syntax import Syntax
+    from rich.table import Table
+
+    async def list_code_snippets():
+        client = APIClient()
+        success, response = await client.get(
+            f"contexts/{context_name}/documents/{document_id}/code-snippets"
+        )
+
+        if success:
+            snippets = response
+
+            if output_format == "json":
+                console.print(json.dumps(snippets, indent=2))
+            else:
+                if not snippets:
+                    echo_info("No code snippets found in this document")
+                    return
+
+                table = Table(title=f"Code Snippets - {document_id}")
+                table.add_column("ID", style="cyan")
+                table.add_column("Language", style="green")
+                table.add_column("Lines", style="yellow")
+                table.add_column("Preview", style="white", max_width=50)
+
+                for snippet in snippets:
+                    preview = snippet.get("content", "")[:100]
+                    if len(preview) == 100:
+                        preview += "..."
+
+                    table.add_row(
+                        snippet.get("id", "N/A"),
+                        snippet.get("language", "unknown"),
+                        str(snippet.get("line_count", 0)),
+                        preview.replace("\n", " "),
+                    )
+
+                console.print(table)
+                echo_info(f"Found {len(snippets)} code snippets")
+        else:
+            echo_error(f"Failed to get code snippets: {response}")
+
+    asyncio.run(list_code_snippets())
+
+
+@docs.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.argument("snippet_id")
+@click.option("--output-file", "-o", help="Save to file instead of displaying")
+@rich_help_option("-h", "--help")
+def snippet(context_name, snippet_id, output_file):
+    """Get a specific code snippet by ID.
+
+    Args:
+        context_name: Context name
+        snippet_id: Code snippet ID
+        output_file: Optional output file path
+    """
+    import asyncio
+
+    from rich.syntax import Syntax
+
+    async def get_code_snippet():
+        client = APIClient()
+        success, response = await client.get(
+            f"contexts/{context_name}/code-snippets/{snippet_id}"
+        )
+
+        if success:
+            snippet = response
+            content = snippet.get("content", "")
+            language = snippet.get("language", "text")
+
+            if output_file:
+                with open(output_file, "w") as f:
+                    f.write(content)
+                echo_success(f"Code snippet saved to {output_file}")
+            else:
+                # Display with syntax highlighting
+                syntax = Syntax(content, language, theme="monokai", line_numbers=True)
+                console.print(f"\n[bold]Code Snippet ID: {snippet_id}[/bold]")
+                console.print(f"[dim]Language: {language}[/dim]")
+                console.print(syntax)
+        else:
+            echo_error(f"Failed to get code snippet: {response}")
+
+    asyncio.run(get_code_snippet())

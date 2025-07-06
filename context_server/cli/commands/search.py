@@ -26,8 +26,6 @@ from ..utils import (
 console = Console()
 
 
-
-
 @click.group()
 @rich_help_option("-h", "--help")
 def search():
@@ -112,7 +110,7 @@ def query(
                 "query": query,
                 "mode": mode,
                 "limit": limit,
-            }
+            },
         )
 
         if success:
@@ -207,7 +205,7 @@ def interactive(context_name, interactive):
                         "query": query,
                         "mode": "hybrid",
                         "limit": 5,
-                    }
+                    },
                 )
 
                 if success:
@@ -313,40 +311,52 @@ def display_results_rich(
         if is_individual_page and base_url and base_url != page_url:
             title_text += f"\n[dim cyan]From: {base_url}[/dim cyan]"
 
-        # Add document ID as a separate line
-        title_text += f"\n[dim cyan]Document ID: {doc_id}[/dim cyan]"
-
-        # Add metadata information
+        # Get common metadata for both modes
         metadata = result.get("metadata", {})
-        source_type = result.get("source_type", metadata.get("source_type", "Unknown"))
+        document_metadata = metadata.get("document", {})
+        chunk_metadata = metadata.get("chunk", {})
         chunk_index = result.get("chunk_index", "N/A")
-        extraction_time = metadata.get("extraction_time", "")
 
-        # Add source type and chunk info
+        # Add basic metadata for both modes
+        title_text += f"\n[dim cyan]Document ID: {doc_id}[/dim cyan]"
+        title_text += f"\n[dim cyan]Chunk ID: {result.get('id', 'N/A')}[/dim cyan]"
         title_text += (
-            f"\n[dim white]Source: {source_type} | Chunk: {chunk_index}[/dim white]"
+            f"\n[dim white]Chunk {chunk_index} • Score: {score:.4f}[/dim white]"
         )
 
-        # Add extraction timestamp if available
-        if extraction_time:
-            # Format the timestamp nicely
-            try:
-                from datetime import datetime
+        # Add document size if available
+        doc_size = document_metadata.get("size", 0)
+        if doc_size:
+            title_text += f"\n[dim green]Document Size: {doc_size:,} chars[/dim green]"
 
-                dt = datetime.fromisoformat(extraction_time.replace("Z", "+00:00"))
-                formatted_time = dt.strftime("%Y-%m-%d %H:%M")
-                title_text += f"\n[dim white]Extracted: {formatted_time}[/dim white]"
-            except:
-                title_text += (
-                    f"\n[dim white]Extracted: {extraction_time[:16]}[/dim white]"
+        # Add code snippets for both modes
+        code_snippets = metadata.get("code_snippets", [])
+        if code_snippets:
+            title_text += f"\n\n[bold yellow]Code Snippets ({len(code_snippets)} found):[/bold yellow]"
+
+            # In non-verbose mode, show first 3 snippets; in verbose mode, show all
+            snippets_to_show = code_snippets if verbose else code_snippets[:3]
+
+            for snippet in snippets_to_show:
+                snippet_id = snippet.get("id", "")
+                snippet_type = snippet.get("type", "unknown")
+                start_line = snippet.get("start_line", "")
+                end_line = snippet.get("end_line", "")
+                preview = snippet.get("preview", "")[:60]
+                if len(snippet.get("preview", "")) > 60:
+                    preview += "..."
+
+                line_info = (
+                    f"L{start_line}-{end_line}" if start_line and end_line else ""
                 )
+                title_text += f"\n[cyan]  {snippet_id}[/cyan] [yellow]{snippet_type}[/yellow] {line_info}"
+                if preview:
+                    title_text += f"\n[dim]    {preview}[/dim]"
 
-        # Add extraction statistics if available for crawl4ai sources
-        if source_type == "crawl4ai":
-            total_links = metadata.get("total_links_found")
-            successful = metadata.get("successful_extractions")
-            if total_links and successful:
-                title_text += f"\n[dim green]Extraction: {successful}/{total_links} pages successful[/dim green]"
+            # Show count of remaining snippets in non-verbose mode
+            if not verbose and len(code_snippets) > 3:
+                remaining = len(code_snippets) - 3
+                title_text += f"\n[dim]  ... and {remaining} more (use --verbose to see all)[/dim]"
 
         # Add content type indicator
         if content_type == "expanded_chunk":
@@ -357,158 +367,51 @@ def display_results_rich(
                 original_lines = expansion_info.get("original_lines", "Unknown")
                 expanded_lines = expansion_info.get("expanded_lines", "Unknown")
                 title_text += (
-                    f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
+                    f"\n[bold yellow]Expanded Context ({line_count} lines)[/bold yellow]"
                     f"\n[dim yellow]Original: {original_lines} → Expanded: {expanded_lines}[/dim yellow]"
                 )
             else:
-                title_text += f"\n[bold yellow]🔍 Expanded Context ({line_count} lines)[/bold yellow]"
+                title_text += f"\n[bold yellow]Expanded Context ({line_count} lines)[/bold yellow]"
 
-        # Add comprehensive metadata if verbose mode is enabled
+        # Add additional metadata for verbose mode only
         if verbose:
-            title_text += "\n\n[bold cyan]📋 Complete Metadata:[/bold cyan]"
-
-            # Core identifiers
-            title_text += f"\n[dim white]• Document ID: {doc_id}[/dim white]"
+            title_text += f"\n\n[bold cyan]Additional Metadata:[/bold cyan]"
             title_text += (
-                f"\n[dim white]• Chunk ID: {result.get('id', 'N/A')}[/dim white]"
-            )
-            title_text += f"\n[dim white]• Chunk Index: {chunk_index}[/dim white]"
-
-            # URLs and sources
-            if page_url:
-                title_text += f"\n[dim white]• Page URL: {page_url}[/dim white]"
-            if base_url and base_url != page_url:
-                title_text += f"\n[dim white]• Base URL: {base_url}[/dim white]"
-            if url and url != page_url:
-                title_text += f"\n[dim white]• Document URL: {url}[/dim white]"
-
-            # Content information
-            title_text += f"\n[dim white]• Content Type: {content_type}[/dim white]"
-            title_text += f"\n[dim white]• Score: {score:.6f}[/dim white]"
-            content_length = len(content)
-            title_text += (
-                f"\n[dim white]• Content Length: {content_length:,} chars[/dim white]"
+                f"\n[dim white]Content Length: {len(content):,} chars[/dim white]"
             )
 
-            # Line tracking information
-            start_line = result.get("start_line")
-            end_line = result.get("end_line")
-            char_start = result.get("char_start")
-            char_end = result.get("char_end")
-
-            if start_line is not None and end_line is not None:
+            # Document metadata from JSON
+            total_chunks = document_metadata.get("total_chunks", 0)
+            if total_chunks:
                 title_text += (
-                    f"\n[dim white]• Line Range: {start_line}-{end_line}[/dim white]"
-                )
-            if char_start is not None and char_end is not None:
-                title_text += f"\n[dim white]• Character Range: {char_start:,}-{char_end:,}[/dim white]"
-
-            # Token information
-            tokens = result.get("tokens") or metadata.get("tokens")
-            if tokens:
-                title_text += f"\n[dim white]• Estimated Tokens: {tokens}[/dim white]"
-
-            # Extraction metadata
-            if source_type:
-                title_text += f"\n[dim white]• Source Type: {source_type}[/dim white]"
-            if extraction_time:
-                title_text += (
-                    f"\n[dim white]• Extraction Time: {extraction_time}[/dim white]"
+                    f"\n[dim white]Total Document Chunks: {total_chunks}[/dim white]"
                 )
 
-            # File metadata for file sources
-            file_path = metadata.get("file_path")
-            file_type = metadata.get("file_type")
-            file_size = metadata.get("file_size")
-            if file_path:
-                title_text += f"\n[dim white]• File Path: {file_path}[/dim white]"
-            if file_type:
-                title_text += f"\n[dim white]• File Type: {file_type}[/dim white]"
-            if file_size:
+            total_links = document_metadata.get("total_links", 0)
+            if total_links:
                 title_text += (
-                    f"\n[dim white]• File Size: {file_size:,} bytes[/dim white]"
+                    f"\n[dim white]Total Document Links: {total_links}[/dim white]"
                 )
 
-            # Crawl4ai specific metadata
-            if source_type == "crawl4ai":
-                filtered_links = metadata.get("filtered_links")
-                total_links = metadata.get("total_links_found")
-                successful = metadata.get("successful_extractions")
-
-                if total_links:
-                    title_text += (
-                        f"\n[dim white]• Total Links Found: {total_links}[/dim white]"
-                    )
-                if filtered_links:
-                    title_text += (
-                        f"\n[dim white]• Filtered Links: {filtered_links}[/dim white]"
-                    )
-                if successful:
-                    title_text += f"\n[dim white]• Successful Extractions: {successful}[/dim white]"
-
-                if is_individual_page:
-                    title_text += f"\n[dim white]• Individual Page: Yes[/dim white]"
-
-            # Search-specific metadata
-            vector_score = result.get("vector_score")
-            fulltext_score = result.get("fulltext_score")
-            hybrid_score = result.get("hybrid_score")
-
-            if vector_score is not None:
+            # Chunk metadata from JSON
+            links_count = chunk_metadata.get("links_count", 0)
+            if links_count:
                 title_text += (
-                    f"\n[dim white]• Vector Score: {vector_score:.6f}[/dim white]"
-                )
-            if fulltext_score is not None:
-                title_text += (
-                    f"\n[dim white]• Full-text Score: {fulltext_score:.6f}[/dim white]"
-                )
-            if hybrid_score is not None:
-                title_text += (
-                    f"\n[dim white]• Hybrid Score: {hybrid_score:.6f}[/dim white]"
+                    f"\n[dim white]Links in This Chunk: {links_count}[/dim white]"
                 )
 
-            # Expansion metadata
-            expansion_info = result.get("expansion_info", {})
-            if expansion_info:
-                title_text += f"\n[dim white]• Expansion Method: {expansion_info.get('method', 'N/A')}[/dim white]"
-                title_text += f"\n[dim white]• Original Lines: {expansion_info.get('original_lines', 'N/A')}[/dim white]"
-                title_text += f"\n[dim white]• Expanded Lines: {expansion_info.get('expanded_lines', 'N/A')}[/dim white]"
-                lines_added = expansion_info.get("lines_added")
-                if lines_added:
-                    title_text += (
-                        f"\n[dim white]• Lines Added: {lines_added}[/dim white]"
-                    )
-
-            # Additional metadata from the metadata object
-            additional_metadata = {}
-            for key, value in metadata.items():
-                if key not in [
-                    "extraction_time",
-                    "source_type",
-                    "file_path",
-                    "file_type",
-                    "file_size",
-                    "total_links_found",
-                    "filtered_links",
-                    "successful_extractions",
-                    "page_url",
-                    "base_url",
-                    "is_individual_page",
-                    "extracted_pages",
-                    "tokens",
-                ]:
-                    additional_metadata[key] = value
-
-            if additional_metadata:
-                title_text += f"\n[dim white]• Additional Metadata:[/dim white]"
-                for key, value in additional_metadata.items():
-                    if isinstance(value, (str, int, float, bool)):
-                        title_text += f"\n[dim gray]  • {key}: {value}[/dim gray]"
-                    elif isinstance(value, list) and len(value) <= 3:
-                        title_text += f"\n[dim gray]  • {key}: {value}[/dim gray]"
-                    else:
+                # Show actual links if available
+                links = chunk_metadata.get("links", {})
+                if links:
+                    title_text += f"\n[dim cyan]  Chunk Links:[/dim cyan]"
+                    for href, link_data in list(links.items())[
+                        :3
+                    ]:  # Show first 3 links
+                        link_text = link_data.get("text", "")
+                        title_text += f"\n[dim]    {link_text}: {href}[/dim]"
+                    if len(links) > 3:
                         title_text += (
-                            f"\n[dim gray]  • {key}: <complex object>[/dim gray]"
+                            f"\n[dim]    ... and {len(links) - 3} more links[/dim]"
                         )
 
         if show_content:
@@ -561,3 +464,52 @@ def highlight_query_terms(text: str, query: str) -> str:
 
 # Alias for the query command to avoid naming conflicts
 query_cmd = query
+
+
+@search.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.argument("query_text")
+@click.option("--limit", "-l", default=5, help="Number of suggestions")
+@rich_help_option("-h", "--help")
+def suggest(context_name, query_text, limit):
+    """Get search query suggestions.
+
+    Args:
+        context_name: Context to search in
+        query_text: Query text to get suggestions for
+        limit: Maximum number of suggestions
+    """
+    import asyncio
+
+    from rich.table import Table
+
+    async def get_suggestions():
+        client = APIClient()
+        success, response = await client.get(
+            f"contexts/{context_name}/search/suggestions",
+            {"query": query_text, "limit": limit},
+        )
+
+        if success:
+            suggestions = response.get("suggestions", [])
+
+            if not suggestions:
+                echo_info("No suggestions available")
+                return
+
+            table = Table(title=f"Search Suggestions for '{query_text}'")
+            table.add_column("#", style="cyan", width=3)
+            table.add_column("Suggestion", style="white")
+            table.add_column("Score", style="yellow", width=8)
+
+            for i, suggestion in enumerate(suggestions, 1):
+                score = suggestion.get("score", 0.0)
+                text = suggestion.get("text", "")
+                table.add_row(str(i), text, f"{score:.3f}")
+
+            console.print(table)
+            echo_info(f"Found {len(suggestions)} suggestions")
+        else:
+            echo_error(f"Failed to get suggestions: {response}")
+
+    asyncio.run(get_suggestions())

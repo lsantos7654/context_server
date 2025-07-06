@@ -70,7 +70,7 @@ class RichHelpFormatter:
         content = "\n".join(help_text)
         panel = Panel(
             content,
-            title=f"[bold blue]📖 Help: {ctx.info_name}[/bold blue]",
+            title=f"[bold blue]Help: {ctx.info_name}[/bold blue]",
             border_style="blue",
             padding=(1, 2),
         )

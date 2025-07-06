@@ -1,14 +1,12 @@
 """Context management commands for Context Server CLI."""
 
 import asyncio
-from typing import Optional
+from datetime import datetime
 
 import click
-import httpx
 from rich.console import Console
 from rich.table import Table
 
-from ..config import get_api_url
 from ..help_formatter import rich_help_option
 from ..utils import (
     APIClient,
@@ -17,13 +15,10 @@ from ..utils import (
     echo_error,
     echo_info,
     echo_success,
-    get_context_names_sync,
-    print_table,
+    echo_warning,
 )
 
 console = Console()
-
-
 
 
 @click.group()
@@ -72,7 +67,7 @@ def create(name, description, embedding_model):
                 "name": name,
                 "description": description,
                 "embedding_model": embedding_model,
-            }
+            },
         )
 
         if success:
@@ -298,3 +293,117 @@ def update(name, new_description, new_embedding_model):
     # This would require an API endpoint for updating contexts
     echo_error("Context updating is not yet implemented")
     echo_info("Context updates will be available in a future version")
+
+
+@context.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.option("--output-file", "-o", type=click.Path(), help="Output file path")
+def export(context_name, output_file):
+    """Export context data to a file.
+
+    Args:
+        context_name: Name of the context to export
+        output_file: Output file path (optional)
+    """
+    import asyncio
+    import json
+    from pathlib import Path
+
+    async def export_context():
+        client = APIClient()
+        success, response = await client.get(f"contexts/{context_name}/export")
+
+        if success:
+            # Generate output filename if not provided
+            if not output_file:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{context_name}_export_{timestamp}.json"
+            else:
+                filename = output_file
+
+            # Write to file
+            with open(filename, "w") as f:
+                json.dump(response, f, indent=2)
+
+            echo_success(f"Context '{context_name}' exported to {filename}")
+        else:
+            echo_error(f"Failed to export context: {response}")
+
+    asyncio.run(export_context())
+
+
+@context.command()
+@click.argument("import_file", type=click.Path(exists=True))
+@click.option("--force", is_flag=True, help="Overwrite existing context")
+def import_context(import_file, force):
+    """Import context data from a file.
+
+    Args:
+        import_file: Path to the import file
+        force: Overwrite existing context if it exists
+    """
+    import asyncio
+    import json
+
+    async def import_context_data():
+        # Read import file
+        try:
+            with open(import_file, "r") as f:
+                import_data = json.load(f)
+        except Exception as e:
+            echo_error(f"Failed to read import file: {e}")
+            return
+
+        # Add force flag to import data
+        import_data["force"] = force
+
+        client = APIClient()
+        success, response = await client.post("contexts/import", import_data)
+
+        if success:
+            echo_success(
+                f"Context imported successfully: {response.get('name', 'Unknown')}"
+            )
+        else:
+            echo_error(f"Failed to import context: {response}")
+
+    asyncio.run(import_context_data())
+
+
+@context.command()
+@click.argument("source_context", shell_complete=complete_context_name)
+@click.argument("target_context", shell_complete=complete_context_name)
+@click.option(
+    "--strategy",
+    type=click.Choice(["merge", "replace"]),
+    default="merge",
+    help="Merge strategy",
+)
+def merge(source_context, target_context, strategy):
+    """Merge one context into another.
+
+    Args:
+        source_context: Source context to merge from
+        target_context: Target context to merge into
+        strategy: Merge strategy (merge or replace)
+    """
+    import asyncio
+
+    async def merge_contexts():
+        client = APIClient()
+        merge_data = {
+            "source_context_name": source_context,
+            "target_context_name": target_context,
+            "strategy": strategy,
+        }
+
+        success, response = await client.post("contexts/merge", merge_data)
+
+        if success:
+            echo_success(
+                f"Successfully merged '{source_context}' into '{target_context}'"
+            )
+        else:
+            echo_error(f"Failed to merge contexts: {response}")
+
+    asyncio.run(merge_contexts())

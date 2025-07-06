@@ -91,7 +91,7 @@ def up(build, detach):
             echo_info("Waiting for services to be ready...")
             if wait_for_services():
                 echo_success("All services are ready!")
-                echo_info("💡 Configure Claude integration with: ctx claude install")
+                echo_info("Configure Claude integration with: ctx claude install")
             else:
                 echo_warning("Services may not be fully ready yet")
 
@@ -125,7 +125,7 @@ def down(volumes):
 @server.command()
 @rich_help_option("-h", "--help")
 def restart():
-    """🔄 Restart the Context Server services.
+    """Restart the Context Server services.
 
     Stops and then starts all services.
     """
@@ -160,7 +160,7 @@ def restart():
 )
 @rich_help_option("-h", "--help")
 def logs(service, follow, tail):
-    """📈 Show service logs.
+    """Show service logs.
 
     Args:
         service: Service name (api, postgres)
@@ -191,7 +191,7 @@ def logs(service, follow, tail):
 @click.option("--wait", is_flag=True, help="Wait for services to be ready")
 @rich_help_option("-h", "--help")
 def status(wait):
-    """🔎 Check server status and health.
+    """Check server status and health.
 
     Shows status of Context Server, Docker services, and MCP server.
 
@@ -262,7 +262,7 @@ def status(wait):
 @click.option("--database", default="context_server", help="Database name")
 @click.option("--user", default="context_user", help="Database user")
 def shell(database, user):
-    """🐚 Connect to the PostgreSQL database shell.
+    """Connect to the PostgreSQL database shell.
 
     Args:
         database: Database name to connect to
@@ -285,7 +285,7 @@ def shell(database, user):
 @server.command()
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 def reset_db(force):
-    """🗺️ Reset the database (WARNING: destroys all data).
+    """Reset the database (WARNING: destroys all data).
 
     Args:
         force: Skip confirmation prompt
@@ -361,7 +361,7 @@ def reset_db(force):
     help="Output format",
 )
 def ps(output_format):
-    """📊 Show running containers.
+    """Show running containers.
 
     Args:
         output_format: Output format (table, json)

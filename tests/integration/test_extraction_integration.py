@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from src.smart_extract import SmartExtractor
 
 

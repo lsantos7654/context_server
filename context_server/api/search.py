@@ -36,7 +36,7 @@ async def search_context(
 ):
     """Search documents within a context."""
     start_time = time.time()
-    
+
     # Verify context exists
     context = await db.get_context_by_name(context_name)
     if not context:
@@ -141,43 +141,43 @@ def _merge_search_results(
 
     # Add vector results with weight
     for result in vector_results:
-    chunk_id = result["id"]
-    result_map[chunk_id] = {
-        **result,
-        "vector_score": result["score"],
-        "fulltext_score": 0.0,
-        "hybrid_score": result["score"] * 0.7,  # Weight vector results at 70%
-    }
+        chunk_id = result["id"]
+        result_map[chunk_id] = {
+            **result,
+            "vector_score": result["score"],
+            "fulltext_score": 0.0,
+            "hybrid_score": result["score"] * 0.7,  # Weight vector results at 70%
+        }
 
     # Add/update with full-text results
     for result in fulltext_results:
-    chunk_id = result["id"]
-    if chunk_id in result_map:
-        # Combine scores
-        result_map[chunk_id]["fulltext_score"] = result["score"]
-        result_map[chunk_id]["hybrid_score"] = (
-            result_map[chunk_id]["vector_score"] * 0.7
-            + result["score"] * 0.3  # Weight full-text at 30%
-        )
-    else:
-        # New result from full-text only
-        result_map[chunk_id] = {
-            **result,
-            "vector_score": 0.0,
-            "fulltext_score": result["score"],
-            "hybrid_score": result["score"] * 0.3,  # Only full-text score
-        }
+        chunk_id = result["id"]
+        if chunk_id in result_map:
+            # Combine scores
+            result_map[chunk_id]["fulltext_score"] = result["score"]
+            result_map[chunk_id]["hybrid_score"] = (
+                result_map[chunk_id]["vector_score"] * 0.7
+                + result["score"] * 0.3  # Weight full-text at 30%
+            )
+        else:
+            # New result from full-text only
+            result_map[chunk_id] = {
+                **result,
+                "vector_score": 0.0,
+                "fulltext_score": result["score"],
+                "hybrid_score": result["score"] * 0.3,  # Only full-text score
+            }
 
     # Sort by hybrid score and return top results
     sorted_results = sorted(
-    result_map.values(), key=lambda x: x["hybrid_score"], reverse=True
+        result_map.values(), key=lambda x: x["hybrid_score"], reverse=True
     )
 
     # Update final scores and return
     final_results = []
     for result in sorted_results[:limit]:
-    result["score"] = result["hybrid_score"]  # Use hybrid score as final score
-    final_results.append(result)
+        result["score"] = result["hybrid_score"]  # Use hybrid score as final score
+        final_results.append(result)
 
     return final_results
 
@@ -193,5 +193,5 @@ async def get_search_suggestions(
     # TODO: Implement search suggestions
     # Could use document titles, common terms, etc.
     raise HTTPException(
-    status_code=501, detail="Search suggestions not yet implemented"
+        status_code=501, detail="Search suggestions not yet implemented"
     )

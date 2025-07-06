@@ -8,9 +8,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .crawl4ai_extraction import Crawl4aiExtractor
-
 from .chunking import TextChunker
+from .crawl4ai_extraction import Crawl4aiExtractor
 from .embeddings import EmbeddingService
 
 logger = logging.getLogger(__name__)

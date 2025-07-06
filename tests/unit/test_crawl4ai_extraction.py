@@ -3,7 +3,6 @@ Unit tests for crawl4ai_extraction module.
 """
 
 import pytest
-
 from src.core.crawl4ai_extraction import Crawl4aiExtractor, ExtractionResult
 
 
