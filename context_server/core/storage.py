@@ -25,11 +25,10 @@ class DatabaseManager:
         self.pool: Pool | None = None
 
     def _filter_metadata_for_search(self, metadata: dict) -> dict:
-        """Filter out large and unnecessary metadata fields from search results."""
-        # Remove fields that contain large amounts of data or internal processing details
-        filtered = metadata.copy()
+        """Organize metadata into clean, grouped structure for search results."""
+        raw_metadata = metadata.copy()
 
-        # Large content fields
+        # Remove fields that contain large amounts of data or internal processing details
         large_fields = [
             "extracted_pages",
             "full_content",
@@ -48,18 +47,58 @@ class DatabaseManager:
             "extraction_stats",
             "source_type",  # Always "crawl4ai", not useful
             "is_individual_page",  # Always true, not meaningful
+            "source_url",  # Redundant with page_url
         ]
 
-        # Redundant URL fields (keep only one)
-        redundant_fields = [
-            "source_url",  # Duplicate of page_url
-        ]
+        # Remove unwanted fields
+        for field in large_fields + internal_fields:
+            raw_metadata.pop(field, None)
 
-        # Remove all unwanted fields
-        for field in large_fields + internal_fields + redundant_fields:
-            filtered.pop(field, None)
+        # Organize into clean structure
+        organized = {}
 
-        return filtered
+        # Document-level information
+        organized["document"] = {
+            "id": raw_metadata.get("document_id"),
+            "title": raw_metadata.get("source_title"),
+            "url": raw_metadata.get("page_url", raw_metadata.get("base_url")),
+            "size": raw_metadata.get("parent_page_size"),
+            "total_chunks": raw_metadata.get("parent_total_chunks"),
+            "total_links": raw_metadata.get("total_page_links"),
+        }
+
+        # Chunk-level information
+        organized["chunk"] = {
+            "index": raw_metadata.get("chunk_index"),
+            "links_count": raw_metadata.get("total_links_in_chunk"),
+            "links": raw_metadata.get("chunk_links", {}),
+        }
+
+        # Code snippets information
+        organized["code_snippets"] = raw_metadata.get("code_snippets", [])
+        organized["code_snippets_count"] = raw_metadata.get("total_code_snippets", 0)
+
+        # Keep any other metadata fields that weren't specifically handled
+        handled_fields = {
+            "document_id",
+            "source_title",
+            "page_url",
+            "base_url",
+            "parent_page_size",
+            "parent_total_chunks",
+            "total_page_links",
+            "chunk_index",
+            "total_links_in_chunk",
+            "chunk_links",
+            "code_snippets",
+            "total_code_snippets",
+        }
+
+        for key, value in raw_metadata.items():
+            if key not in handled_fields and key not in large_fields + internal_fields:
+                organized[key] = value
+
+        return organized
 
     async def initialize(self):
         """Initialize database connection and create required tables."""
@@ -561,6 +600,47 @@ class DatabaseManager:
                 uuid.UUID(document_id),
             )
 
+    async def _get_code_snippets_for_documents(
+        self, document_ids: list[str], context_id: str
+    ) -> dict[str, list[dict]]:
+        """Get code snippets for multiple documents efficiently."""
+        if not document_ids:
+            return {}
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    cs.document_id, cs.id, cs.language, cs.snippet_type,
+                    cs.start_line, cs.end_line, cs.content
+                FROM code_snippets cs
+                WHERE cs.document_id = ANY($1::uuid[]) AND cs.context_id = $2
+                ORDER BY cs.document_id, cs.start_line ASC
+                """,
+                [uuid.UUID(doc_id) for doc_id in document_ids],
+                uuid.UUID(context_id),
+            )
+
+            # Group snippets by document_id
+            snippets_by_doc = {}
+            for row in rows:
+                doc_id = str(row["document_id"])
+                if doc_id not in snippets_by_doc:
+                    snippets_by_doc[doc_id] = []
+
+                snippet = {
+                    "id": str(row["id"]),
+                    "type": row["snippet_type"],
+                    "start_line": row["start_line"],
+                    "end_line": row["end_line"],
+                    "preview": row["content"][:100] + "..."
+                    if len(row["content"]) > 100
+                    else row["content"],
+                }
+                snippets_by_doc[doc_id].append(snippet)
+
+            return snippets_by_doc
+
     # Search methods
     async def vector_search(
         self,
@@ -596,6 +676,12 @@ class DatabaseManager:
                 limit,
             )
 
+            # Get unique document IDs for code snippet lookup
+            document_ids = list(set(str(row["document_id"]) for row in rows))
+            code_snippets_by_doc = await self._get_code_snippets_for_documents(
+                document_ids, context_id
+            )
+
             return [
                 {
                     "id": str(row["id"]),
@@ -616,8 +702,16 @@ class DatabaseManager:
                                 if row["chunk_metadata"]
                                 else {}
                             ),
+                            "document_id": str(row["document_id"]),
                             "parent_page_size": row["parent_page_size"],
                             "parent_total_chunks": row["parent_total_chunks"],
+                            "chunk_index": row["chunk_index"],
+                            "code_snippets": code_snippets_by_doc.get(
+                                str(row["document_id"]), []
+                            ),
+                            "total_code_snippets": len(
+                                code_snippets_by_doc.get(str(row["document_id"]), [])
+                            ),
                         }
                     ),
                     "chunk_index": row["chunk_index"],
@@ -655,6 +749,12 @@ class DatabaseManager:
                 limit,
             )
 
+            # Get unique document IDs for code snippet lookup
+            document_ids = list(set(str(row["document_id"]) for row in rows))
+            code_snippets_by_doc = await self._get_code_snippets_for_documents(
+                document_ids, context_id
+            )
+
             return [
                 {
                     "id": str(row["id"]),
@@ -675,8 +775,16 @@ class DatabaseManager:
                                 if row["chunk_metadata"]
                                 else {}
                             ),
+                            "document_id": str(row["document_id"]),
                             "parent_page_size": row["parent_page_size"],
                             "parent_total_chunks": row["parent_total_chunks"],
+                            "chunk_index": row["chunk_index"],
+                            "code_snippets": code_snippets_by_doc.get(
+                                str(row["document_id"]), []
+                            ),
+                            "total_code_snippets": len(
+                                code_snippets_by_doc.get(str(row["document_id"]), [])
+                            ),
                         }
                     ),
                     "chunk_index": row["chunk_index"],
@@ -749,4 +857,91 @@ class DatabaseManager:
                 else None,
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
+            }
+
+    # Code snippet query methods
+    async def get_code_snippets_by_document(
+        self, document_id: str, context_id: str = None
+    ) -> list[dict]:
+        """Get all code snippets for a document."""
+        async with self.pool.acquire() as conn:
+            query = """
+                SELECT
+                    cs.id, cs.content, cs.language, cs.metadata,
+                    cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    cs.snippet_type, cs.created_at
+                FROM code_snippets cs
+                WHERE cs.document_id = $1
+            """
+            params = [uuid.UUID(document_id)]
+
+            if context_id:
+                query += " AND cs.context_id = $2"
+                params.append(uuid.UUID(context_id))
+
+            query += " ORDER BY cs.start_line ASC"
+
+            rows = await conn.fetch(query, *params)
+
+            return [
+                {
+                    "id": str(row["id"]),
+                    "content": row["content"],
+                    "type": row["snippet_type"],
+                    "start_line": row["start_line"],
+                    "end_line": row["end_line"],
+                    "char_start": row["char_start"],
+                    "char_end": row["char_end"],
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "created_at": row["created_at"].isoformat()
+                    if row["created_at"]
+                    else None,
+                    "preview": row["content"][:100] + "..."
+                    if len(row["content"]) > 100
+                    else row["content"],
+                }
+                for row in rows
+            ]
+
+    async def get_code_snippet_by_id(
+        self, snippet_id: str, context_id: str = None
+    ) -> dict | None:
+        """Get a specific code snippet by ID."""
+        async with self.pool.acquire() as conn:
+            query = """
+                SELECT
+                    cs.id, cs.content, cs.language, cs.metadata,
+                    cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    cs.snippet_type, cs.created_at, cs.document_id,
+                    d.title as document_title, d.url as document_url
+                FROM code_snippets cs
+                JOIN documents d ON cs.document_id = d.id
+                WHERE cs.id = $1
+            """
+            params = [uuid.UUID(snippet_id)]
+
+            if context_id:
+                query += " AND cs.context_id = $2"
+                params.append(uuid.UUID(context_id))
+
+            row = await conn.fetchrow(query, *params)
+
+            if not row:
+                return None
+
+            return {
+                "id": str(row["id"]),
+                "document_id": str(row["document_id"]),
+                "content": row["content"],
+                "type": row["snippet_type"],
+                "start_line": row["start_line"],
+                "end_line": row["end_line"],
+                "char_start": row["char_start"],
+                "char_end": row["char_end"],
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                "created_at": row["created_at"].isoformat()
+                if row["created_at"]
+                else None,
+                "document_title": row["document_title"],
+                "document_url": row["document_url"],
             }

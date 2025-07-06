@@ -245,3 +245,60 @@ async def get_document_raw(
             f"Failed to get document {doc_id} from context {context_name}: {e}"
         )
         raise HTTPException(status_code=500, detail="Failed to get document")
+
+
+@router.get("/contexts/{context_name}/documents/{doc_id}/code-snippets")
+async def list_document_code_snippets(
+    context_name: str, doc_id: str, db: DatabaseManager = Depends(get_db_manager)
+):
+    """Get all code snippets for a document."""
+    try:
+        # Get context
+        context = await db.get_context_by_name(context_name)
+        if not context:
+            raise HTTPException(status_code=404, detail="Context not found")
+
+        # Get code snippets
+        snippets = await db.get_code_snippets_by_document(doc_id, context["id"])
+
+        return {
+            "snippets": snippets,
+            "total": len(snippets),
+            "document_id": doc_id,
+            "context_name": context_name,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to get code snippets for document {doc_id} in context {context_name}: {e}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to get code snippets")
+
+
+@router.get("/contexts/{context_name}/code-snippets/{snippet_id}")
+async def get_code_snippet(
+    context_name: str, snippet_id: str, db: DatabaseManager = Depends(get_db_manager)
+):
+    """Get a specific code snippet by ID."""
+    try:
+        # Get context
+        context = await db.get_context_by_name(context_name)
+        if not context:
+            raise HTTPException(status_code=404, detail="Context not found")
+
+        # Get code snippet
+        snippet = await db.get_code_snippet_by_id(snippet_id, context["id"])
+        if not snippet:
+            raise HTTPException(status_code=404, detail="Code snippet not found")
+
+        return snippet
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to get code snippet {snippet_id} from context {context_name}: {e}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to get code snippet")
