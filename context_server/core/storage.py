@@ -46,10 +46,17 @@ class DatabaseManager:
             "method",
             "processing_time",
             "extraction_stats",
+            "source_type",  # Always "crawl4ai", not useful
+            "is_individual_page",  # Always true, not meaningful
+        ]
+
+        # Redundant URL fields (keep only one)
+        redundant_fields = [
+            "source_url",  # Duplicate of page_url
         ]
 
         # Remove all unwanted fields
-        for field in large_fields + internal_fields:
+        for field in large_fields + internal_fields + redundant_fields:
             filtered.pop(field, None)
 
         return filtered

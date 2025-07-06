@@ -178,29 +178,28 @@ class DocumentProcessor:
         # Pattern for markdown links: [text](url)
         markdown_pattern = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 
-        # Pattern for raw URLs (basic HTTP/HTTPS)
-        url_pattern = re.compile(r"https?://[^\s\]]+")
-
-        # Find markdown links
+        # Find markdown links only (more reliable than raw URL extraction)
         for match in markdown_pattern.finditer(chunk_content):
             text = match.group(1)
-            href = match.group(2)
-            if href and not href.startswith("#"):  # Skip anchors
-                links_in_chunk[href] = {"text": text, "href": href}
+            href = match.group(2).strip()
 
-        # Find raw URLs (that aren't already captured in markdown)
-        for match in url_pattern.finditer(chunk_content):
-            href = match.group(0)
-            # Only add if not already captured as markdown link
-            if href not in links_in_chunk and not href.endswith(")"):
-                links_in_chunk[href] = {
-                    "text": href,  # Use URL as text for raw URLs
-                    "href": href,
-                }
+            # Clean up href - remove quotes and extra characters
+            href = href.split(" ")[0].strip("\"'")
+
+            # Skip empty, anchor-only, or invalid URLs
+            if href and not href.startswith("#") and href.startswith("http"):
+                # Validate URL structure
+                try:
+                    parsed = urlparse(href)
+                    if parsed.scheme and parsed.netloc:
+                        links_in_chunk[href] = {"text": text, "href": href}
+                except:
+                    # Skip malformed URLs
+                    continue
 
         return {
             "total_links_in_chunk": len(links_in_chunk),
-            "links_in_chunk": links_in_chunk,
+            "chunk_links": links_in_chunk,
         }
 
     async def process_url(

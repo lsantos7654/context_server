@@ -151,19 +151,10 @@ class Crawl4aiExtractor:
                         # Note: external_links are excluded by crawl4ai config
 
                         # Count links found on this page's content
-                        page_links_dict = {}
-                        for link in internal_links:
-                            if isinstance(link, dict):
-                                href = link.get("href", "")
-                                text = link.get("text", "")
-                                if href:
-                                    page_links_dict[href] = {"text": text, "href": href}
-
                         link_counts = {
                             "total_page_links": len(
                                 internal_links
                             ),  # Links found on this page content
-                            "page_links": page_links_dict,  # Actual page links with metadata
                         }
 
                         # Save individual file
