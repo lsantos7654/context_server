@@ -43,7 +43,7 @@ def search():
     Examples:
         ctx search query "async patterns" my-docs             # Basic hybrid search
         ctx search query "rendering" docs --mode vector       # Vector search only
-        ctx search query "widgets" docs --expand-context 10   # With context expansion
+        ctx search query "widgets" docs --limit 10             # More results
         ctx search query "data" docs --verbose               # Show all metadata
         ctx search interactive my-docs                        # Interactive mode
     """
@@ -73,12 +73,6 @@ def search():
     help="Show result content snippets",
 )
 @click.option(
-    "--expand-context",
-    default=0,
-    type=click.IntRange(0, 300),
-    help="Number of surrounding lines to include (0-300)",
-)
-@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -92,7 +86,6 @@ def query(
     limit,
     output_format,
     show_content,
-    expand_context,
     verbose,
 ):
     """Search for documents in a context.
@@ -115,14 +108,6 @@ def query(
             echo_info(f"Searching '{context_name}' for: {query}")
             echo_info(f"Search mode: {mode}")
 
-            # Warn about large context expansion
-            if expand_context > 100:
-                echo_warning(
-                    f"Large context expansion ({expand_context} lines) may take longer and use more memory"
-                )
-            elif expand_context > 50:
-                echo_info(f"Expanding context by {expand_context} lines around matches")
-
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     get_api_url(f"contexts/{context_name}/search"),
@@ -130,7 +115,6 @@ def query(
                         "query": query,
                         "mode": mode,
                         "limit": limit,
-                        "expand_context": expand_context,
                     },
                     timeout=60.0,  # Search can take a while
                 )
@@ -233,7 +217,6 @@ def interactive(context_name, interactive):
                                 "query": query,
                                 "mode": "hybrid",
                                 "limit": 5,
-                                "expand_context": 0,
                             },
                             timeout=60.0,
                         )

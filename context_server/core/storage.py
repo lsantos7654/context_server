@@ -24,6 +24,36 @@ class DatabaseManager:
         )
         self.pool: Pool | None = None
 
+    def _filter_metadata_for_search(self, metadata: dict) -> dict:
+        """Filter out large and unnecessary metadata fields from search results."""
+        # Remove fields that contain large amounts of data or internal processing details
+        filtered = metadata.copy()
+
+        # Large content fields
+        large_fields = [
+            "extracted_pages",
+            "full_content",
+            "raw_content",
+            "page_content",
+        ]
+
+        # Internal extraction details not needed by search consumers
+        internal_fields = [
+            "filtered_links",
+            "total_links_found",
+            "successful_extractions",
+            "extraction_time",
+            "method",
+            "processing_time",
+            "extraction_stats",
+        ]
+
+        # Remove all unwanted fields
+        for field in large_fields + internal_fields:
+            filtered.pop(field, None)
+
+        return filtered
+
     async def initialize(self):
         """Initialize database connection and create required tables."""
         max_retries = 30
@@ -133,6 +163,27 @@ class DatabaseManager:
             """
             )
 
+            # Create code_snippets table with vector embeddings
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS code_snippets (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+                    content TEXT NOT NULL,
+                    language VARCHAR(50) NOT NULL DEFAULT 'text',
+                    embedding vector(1536),  -- OpenAI embedding dimension
+                    metadata JSONB DEFAULT '{}',
+                    start_line INTEGER,
+                    end_line INTEGER,
+                    char_start INTEGER,
+                    char_end INTEGER,
+                    snippet_type VARCHAR(20) DEFAULT 'code_block',  -- 'code_block' or 'inline_code'
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """
+            )
+
             # Add line tracking columns to existing tables (if they don't exist)
             await conn.execute(
                 """
@@ -159,6 +210,17 @@ class DatabaseManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_documents_url ON documents(url)"
+            )
+
+            # Code snippets indexes
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_code_snippets_embedding ON code_snippets USING ivfflat (embedding vector_cosine_ops)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_code_snippets_context_id ON code_snippets(context_id)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_code_snippets_language ON code_snippets(language)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_lines ON chunks(document_id, start_line, end_line)"
@@ -440,6 +502,46 @@ class DatabaseManager:
 
             return str(chunk_id)
 
+    async def create_code_snippet(
+        self,
+        document_id: str,
+        context_id: str,
+        content: str,
+        language: str,
+        embedding: list[float],
+        metadata: dict = None,
+        start_line: int = None,
+        end_line: int = None,
+        char_start: int = None,
+        char_end: int = None,
+        snippet_type: str = "code_block",
+    ) -> str:
+        """Create a new code snippet with embedding and line tracking."""
+        async with self.pool.acquire() as conn:
+            # Convert embedding list to PostgreSQL vector format
+            embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+
+            snippet_id = await conn.fetchval(
+                """
+                INSERT INTO code_snippets (document_id, context_id, content, language, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type)
+                VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11)
+                RETURNING id
+            """,
+                uuid.UUID(document_id),
+                uuid.UUID(context_id),
+                content,
+                language,
+                embedding_str,
+                json.dumps(metadata or {}),
+                start_line,
+                end_line,
+                char_start,
+                char_end,
+                snippet_type,
+            )
+
+            return str(snippet_id)
+
     async def update_document_chunk_count(self, document_id: str):
         """Update document chunk count."""
         async with self.pool.acquire() as conn:
@@ -459,76 +561,33 @@ class DatabaseManager:
         query_embedding: list[float],
         limit: int = 10,
         min_similarity: float = 0.7,
-        expand_context: int = 0,
     ) -> list[dict]:
         """Perform vector similarity search."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
             embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
-            if expand_context > 0:
-                # Get chunks with surrounding context
-                rows = await conn.fetch(
-                    """
-                    WITH matched_chunks AS (
-                        SELECT c.id, c.document_id, c.chunk_index,
-                               1 - (c.embedding <=> $2::vector) as similarity
-                        FROM chunks c
-                        WHERE c.context_id = $1
-                            AND 1 - (c.embedding <=> $2::vector) > $3
-                        ORDER BY c.embedding <=> $2::vector
-                        LIMIT $4
-                    ),
-                    expanded_chunks AS (
-                        SELECT c2.id, c2.content, d.title, d.url,
-                               d.metadata as doc_metadata, c2.metadata as chunk_metadata,
-                               c2.chunk_index, d.id as document_id, mc.similarity,
-                               mc.id as original_chunk_id
-                        FROM matched_chunks mc
-                        JOIN chunks c2 ON c2.document_id = mc.document_id
-                        JOIN documents d ON c2.document_id = d.id
-                        WHERE c2.chunk_index BETWEEN
-                            GREATEST(0, mc.chunk_index - $5) AND
-                            LEAST(
-                                (SELECT MAX(chunk_index) FROM chunks WHERE document_id = mc.document_id),
-                                mc.chunk_index + $5
-                            )
-                    )
-                    SELECT original_chunk_id as id,
-                           string_agg(content, ' ' ORDER BY chunk_index) as content,
-                           title, url, doc_metadata, chunk_metadata,
-                           MIN(chunk_index) as chunk_index,
-                           document_id, similarity
-                    FROM expanded_chunks
-                    GROUP BY original_chunk_id, title, url, doc_metadata, chunk_metadata, document_id, similarity
-                    ORDER BY similarity DESC
-                """,
-                    uuid.UUID(context_id),
-                    embedding_str,
-                    min_similarity,
-                    limit,
-                    expand_context,
-                )
-            else:
-                rows = await conn.fetch(
-                    """
-                    SELECT
-                        c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
-                        c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
-                        c.start_line, c.end_line, c.char_start, c.char_end,
-                        1 - (c.embedding <=> $2::vector) as similarity
-                    FROM chunks c
-                    JOIN documents d ON c.document_id = d.id
-                    WHERE c.context_id = $1
-                        AND 1 - (c.embedding <=> $2::vector) > $3
-                    ORDER BY c.embedding <=> $2::vector
-                    LIMIT $4
-                """,
-                    uuid.UUID(context_id),
-                    embedding_str,
-                    min_similarity,
-                    limit,
-                )
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
+                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                    c.start_line, c.end_line, c.char_start, c.char_end,
+                    LENGTH(d.content) as parent_page_size,
+                    d.chunk_count as parent_total_chunks,
+                    1 - (c.embedding <=> $2::vector) as similarity
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                WHERE c.context_id = $1
+                    AND 1 - (c.embedding <=> $2::vector) > $3
+                ORDER BY c.embedding <=> $2::vector
+                LIMIT $4
+            """,
+                uuid.UUID(context_id),
+                embedding_str,
+                min_similarity,
+                limit,
+            )
 
             return [
                 {
@@ -538,18 +597,22 @@ class DatabaseManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
-                    "metadata": {
-                        **(
-                            json.loads(row["doc_metadata"])
-                            if row["doc_metadata"]
-                            else {}
-                        ),
-                        **(
-                            json.loads(row["chunk_metadata"])
-                            if row["chunk_metadata"]
-                            else {}
-                        ),
-                    },
+                    "metadata": self._filter_metadata_for_search(
+                        {
+                            **(
+                                json.loads(row["doc_metadata"])
+                                if row["doc_metadata"]
+                                else {}
+                            ),
+                            **(
+                                json.loads(row["chunk_metadata"])
+                                if row["chunk_metadata"]
+                                else {}
+                            ),
+                            "parent_page_size": row["parent_page_size"],
+                            "parent_total_chunks": row["parent_total_chunks"],
+                        }
+                    ),
                     "chunk_index": row["chunk_index"],
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
@@ -560,71 +623,30 @@ class DatabaseManager:
             ]
 
     async def fulltext_search(
-        self, context_id: str, query: str, limit: int = 10, expand_context: int = 0
+        self, context_id: str, query: str, limit: int = 10
     ) -> list[dict]:
         """Perform full-text search."""
         async with self.pool.acquire() as conn:
-            if expand_context > 0:
-                # Get chunks with surrounding context
-                rows = await conn.fetch(
-                    """
-                    WITH matched_chunks AS (
-                        SELECT c.id, c.document_id, c.chunk_index,
-                               ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
-                        FROM chunks c
-                        WHERE c.context_id = $1
-                            AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
-                        ORDER BY score DESC
-                        LIMIT $3
-                    ),
-                    expanded_chunks AS (
-                        SELECT c2.id, c2.content, d.title, d.url,
-                               d.metadata as doc_metadata, c2.metadata as chunk_metadata,
-                               c2.chunk_index, d.id as document_id, mc.score,
-                               mc.id as original_chunk_id
-                        FROM matched_chunks mc
-                        JOIN chunks c2 ON c2.document_id = mc.document_id
-                        JOIN documents d ON c2.document_id = d.id
-                        WHERE c2.chunk_index BETWEEN
-                            GREATEST(0, mc.chunk_index - $4) AND
-                            LEAST(
-                                (SELECT MAX(chunk_index) FROM chunks WHERE document_id = mc.document_id),
-                                mc.chunk_index + $4
-                            )
-                    )
-                    SELECT original_chunk_id as id,
-                           string_agg(content, ' ' ORDER BY chunk_index) as content,
-                           title, url, doc_metadata, chunk_metadata,
-                           MIN(chunk_index) as chunk_index,
-                           document_id, score
-                    FROM expanded_chunks
-                    GROUP BY original_chunk_id, title, url, doc_metadata, chunk_metadata, document_id, score
-                    ORDER BY score DESC
-                """,
-                    uuid.UUID(context_id),
-                    query,
-                    limit,
-                    expand_context,
-                )
-            else:
-                rows = await conn.fetch(
-                    """
-                    SELECT
-                        c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
-                        c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
-                        c.start_line, c.end_line, c.char_start, c.char_end,
-                        ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
-                    FROM chunks c
-                    JOIN documents d ON c.document_id = d.id
-                    WHERE c.context_id = $1
-                        AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
-                    ORDER BY score DESC
-                    LIMIT $3
-                """,
-                    uuid.UUID(context_id),
-                    query,
-                    limit,
-                )
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.id, c.content, d.title, d.url, d.metadata as doc_metadata,
+                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                    c.start_line, c.end_line, c.char_start, c.char_end,
+                    LENGTH(d.content) as parent_page_size,
+                    d.chunk_count as parent_total_chunks,
+                    ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                WHERE c.context_id = $1
+                    AND to_tsvector('english', c.content) @@ plainto_tsquery('english', $2)
+                ORDER BY score DESC
+                LIMIT $3
+            """,
+                uuid.UUID(context_id),
+                query,
+                limit,
+            )
 
             return [
                 {
@@ -634,18 +656,22 @@ class DatabaseManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),
-                    "metadata": {
-                        **(
-                            json.loads(row["doc_metadata"])
-                            if row["doc_metadata"]
-                            else {}
-                        ),
-                        **(
-                            json.loads(row["chunk_metadata"])
-                            if row["chunk_metadata"]
-                            else {}
-                        ),
-                    },
+                    "metadata": self._filter_metadata_for_search(
+                        {
+                            **(
+                                json.loads(row["doc_metadata"])
+                                if row["doc_metadata"]
+                                else {}
+                            ),
+                            **(
+                                json.loads(row["chunk_metadata"])
+                                if row["chunk_metadata"]
+                                else {}
+                            ),
+                            "parent_page_size": row["parent_page_size"],
+                            "parent_total_chunks": row["parent_total_chunks"],
+                        }
+                    ),
                     "chunk_index": row["chunk_index"],
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),

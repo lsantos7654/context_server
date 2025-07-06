@@ -2,11 +2,13 @@
 
 import asyncio
 import logging
+import re
 
 # Import existing extraction functionality
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Tuple
 
 sys.path.append("/app/src")  # Add src path for imports
 
@@ -33,13 +35,28 @@ class ProcessedChunk:
 
 
 @dataclass
+class CodeSnippet:
+    """A code snippet extracted from content."""
+
+    content: str
+    language: str
+    embedding: list[float]
+    metadata: dict
+    start_line: int = None
+    end_line: int = None
+    char_start: int = None
+    char_end: int = None
+
+
+@dataclass
 class ProcessedDocument:
-    """A processed document with chunks."""
+    """A processed document with chunks and code snippets."""
 
     url: str
     title: str
     content: str
     chunks: list[ProcessedChunk]
+    code_snippets: list[CodeSnippet]
     metadata: dict
 
 
@@ -52,6 +69,96 @@ class ProcessingResult:
     error: str | None = None
 
 
+class CodeSnippetExtractor:
+    """Extracts code snippets from text content."""
+
+    def __init__(self):
+        # Regex patterns for different code block formats
+        self.markdown_code_pattern = re.compile(
+            r"```(\w*)\n(.*?)\n```", re.DOTALL | re.MULTILINE
+        )
+        self.inline_code_pattern = re.compile(r"`([^`\n]+)`")
+
+    def extract_code_snippets(
+        self, content: str, url: str = "", title: str = ""
+    ) -> Tuple[List[dict], str]:
+        """
+        Extract code snippets from content and return cleaned content.
+
+        Returns:
+            Tuple of (code_snippets_list, content_without_code_blocks)
+        """
+        snippets = []
+        lines = content.splitlines()
+
+        # Track character positions
+        char_pos = 0
+        line_char_map = []
+        for line in lines:
+            line_char_map.append(char_pos)
+            char_pos += len(line) + 1  # +1 for newline
+
+        # Extract markdown code blocks
+        for match in self.markdown_code_pattern.finditer(content):
+            language = match.group(1) or "text"
+            code_content = match.group(2).strip()
+            start_char = match.start()
+            end_char = match.end()
+
+            # Find line numbers
+            start_line = self._char_to_line(start_char, line_char_map)
+            end_line = self._char_to_line(end_char, line_char_map)
+
+            snippet = {
+                "content": code_content,
+                "language": language,
+                "start_line": start_line,
+                "end_line": end_line,
+                "char_start": start_char,
+                "char_end": end_char,
+                "type": "code_block",
+                "source_url": url,
+                "source_title": title,
+            }
+            snippets.append(snippet)
+
+        # Remove code blocks from content for regular chunking
+        cleaned_content = self.markdown_code_pattern.sub("", content)
+
+        # Also extract significant inline code (longer than 10 chars)
+        for match in self.inline_code_pattern.finditer(content):
+            code_content = match.group(1)
+            if len(code_content) > 10:  # Only significant inline code
+                start_char = match.start()
+                end_char = match.end()
+                start_line = self._char_to_line(start_char, line_char_map)
+                end_line = start_line
+
+                snippet = {
+                    "content": code_content,
+                    "language": "text",  # Unknown language for inline code
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "char_start": start_char,
+                    "char_end": end_char,
+                    "type": "inline_code",
+                    "source_url": url,
+                    "source_title": title,
+                }
+                snippets.append(snippet)
+
+        return snippets, cleaned_content
+
+    def _char_to_line(self, char_pos: int, line_char_map: List[int]) -> int:
+        """Convert character position to line number."""
+        for i, line_start in enumerate(line_char_map):
+            if char_pos < line_start + (
+                len(line_char_map) > i + 1 and line_char_map[i + 1] - line_start or 0
+            ):
+                return i
+        return len(line_char_map) - 1
+
+
 class DocumentProcessor:
     """Processes documents using existing extraction pipeline and creates embeddings."""
 
@@ -59,6 +166,7 @@ class DocumentProcessor:
         self.embedding_service = embedding_service or EmbeddingService()
         self.chunker = TextChunker()
         self.extractor = Crawl4aiExtractor()
+        self.code_extractor = CodeSnippetExtractor()
 
     async def process_url(
         self, url: str, options: dict | None = None
@@ -188,10 +296,16 @@ class DocumentProcessor:
     async def _process_content(
         self, content: str, url: str, title: str, metadata: dict
     ) -> ProcessedDocument:
-        """Process content into chunks with embeddings."""
+        """Process content into chunks with embeddings and extract code snippets."""
         try:
-            # Split content into chunks
-            chunks = self.chunker.chunk_text(content)
+            # Extract code snippets before chunking
+            (
+                code_snippet_data,
+                cleaned_content,
+            ) = self.code_extractor.extract_code_snippets(content, url, title)
+
+            # Split cleaned content into chunks (without code blocks)
+            chunks = self.chunker.chunk_text(cleaned_content)
 
             # Create embeddings for each chunk
             processed_chunks = []
@@ -237,11 +351,57 @@ class DocumentProcessor:
 
             logger.info(f"Processed {len(processed_chunks)} chunks for {title}")
 
+            # Process code snippets with embeddings
+            processed_code_snippets = []
+            if code_snippet_data:
+                # Get embeddings for code snippets in batches
+                for i in range(0, len(code_snippet_data), batch_size):
+                    batch = code_snippet_data[i : i + batch_size]
+
+                    # Get embeddings for the batch
+                    try:
+                        embeddings = await self.embedding_service.embed_batch(
+                            [snippet["content"] for snippet in batch]
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to generate embeddings for code snippets: {e}"
+                        )
+                        # Create dummy embeddings for testing
+                        embeddings = [[0.0] * 1536 for _ in batch]
+
+                    # Create processed code snippets
+                    for snippet_data, embedding in zip(batch, embeddings):
+                        processed_snippet = CodeSnippet(
+                            content=snippet_data["content"],
+                            language=snippet_data["language"],
+                            embedding=embedding,
+                            metadata={
+                                **snippet_data,
+                                "source_url": url,
+                                "source_title": title,
+                            },
+                            start_line=snippet_data.get("start_line"),
+                            end_line=snippet_data.get("end_line"),
+                            char_start=snippet_data.get("char_start"),
+                            char_end=snippet_data.get("char_end"),
+                        )
+                        processed_code_snippets.append(processed_snippet)
+
+                    # Small delay to be respectful to embedding API
+                    if i + batch_size < len(code_snippet_data):
+                        await asyncio.sleep(0.1)
+
+                logger.info(
+                    f"Processed {len(processed_code_snippets)} code snippets for {title}"
+                )
+
             return ProcessedDocument(
                 url=url,
                 title=title,
                 content=content,
                 chunks=processed_chunks,
+                code_snippets=processed_code_snippets,
                 metadata=metadata,
             )
 

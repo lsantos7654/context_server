@@ -1,8 +1,41 @@
-# Python Development Guidelines
+# Context Server Development Guidelines
 
 ## Project Overview
 
-This document outlines coding standards, architectural principles, and development practices for Python projects focused on scalability, maintainability, and developer productivity.
+This is the Context Server project - a modern CLI for documentation RAG system with FastAPI backend, PostgreSQL + pgvector storage, and semantic search capabilities. This document outlines coding standards, architectural principles, and development practices.
+
+## Essential Setup Commands
+
+**IMPORTANT:** Always activate the virtual environment before running any commands:
+
+```bash
+# REQUIRED: Activate virtual environment first
+source .venv/bin/activate
+
+# Then run Context Server commands
+ctx --help                    # Show available commands
+ctx server up                 # Start services (Docker)
+ctx server logs              # Check server logs (troubleshooting)
+ctx server restart           # Restart after code changes
+ctx context list             # List available contexts
+ctx search query "term" docs  # Search documentation
+```
+
+## Troubleshooting
+
+### Common Issues
+1. **Command not found**: Activate `.venv` first with `source .venv/bin/activate`
+2. **Import errors**: Check `ctx server logs` for Python import issues
+3. **Connection errors**: Ensure server is running with `ctx server up`
+4. **API changes**: Restart server with `ctx server restart` after code changes
+
+### Debug Steps
+```bash
+source .venv/bin/activate
+ctx server logs              # Check for errors
+ctx server restart           # Apply code changes
+ctx context list             # Verify database connection
+```
 
 ## Quick Setup
 
@@ -382,24 +415,58 @@ async def client():
         yield ac
 ```
 
-## Development Workflow
+## Context Server Development Workflow
 
 ```bash
 # 1. Initial setup (once)
 make init
 
-# 2. Daily development
-source .venv/bin/activate  # Each session
-make test-watch           # Keep running during development
+# 2. Daily development (ALWAYS start with this)
+source .venv/bin/activate  # REQUIRED for every terminal session
 
-# 3. Before committing
+# 3. Context Server operations
+ctx server up              # Start Docker services
+ctx server logs           # Monitor for issues
+ctx context list          # Verify connection
+
+# 4. Development workflow
+make test-watch           # Keep running during development
+ctx server restart        # After code changes
+
+# 5. Before committing
 make quality-check
 
-# 4. Common tasks
+# 6. Common tasks
 make test                 # Run tests
 make test-coverage        # Test with coverage
 make format              # Format code
 make lint               # Run linters
+```
+
+## Context Server Specific Commands
+
+### Server Management
+```bash
+source .venv/bin/activate  # ALWAYS FIRST
+ctx server up              # Start all services (PostgreSQL, Redis, API)
+ctx server down            # Stop all services
+ctx server restart         # Restart after code changes
+ctx server logs           # View logs (essential for debugging)
+ctx server status          # Check service health
+```
+
+### Context & Document Management
+```bash
+ctx context create my-docs              # Create new context
+ctx context list                       # List all contexts
+ctx docs extract https://... my-docs    # Extract documentation
+ctx docs list my-docs                  # List documents in context
+```
+
+### Search & Testing
+```bash
+ctx search query "widget" my-docs       # Basic search
+ctx search query "async" docs --limit 5 # Limited results
 ```
 
 ## Refactoring Guidelines
@@ -418,6 +485,9 @@ make lint               # Run linters
 
 ## Key Takeaways
 
+- **ALWAYS activate `.venv`**: `source .venv/bin/activate` before any commands
+- **Check logs first**: Use `ctx server logs` for troubleshooting
+- **Restart after changes**: `ctx server restart` applies code changes
 - Use **modern tools**: uv, pre-commit, pytest
 - **Standardize with Makefiles** for consistent development experience
 - **Always work in virtual environments**
@@ -427,7 +497,22 @@ make lint               # Run linters
 - **Use dependency injection** for testable code
 - **Create plugin architectures** for extensibility
 
-This setup provides a solid foundation for any Python project while keeping complexity manageable.
+## Context Server Architecture Notes
+
+### Current State (Post-Simplification)
+- **No Redis caching** - Removed for simplicity
+- **No expand-context** - Removed broken feature
+- **Clean APIs** - Search returns compact responses (~2KB vs 300KB)
+- **Separation of concerns**: Search for chunks, `/raw` for full documents
+- **Ready for Claude Code/MCP integration**
+
+### Key Files
+- `context_server/core/storage.py` - Database operations with metadata filtering
+- `context_server/api/search.py` - Search endpoints (vector, fulltext, hybrid)
+- `context_server/api/documents.py` - Document management APIs
+- `context_server/cli/` - CLI commands and interface
+
+This setup provides a solid foundation for the Context Server project while keeping complexity manageable.
 
 ## Project Setup
 

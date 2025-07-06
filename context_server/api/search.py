@@ -5,9 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.cache import DocumentCacheService
 from ..core.embeddings import EmbeddingService
-from ..core.expansion import ContextExpansionService
 from ..core.storage import DatabaseManager
 from .models import SearchRequest, SearchResponse
 
@@ -27,30 +25,6 @@ def get_embedding_service(request: Request) -> EmbeddingService:
     return request.app.state.embedding_service
 
 
-async def get_cache_service(request: Request) -> DocumentCacheService:
-    """Dependency to get cache service."""
-    if not hasattr(request.app.state, "cache_service"):
-        cache_service = DocumentCacheService()
-        try:
-            await cache_service.initialize()
-            request.app.state.cache_service = cache_service
-            logger.info("Cache service initialized successfully")
-        except Exception as e:
-            logger.warning(f"Cache service initialization failed: {e}")
-            # Create a dummy cache service that doesn't actually cache
-            request.app.state.cache_service = DocumentCacheService()
-    return request.app.state.cache_service
-
-
-async def get_expansion_service(request: Request) -> ContextExpansionService:
-    """Dependency to get expansion service."""
-    if not hasattr(request.app.state, "expansion_service"):
-        db = get_db_manager(request)
-        cache = await get_cache_service(request)
-        request.app.state.expansion_service = ContextExpansionService(db, cache)
-    return request.app.state.expansion_service
-
-
 @router.post("/contexts/{context_name}/search", response_model=SearchResponse)
 async def search_context(
     context_name: str,
@@ -62,16 +36,6 @@ async def search_context(
     start_time = time.time()
 
     try:
-        # Get expansion service - initialize cache service directly
-        cache_service = DocumentCacheService()
-        try:
-            await cache_service.initialize()
-            logger.info("Cache service initialized for search")
-        except Exception as e:
-            logger.warning(f"Cache service initialization failed: {e}")
-
-        expansion_service = ContextExpansionService(db, cache_service)
-
         # Verify context exists
         context = await db.get_context_by_name(context_name)
         if not context:
@@ -81,27 +45,25 @@ async def search_context(
         results = []
 
         if search_request.mode.value == "vector":
-            # Pure vector search (without expansion at DB level)
+            # Vector search
             query_embedding = await embedding_service.embed_text(search_request.query)
             results = await db.vector_search(
                 context_id=context_id,
                 query_embedding=query_embedding,
                 limit=search_request.limit,
                 min_similarity=0.1,  # Lower threshold for testing
-                expand_context=0,  # No DB-level expansion
             )
 
         elif search_request.mode.value == "fulltext":
-            # Pure full-text search (without expansion at DB level)
+            # Full-text search
             results = await db.fulltext_search(
                 context_id=context_id,
                 query=search_request.query,
                 limit=search_request.limit,
-                expand_context=0,  # No DB-level expansion
             )
 
         elif search_request.mode.value == "hybrid":
-            # Hybrid search - combine vector and full-text (without expansion at DB level)
+            # Hybrid search - combine vector and full-text
             query_embedding = await embedding_service.embed_text(search_request.query)
 
             # Get results from both methods
@@ -110,14 +72,12 @@ async def search_context(
                 query_embedding=query_embedding,
                 limit=search_request.limit * 2,  # Get more for merging
                 min_similarity=0.1,  # Lower threshold for testing
-                expand_context=0,  # No DB-level expansion
             )
 
             fulltext_results = await db.fulltext_search(
                 context_id=context_id,
                 query=search_request.query,
                 limit=search_request.limit * 2,  # Get more for merging
-                expand_context=0,  # No DB-level expansion
             )
 
             # Merge and rank results
@@ -129,22 +89,6 @@ async def search_context(
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported search mode: {search_request.mode}",
-            )
-
-        # Add warning for large context expansions
-        if search_request.expand_context > 50:
-            logger.warning(
-                f"Large context expansion requested: {search_request.expand_context} lines. "
-                f"This may impact performance and memory usage."
-            )
-
-        # Apply line-based expansion if requested
-        if search_request.expand_context > 0:
-            # Expand results using line-based context expansion
-            results = await expansion_service.expand_search_results(
-                results,
-                expand_lines=search_request.expand_context,
-                prefer_boundaries=True,
             )
 
         # Format results with enhanced metadata
@@ -161,7 +105,6 @@ async def search_context(
                 "url": result.get("url"),
                 "chunk_index": result.get("chunk_index"),
                 "content_type": result.get("content_type", "chunk"),
-                "expansion_info": result.get("expansion_info"),
                 # Extract useful metadata to top level for easier access
                 "page_url": metadata.get("page_url", result.get("url")),
                 "source_type": metadata.get("source_type"),

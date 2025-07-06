@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
-from ..core.cache import DocumentCacheService
+# Cache service removed in simplification
 from ..core.processing import DocumentProcessor
 from ..core.storage import DatabaseManager
 from .models import DocumentDelete, DocumentIngest, DocumentsResponse, JobStatus
@@ -20,11 +20,7 @@ def get_db_manager(request: Request) -> DatabaseManager:
     return request.app.state.db_manager
 
 
-def get_cache_service(request: Request) -> DocumentCacheService:
-    """Dependency to get document cache service."""
-    if not hasattr(request.app.state, "cache_service"):
-        request.app.state.cache_service = DocumentCacheService()
-    return request.app.state.cache_service
+# Cache service removed in simplification
 
 
 def get_processor(request: Request) -> DocumentProcessor:
@@ -41,7 +37,6 @@ async def ingest_document(
     background_tasks: BackgroundTasks,
     db: DatabaseManager = Depends(get_db_manager),
     processor: DocumentProcessor = Depends(get_processor),
-    cache_service: DocumentCacheService = Depends(get_cache_service),
 ):
     """Ingest a document into a context (async processing)."""
     try:
@@ -61,7 +56,6 @@ async def ingest_document(
             document_data,
             db,
             processor,
-            cache_service,
         )
 
         logger.info(f"Started document ingestion job: {job_id}")
@@ -87,7 +81,6 @@ async def _process_document_background(
     document_data: DocumentIngest,
     db: DatabaseManager,
     processor: DocumentProcessor,
-    cache_service: DocumentCacheService = None,
 ):
     """Background task for document processing."""
     try:
@@ -138,17 +131,28 @@ async def _process_document_background(
                     char_end=chunk.char_end,
                 )
 
+            # Store code snippets with embeddings
+            for snippet in doc.code_snippets:
+                await db.create_code_snippet(
+                    document_id=doc_id,
+                    context_id=context["id"],
+                    content=snippet.content,
+                    language=snippet.language,
+                    embedding=snippet.embedding,
+                    metadata=snippet.metadata,
+                    start_line=snippet.start_line,
+                    end_line=snippet.end_line,
+                    char_start=snippet.char_start,
+                    char_end=snippet.char_end,
+                    snippet_type=snippet.metadata.get("type", "code_block"),
+                )
+
             # Update document chunk count
             await db.update_document_chunk_count(doc_id)
 
-            # Cache the document for fast line-based expansion
-            if cache_service:
-                try:
-                    await cache_service.cache_document(doc_id, doc.content)
-                    logger.debug(f"Cached document {doc_id} for line-based expansion")
-                except Exception as e:
-                    logger.warning(f"Failed to cache document {doc_id}: {e}")
-                    # Don't fail the whole operation if caching fails
+            # Note: Documents are no longer cached during extraction
+            # Caching now only happens during search when expand-context is requested
+            # This improves memory usage and follows the intended design
 
         logger.info(
             f"Completed processing job: {job_id}, processed {len(result.documents)} documents"
