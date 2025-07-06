@@ -62,7 +62,7 @@ test = [
 [project.scripts]
 context-server = "context_server.cli.main:cli"
 ctx = "context_server.cli.main:cli"
-context-server-mcp = "context_server.mcp_server.main:main"
+context-server-mcp = "context_server.mcp_server.main:cli_main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["context_server"]
