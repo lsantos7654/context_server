@@ -101,3 +101,8 @@ site/
 # Context Server runtime files
 .mcp_server.pid
 CLAUDE_SETUP.md
+
+
+# Added by cargo
+
+/target

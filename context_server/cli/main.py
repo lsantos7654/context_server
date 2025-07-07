@@ -31,6 +31,7 @@ def cli(ctx, verbose, no_color, config_file):
         ctx context create my-docs                # Create a new context
         ctx docs extract https://... my-docs      # Extract documentation
         ctx search query "async patterns" docs   # Search documentation
+        ctx tui explorer my-docs                  # Launch interactive TUI
         ctx docs list my-docs                     # List documents
     """
     # Ensure context object exists
@@ -256,6 +257,13 @@ def register_commands():
         cli.add_command(completion)
     except ImportError as e:
         echo_error(f"Failed to load completion commands: {e}")
+
+    try:
+        from .commands.tui import tui
+
+        cli.add_command(tui)
+    except ImportError as e:
+        echo_error(f"Failed to load TUI commands: {e}")
 
 
 
