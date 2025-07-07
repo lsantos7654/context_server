@@ -212,9 +212,16 @@ class ContextServerTools:
                     content = item.get("content", "")
                     display_content = content[:150] + "..." if len(content) > 150 else content
                 
-                # Count code snippets but don't include full content
+                # Count code snippets and extract IDs for direct access
                 code_snippets = item.get("metadata", {}).get("code_snippets", [])
                 code_snippets_count = len(code_snippets) if code_snippets else 0
+                
+                # Extract code snippet IDs for direct access
+                code_snippet_ids = []
+                if code_snippets:
+                    for snippet in code_snippets:
+                        if isinstance(snippet, dict) and "id" in snippet:
+                            code_snippet_ids.append(snippet["id"])
                 
                 compact_result = {
                     "id": item.get("id"),
@@ -225,6 +232,7 @@ class ContextServerTools:
                     "url": item.get("url"),
                     "has_summary": bool(item.get("summary")),
                     "code_snippets_count": code_snippets_count,
+                    "code_snippet_ids": code_snippet_ids,
                     "content_type": item.get("content_type", "chunk"),
                     "chunk_index": item.get("chunk_index"),
                 }
