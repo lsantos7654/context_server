@@ -330,9 +330,22 @@ def display_results_rich(
             f"\n[dim white]Chunk {chunk_index} • Score: {score:.4f}[/dim white]"
         )
         
-        # Show summary availability  
-        if result.get("summary"):
-            title_text += f"\n[green]✓ Summary available[/green]"
+        # Show summary if available, or create one from content (always shown, not just in verbose mode)
+        summary = result.get("summary", "")
+        summary_model = result.get("summary_model", "")
+        
+        # If no summary exists, create a brief summary from content
+        if not summary:
+            content = result.get("content", "")
+            summary = content[:150] + "..." if len(content) > 150 else content
+            summary_type = "Content Preview"
+        else:
+            summary_type = "Summary"
+            if summary_model:
+                summary_type += f" ({summary_model})"
+        
+        if summary.strip():
+            title_text += f"\n[bold yellow]{summary_type}:[/bold yellow]\n[italic cyan]{summary}[/italic cyan]"
 
         # Add document size if available
         doc_size = document_metadata.get("size", 0)
