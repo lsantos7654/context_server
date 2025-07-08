@@ -154,7 +154,7 @@ class ContextServerTools:
 
         Args:
             context_name: Name of context to store the content
-            file_path: Path to local file (PDF, txt, md, rst supported)
+            file_path: Path to local file (txt, md, rst supported)
 
         Returns:
             Dictionary with job information including job_id and status

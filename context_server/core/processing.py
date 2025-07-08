@@ -393,26 +393,8 @@ class DocumentProcessor:
                     documents=[], success=False, error=f"File not found: {file_path}"
                 )
 
-            # Use existing PDF extraction for PDFs
-            if path.suffix.lower() == ".pdf":
-                result = self.extractor.extract_from_pdf(file_path)
-
-                if not result.success:
-                    return ProcessingResult(
-                        documents=[], success=False, error=result.error
-                    )
-
-                document = await self._process_content(
-                    content=result.content,
-                    url=f"file://{file_path}",
-                    title=path.stem,
-                    metadata=result.metadata,
-                )
-
-                return ProcessingResult(documents=[document], success=True)
-
-            # For other file types, read as text
-            elif path.suffix.lower() in [".txt", ".md", ".rst"]:
+            # For supported file types, read as text
+            if path.suffix.lower() in [".txt", ".md", ".rst"]:
                 content = path.read_text(encoding="utf-8")
 
                 document = await self._process_content(

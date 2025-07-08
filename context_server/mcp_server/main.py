@@ -113,7 +113,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="extract_file",
-            description="Extract and index content from a local file. Supports PDF, text, markdown, and reStructuredText files.",
+            description="Extract and index content from a local file. Supports text, markdown, and reStructuredText files.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -123,7 +123,7 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "file_path": {
                         "type": "string",
-                        "description": "Path to local file (PDF, txt, md, rst supported)",
+                        "description": "Path to local file (txt, md, rst supported)",
                     },
                 },
                 "required": ["context_name", "file_path"],

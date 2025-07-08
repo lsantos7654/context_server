@@ -3,7 +3,7 @@ Unit tests for crawl4ai_extraction module.
 """
 
 import pytest
-from src.core.crawl4ai_extraction import Crawl4aiExtractor, ExtractionResult
+from context_server.core.crawl4ai_extraction import Crawl4aiExtractor, ExtractionResult
 
 
 class TestExtractionResult:
@@ -45,7 +45,6 @@ class TestCrawl4aiExtractor:
         extractor = Crawl4aiExtractor(tmp_path)
 
         assert extractor.output_dir == tmp_path
-        assert extractor.docling_converter is not None
 
     def test_extractor_initialization_default_output(self):
         """Test extractor initialization with default output."""
@@ -117,62 +116,6 @@ class TestCrawl4aiExtractor:
 
         assert len(result) <= 5
 
-    def test_clean_content_basic(self, tmp_path):
-        """Test basic content cleaning."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        content = "# Title\n\nSome content here.\n\n\n\nMore content."
-        result = extractor._clean_content(content)
-
-        assert "# Title" in result
-        assert "Some content here." in result
-        assert "More content." in result
-
-    def test_clean_content_removes_navigation(self, tmp_path):
-        """Test navigation removal."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        content = """# Main Content
-
-Skip to content
-
-* [Installation](link)
-* [Tutorials](link)
-* [Examples](link)
-
-## Actual Content
-
-This is the real content we want."""
-
-        result = extractor._clean_content(content)
-
-        assert "# Main Content" in result
-        assert "## Actual Content" in result
-        assert "This is the real content" in result
-        assert "Skip to content" not in result
-        assert "* [Installation]" not in result
-
-    def test_clean_content_removes_ui_elements(self, tmp_path):
-        """Test UI element removal."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        content = """# Title
-
-Search ` `⌘``K`
-
-Real content here.
-
-Cancel
-
-More real content."""
-
-        result = extractor._clean_content(content)
-
-        assert "# Title" in result
-        assert "Real content here." in result
-        assert "More real content." in result
-        assert "Search ` `⌘``K`" not in result
-        assert "Cancel" not in result
 
     def test_create_filename_from_url(self, tmp_path):
         """Test filename creation from URL."""
@@ -217,53 +160,4 @@ More real content."""
         assert hasattr(extractor, "extract_from_url")
         assert callable(extractor.extract_from_url)
 
-    def test_extract_from_pdf_file_not_found(self, tmp_path):
-        """Test PDF extraction with non-existent file."""
-        extractor = Crawl4aiExtractor(tmp_path)
 
-        non_existent_file = tmp_path / "does_not_exist.pdf"
-        result = extractor.extract_from_pdf(non_existent_file)
-
-        assert result.success is False
-        assert "Failed to extract PDF" in result.error
-
-    def test_extract_from_pdf_basic_structure(self, tmp_path):
-        """Test basic structure of PDF extraction."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        # Test that the method exists and has the right signature
-        assert hasattr(extractor, "extract_from_pdf")
-        assert callable(extractor.extract_from_pdf)
-
-    def test_clean_content_preserves_code_blocks(self, tmp_path):
-        """Test that code blocks are preserved during cleaning."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        content = """# Title
-
-```python
-def hello():
-    print("Hello")
-```
-
-More content."""
-
-        result = extractor._clean_content(content)
-
-        assert "```python" in result
-        assert "def hello():" in result
-        assert 'print("Hello")' in result
-
-    def test_clean_content_handles_empty_input(self, tmp_path):
-        """Test cleaning empty content."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        result = extractor._clean_content("")
-        assert result == ""
-
-    def test_clean_content_handles_whitespace_only(self, tmp_path):
-        """Test cleaning whitespace-only content."""
-        extractor = Crawl4aiExtractor(tmp_path)
-
-        result = extractor._clean_content("   \n  \n   ")
-        assert result.strip() == ""
