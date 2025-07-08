@@ -92,16 +92,16 @@ class Crawl4aiExtractor:
                 )
 
                 async with AsyncWebCrawler(verbose=False, headless=True) as crawler:
-                    # Create content filter based on configuration
+                    # Create aggressive content filter for cleaner extraction
                     if self.content_filter_type == "bm25":
                         content_filter = BM25ContentFilter(
                             user_query=self.query_terms,
-                            bm25_threshold=1.0
+                            bm25_threshold=0.8  # Lower threshold for more aggressive filtering
                         )
                     else:
                         content_filter = PruningContentFilter(
-                            threshold=0.48,
-                            min_word_threshold=10,
+                            threshold=0.35,  # More aggressive threshold for noise removal
+                            min_word_threshold=15,  # Higher minimum word count
                             threshold_type="fixed"
                         )
                     
@@ -113,15 +113,27 @@ class Crawl4aiExtractor:
                         # Note: Removed score_threshold as it was filtering out too many valid links
                     )
                     
-                    # Minimal configuration to diagnose the "Invalid expression" error
+                    # Enhanced configuration with aggressive content filtering
                     config = CrawlerRunConfig(
                         # Deep crawling configuration
                         deep_crawl_strategy=deep_crawl_strategy,
                         
-                        # Basic settings only
+                        # Content filtering and cleaning - More aggressive approach
+                        excluded_tags=["nav", "footer", "header", "aside", ".navbar", ".breadcrumb", 
+                                     ".toc", ".table-of-contents", ".sidebar", ".menu", ".pagination"],
+                        word_count_threshold=20,  # Skip short content blocks
+                        exclude_external_links=True,
+                        
+                        # Enhanced markdown generation with aggressive filtering
+                        markdown_generator=DefaultMarkdownGenerator(
+                            content_filter=content_filter
+                        ),
+                        
+                        # Basic settings
                         magic=True,  # Enable magic mode for better JS handling
                         page_timeout=30000,
-                        verbose=False
+                        verbose=False,
+                        cache_mode=CacheMode.ENABLED
                     )
                     
                     # Run deep crawl with built-in filtering
@@ -156,12 +168,20 @@ class Crawl4aiExtractor:
                         
                         for result in results[:max_pages]:  # Respect max_pages limit
                             if result.success and result.markdown:
-                                # Get filtered content
-                                content = result.markdown
-                                if hasattr(result, 'fit_markdown') and result.fit_markdown:
-                                    content = result.fit_markdown
+                                # Prioritize fit_markdown for cleaner content
+                                original_content = result.markdown
+                                filtered_content = result.fit_markdown if hasattr(result, 'fit_markdown') and result.fit_markdown else result.markdown
                                 
-                                # Clean content with existing cleaner
+                                # Log filtering effectiveness
+                                if hasattr(result, 'fit_markdown') and result.fit_markdown:
+                                    compression_ratio = 1 - (len(result.fit_markdown) / len(result.markdown))
+                                    logger.info(f"Content filtering for {result.url}: {compression_ratio:.1%} size reduction")
+                                    content = result.fit_markdown
+                                else:
+                                    logger.info(f"No fit_markdown available for {result.url}, using original")
+                                    content = result.markdown
+                                
+                                # Clean content with existing cleaner for additional processing
                                 cleaned_content = self.cleaner.clean_content(content)
                                 
                                 if len(cleaned_content.strip()) < 100:  # Skip tiny pages
@@ -226,13 +246,16 @@ class Crawl4aiExtractor:
                             else:
                                 return ExtractionResult.error(error_msg)
                         
-                        # Get filtered markdown content
-                        content = result.markdown
+                        # Prioritize fit_markdown for cleaner content
                         if hasattr(result, 'fit_markdown') and result.fit_markdown:
+                            compression_ratio = 1 - (len(result.fit_markdown) / len(result.markdown))
+                            logger.info(f"Content filtering: {compression_ratio:.1%} size reduction ({len(result.fit_markdown)} vs {len(result.markdown)} chars)")
                             content = result.fit_markdown
-                            logger.info(f"Using filtered content: {len(content)} chars vs {len(result.markdown)} chars")
+                        else:
+                            logger.info(f"No fit_markdown available, using original content ({len(result.markdown)} chars)")
+                            content = result.markdown
                         
-                        # Clean content with existing cleaner
+                        # Clean content with existing cleaner for additional processing
                         combined_content = self.cleaner.clean_content(content)
                         
                         if len(combined_content.strip()) < 100:

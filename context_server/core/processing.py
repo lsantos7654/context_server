@@ -71,11 +71,23 @@ class CodeSnippetExtractor:
     """Extracts code snippets from text content."""
 
     def __init__(self):
-        # Regex patterns for different code block formats
+        # Enhanced regex patterns for different code block formats
         self.markdown_code_pattern = re.compile(
             r"```(\w*)\n(.*?)\n```", re.DOTALL | re.MULTILINE
         )
         self.inline_code_pattern = re.compile(r"`([^`\n]+)`")
+        
+        # Additional patterns for various code block formats
+        self.html_code_pattern = re.compile(
+            r"<(?:pre|code)[^>]*>(.*?)</(?:pre|code)>", re.DOTALL | re.IGNORECASE
+        )
+        self.indented_code_pattern = re.compile(
+            r"^(?: {4}|\t)(.+)$", re.MULTILINE
+        )
+        # Pattern for common code indicators followed by blocks
+        self.code_indicator_pattern = re.compile(
+            r"(?:Example|Code|Sample|Usage):\s*\n\n((?:(?:    |\t).*\n?)+)", re.MULTILINE
+        )
 
     def extract_code_snippets(
         self, content: str, url: str = "", title: str = ""
@@ -120,8 +132,56 @@ class CodeSnippetExtractor:
             }
             snippets.append(snippet)
 
-        # Remove code blocks from content for regular chunking
+        # Remove all types of code blocks from content for regular chunking
         cleaned_content = self.markdown_code_pattern.sub("", content)
+        
+        # Remove HTML code/pre tags
+        cleaned_content = self.html_code_pattern.sub("", cleaned_content)
+        
+        # Extract and remove HTML code blocks
+        for match in self.html_code_pattern.finditer(content):
+            code_content = match.group(1).strip()
+            if len(code_content) > 20:  # Only substantial code blocks
+                start_char = match.start()
+                end_char = match.end()
+                start_line = self._char_to_line(start_char, line_char_map)
+                end_line = self._char_to_line(end_char, line_char_map)
+
+                snippet = {
+                    "content": code_content,
+                    "language": "html",  # HTML-embedded code
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "char_start": start_char,
+                    "char_end": end_char,
+                    "type": "html_code_block",
+                    "source_url": url,
+                    "source_title": title,
+                }
+                snippets.append(snippet)
+
+        # Extract and remove indented code blocks (4 spaces or tab)
+        indented_blocks = []
+        for match in self.indented_code_pattern.finditer(content):
+            indented_blocks.append(match.group(1))
+        
+        if indented_blocks and len('\n'.join(indented_blocks)) > 50:
+            combined_code = '\n'.join(indented_blocks)
+            snippet = {
+                "content": combined_code,
+                "language": "text",
+                "start_line": 0,  # Approximate
+                "end_line": len(indented_blocks),
+                "char_start": 0,
+                "char_end": 0,
+                "type": "indented_code_block",
+                "source_url": url,
+                "source_title": title,
+            }
+            snippets.append(snippet)
+            
+        # Remove indented code patterns
+        cleaned_content = self.indented_code_pattern.sub("", cleaned_content)
 
         # Also extract significant inline code (longer than 10 chars)
         for match in self.inline_code_pattern.finditer(content):
@@ -145,6 +205,9 @@ class CodeSnippetExtractor:
                 }
                 snippets.append(snippet)
 
+        # Additional cleaning: remove extra whitespace and empty lines left by code removal
+        cleaned_content = self._clean_whitespace_artifacts(cleaned_content)
+
         return snippets, cleaned_content
 
     def _char_to_line(self, char_pos: int, line_char_map: list[int]) -> int:
@@ -155,6 +218,23 @@ class CodeSnippetExtractor:
             ):
                 return i
         return len(line_char_map) - 1
+
+    def _clean_whitespace_artifacts(self, content: str) -> str:
+        """Clean up whitespace artifacts left by code block removal."""
+        # Remove multiple consecutive empty lines
+        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
+        
+        # Remove trailing whitespace from lines
+        content = re.sub(r'[ \t]+$', '', content, flags=re.MULTILINE)
+        
+        # Remove lines that are just whitespace
+        content = re.sub(r'^\s*$\n', '', content, flags=re.MULTILINE)
+        
+        # Clean up markdown artifacts left by code removal
+        content = re.sub(r'^\s*```\s*$', '', content, flags=re.MULTILINE)  # Orphaned code fence
+        content = re.sub(r'^\s*\*\s*$', '', content, flags=re.MULTILINE)   # Orphaned bullet points
+        
+        return content.strip()
 
 
 class DocumentProcessor:
