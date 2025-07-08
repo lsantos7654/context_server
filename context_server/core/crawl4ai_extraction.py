@@ -14,15 +14,15 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from crawl4ai import (
-    AsyncWebCrawler, 
-    CacheMode, 
-    CrawlerRunConfig,
-    PruningContentFilter,
+    AsyncWebCrawler,
     BM25ContentFilter,
-    DefaultMarkdownGenerator
+    CacheMode,
+    CrawlerRunConfig,
+    DefaultMarkdownGenerator,
+    PruningContentFilter,
 )
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
 from .cleaning import MarkdownCleaner
 from .utils import FileUtils, URLUtils
@@ -67,17 +67,18 @@ class Crawl4aiExtractor:
         """Initialize extractor with optional output directory and configuration."""
         self.output_dir = FileUtils.ensure_directory(output_dir or Path("output"))
 
-
         # Initialize markdown cleaner for enhanced content processing
         self.cleaner = MarkdownCleaner()
 
         # Configuration for crawl4ai built-in filtering
         self.config = config or {}
         self.filtering_config = self.config.get("filtering", {})
-        
+
         # Content filtering strategy
         self.content_filter_type = self.filtering_config.get("content_filter", "bm25")
-        self.query_terms = self.filtering_config.get("query_terms", "documentation examples tutorial guide api reference")
+        self.query_terms = self.filtering_config.get(
+            "query_terms", "documentation examples tutorial guide api reference"
+        )
 
     async def extract_from_url(self, url: str, max_pages: int = 50) -> ExtractionResult:
         """Extract content from URL using crawl4ai's built-in deep crawling and filtering."""
@@ -92,132 +93,170 @@ class Crawl4aiExtractor:
                 )
 
                 async with AsyncWebCrawler(verbose=False, headless=True) as crawler:
-                    # Create aggressive content filter for cleaner extraction
+                    # Create content filter for cleaner extraction
                     if self.content_filter_type == "bm25":
                         content_filter = BM25ContentFilter(
                             user_query=self.query_terms,
-                            bm25_threshold=0.8  # Lower threshold for more aggressive filtering
+                            bm25_threshold=0.5,  # More balanced threshold to capture concepts + examples
                         )
                     else:
                         content_filter = PruningContentFilter(
                             threshold=0.35,  # More aggressive threshold for noise removal
                             min_word_threshold=15,  # Higher minimum word count
-                            threshold_type="fixed"
+                            threshold_type="fixed",
                         )
-                    
+
                     # Configure deep crawling strategy
                     deep_crawl_strategy = BFSDeepCrawlStrategy(
-                        max_depth=2,  # Reasonable depth for documentation
+                        max_depth=4,  # Increased depth to reach concept pages (/ -> /concepts/ -> /concepts/event-handling/)
                         include_external=False,
                         max_pages=max_pages  # Use the passed max_pages parameter
                         # Note: Removed score_threshold as it was filtering out too many valid links
                     )
-                    
+
                     # Enhanced configuration with aggressive content filtering
                     config = CrawlerRunConfig(
                         # Deep crawling configuration
                         deep_crawl_strategy=deep_crawl_strategy,
-                        
-                        # Content filtering and cleaning - More aggressive approach
-                        excluded_tags=["nav", "footer", "header", "aside", ".navbar", ".breadcrumb", 
-                                     ".toc", ".table-of-contents", ".sidebar", ".menu", ".pagination"],
+                        # Content filtering and cleaning - Balanced approach for link discovery
+                        excluded_tags=[
+                            "footer",
+                            ".breadcrumb",
+                            ".pagination",
+                        ],  # Keep nav/header for link discovery
                         word_count_threshold=20,  # Skip short content blocks
                         exclude_external_links=True,
-                        
                         # Enhanced markdown generation with aggressive filtering
                         markdown_generator=DefaultMarkdownGenerator(
                             content_filter=content_filter
                         ),
-                        
                         # Basic settings
                         magic=True,  # Enable magic mode for better JS handling
                         page_timeout=30000,
                         verbose=False,
-                        cache_mode=CacheMode.ENABLED
+                        cache_mode=CacheMode.ENABLED,
                     )
-                    
+
                     # Run deep crawl with built-in filtering
                     results = await crawler.arun(url=url, config=config)
-                    
+
                     # Debug: Log what we got back
                     logger.info(f"DEBUG: crawl4ai returned type: {type(results)}")
                     if isinstance(results, list):
                         logger.info(f"DEBUG: List with {len(results)} items")
                     else:
-                        logger.info(f"DEBUG: Single result, success: {results.success if hasattr(results, 'success') else 'unknown'}")
-                        if hasattr(results, 'links'):
-                            logger.info(f"DEBUG: Links found: internal={len(results.links.get('internal', []))} external={len(results.links.get('external', []))}")
-                    
+                        logger.info(
+                            f"DEBUG: Single result, success: {results.success if hasattr(results, 'success') else 'unknown'}"
+                        )
+                        if hasattr(results, "links"):
+                            logger.info(
+                                f"DEBUG: Links found: internal={len(results.links.get('internal', []))} external={len(results.links.get('external', []))}"
+                            )
+
                     # Handle results from deep crawling (can be single result or list)
                     if isinstance(results, list):
                         if not results:
                             error_msg = "Deep crawl returned no results"
                             if attempt < max_retries - 1:
-                                logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                                logger.warning(
+                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                                )
                                 await asyncio.sleep(retry_delay)
                                 continue
                             else:
                                 return ExtractionResult.error(error_msg)
-                        
+
                         # Process multiple results from deep crawl
                         extracted_contents = []
                         total_original_length = 0
                         successful_pages = 0
-                        
+
                         logger.info(f"Deep crawl found {len(results)} pages")
-                        
+
                         for result in results[:max_pages]:  # Respect max_pages limit
                             if result.success and result.markdown:
                                 # Prioritize fit_markdown for cleaner content
                                 original_content = result.markdown
-                                filtered_content = result.fit_markdown if hasattr(result, 'fit_markdown') and result.fit_markdown else result.markdown
-                                
+                                filtered_content = (
+                                    result.fit_markdown
+                                    if hasattr(result, "fit_markdown")
+                                    and result.fit_markdown
+                                    else result.markdown
+                                )
+
                                 # Log filtering effectiveness
-                                if hasattr(result, 'fit_markdown') and result.fit_markdown:
-                                    compression_ratio = 1 - (len(result.fit_markdown) / len(result.markdown))
-                                    logger.info(f"Content filtering for {result.url}: {compression_ratio:.1%} size reduction")
+                                if (
+                                    hasattr(result, "fit_markdown")
+                                    and result.fit_markdown
+                                ):
+                                    compression_ratio = 1 - (
+                                        len(result.fit_markdown) / len(result.markdown)
+                                    )
+                                    logger.info(
+                                        f"Content filtering for {result.url}: {compression_ratio:.1%} size reduction"
+                                    )
                                     content = result.fit_markdown
                                 else:
-                                    logger.info(f"No fit_markdown available for {result.url}, using original")
+                                    logger.info(
+                                        f"No fit_markdown available for {result.url}, using original"
+                                    )
                                     content = result.markdown
-                                
+
                                 # Clean content with existing cleaner for additional processing
                                 cleaned_content = self.cleaner.clean_content(content)
-                                
-                                if len(cleaned_content.strip()) < 100:  # Skip tiny pages
-                                    logger.debug(f"Skipping {result.url} - content too short")
+
+                                if (
+                                    len(cleaned_content.strip()) < 100
+                                ):  # Skip tiny pages
+                                    logger.debug(
+                                        f"Skipping {result.url} - content too short"
+                                    )
                                     continue
-                                
-                                extracted_contents.append({
-                                    "url": result.url,
-                                    "content": cleaned_content,
-                                    "depth": result.metadata.get("depth", 0),
-                                    "original_length": len(result.markdown) if result.markdown else 0,
-                                    "filtered_length": len(cleaned_content)
-                                })
-                                
-                                total_original_length += len(result.markdown) if result.markdown else 0
+
+                                extracted_contents.append(
+                                    {
+                                        "url": result.url,
+                                        "content": cleaned_content,
+                                        "depth": result.metadata.get("depth", 0),
+                                        "original_length": len(result.markdown)
+                                        if result.markdown
+                                        else 0,
+                                        "filtered_length": len(cleaned_content),
+                                    }
+                                )
+
+                                total_original_length += (
+                                    len(result.markdown) if result.markdown else 0
+                                )
                                 successful_pages += 1
-                                
+
                                 # Save individual files
                                 if self.output_dir:
-                                    filename = self._create_filename_from_url(result.url)
+                                    filename = self._create_filename_from_url(
+                                        result.url
+                                    )
                                     file_path = self.output_dir / filename
-                                    file_path.write_text(cleaned_content, encoding="utf-8")
+                                    file_path.write_text(
+                                        cleaned_content, encoding="utf-8"
+                                    )
                                     logger.debug(f"Saved {file_path}")
-                        
+
                         if not extracted_contents:
                             error_msg = "No valid content extracted from deep crawl"
                             if attempt < max_retries - 1:
-                                logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                                logger.warning(
+                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                                )
                                 await asyncio.sleep(retry_delay)
                                 continue
                             else:
                                 return ExtractionResult.error(error_msg)
-                        
+
                         # Combine all content
-                        combined_content = "\\n\\n---\\n\\n".join([item["content"] for item in extracted_contents])
-                        
+                        combined_content = "\\n\\n---\\n\\n".join(
+                            [item["content"] for item in extracted_contents]
+                        )
+
                         # Create metadata
                         metadata = {
                             "source_type": "crawl4ai_deep",
@@ -228,52 +267,65 @@ class Crawl4aiExtractor:
                             "pages_extracted": successful_pages,
                             "total_original_length": total_original_length,
                             "total_filtered_length": len(combined_content),
-                            "compression_ratio": 1 - (len(combined_content) / total_original_length) if total_original_length > 0 else 0,
+                            "compression_ratio": 1
+                            - (len(combined_content) / total_original_length)
+                            if total_original_length > 0
+                            else 0,
                             "extraction_time": datetime.now().isoformat(),
                             "extracted_pages": extracted_contents,
                         }
-                        
+
                     else:
                         # Handle single result (fallback)
                         result = results
-                        
+
                         if not result.success:
                             error_msg = f"Deep crawl failed: {result.error}"
                             if attempt < max_retries - 1:
-                                logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                                logger.warning(
+                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                                )
                                 await asyncio.sleep(retry_delay)
                                 continue
                             else:
                                 return ExtractionResult.error(error_msg)
-                        
+
                         # Prioritize fit_markdown for cleaner content
-                        if hasattr(result, 'fit_markdown') and result.fit_markdown:
-                            compression_ratio = 1 - (len(result.fit_markdown) / len(result.markdown))
-                            logger.info(f"Content filtering: {compression_ratio:.1%} size reduction ({len(result.fit_markdown)} vs {len(result.markdown)} chars)")
+                        if hasattr(result, "fit_markdown") and result.fit_markdown:
+                            compression_ratio = 1 - (
+                                len(result.fit_markdown) / len(result.markdown)
+                            )
+                            logger.info(
+                                f"Content filtering: {compression_ratio:.1%} size reduction ({len(result.fit_markdown)} vs {len(result.markdown)} chars)"
+                            )
                             content = result.fit_markdown
                         else:
-                            logger.info(f"No fit_markdown available, using original content ({len(result.markdown)} chars)")
+                            logger.info(
+                                f"No fit_markdown available, using original content ({len(result.markdown)} chars)"
+                            )
                             content = result.markdown
-                        
+
                         # Clean content with existing cleaner for additional processing
                         combined_content = self.cleaner.clean_content(content)
-                        
+
                         if len(combined_content.strip()) < 100:
                             error_msg = "Extracted content too short after filtering"
                             if attempt < max_retries - 1:
-                                logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                                logger.warning(
+                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                                )
                                 await asyncio.sleep(retry_delay)
                                 continue
                             else:
                                 return ExtractionResult.error(error_msg)
-                        
+
                         # Save cleaned content
                         if self.output_dir:
                             filename = self._create_filename_from_url(url)
                             file_path = self.output_dir / filename
                             file_path.write_text(combined_content, encoding="utf-8")
                             logger.debug(f"Saved filtered content to {file_path}")
-                        
+
                         # Create metadata
                         metadata = {
                             "source_type": "crawl4ai_deep",
@@ -282,20 +334,27 @@ class Crawl4aiExtractor:
                             "query_terms": self.query_terms,
                             "pages_crawled": 1,
                             "pages_extracted": 1,
-                            "total_original_length": len(result.markdown) if result.markdown else 0,
+                            "total_original_length": len(result.markdown)
+                            if result.markdown
+                            else 0,
                             "total_filtered_length": len(combined_content),
-                            "compression_ratio": 1 - (len(combined_content) / len(result.markdown)) if result.markdown else 0,
+                            "compression_ratio": 1
+                            - (len(combined_content) / len(result.markdown))
+                            if result.markdown
+                            else 0,
                             "extraction_time": datetime.now().isoformat(),
-                            "links_discovered": len(result.links.get("internal", [])) if result.links else 0,
+                            "links_discovered": len(result.links.get("internal", []))
+                            if result.links
+                            else 0,
                         }
-                        
+
                         # Add link information if available
                         if result.links:
                             metadata["links"] = {
                                 "internal": len(result.links.get("internal", [])),
-                                "external": len(result.links.get("external", []))
+                                "external": len(result.links.get("external", [])),
                             }
-                    
+
                     logger.info(
                         "Deep crawl extraction completed",
                         extra={
@@ -305,17 +364,17 @@ class Crawl4aiExtractor:
                             "compression": f"{metadata['compression_ratio']:.1%}",
                         },
                     )
-                    
+
                     return ExtractionResult(
-                        success=True, 
-                        content=combined_content, 
-                        metadata=metadata
+                        success=True, content=combined_content, metadata=metadata
                     )
-                    
+
             except Exception as e:
                 error_msg = f"Deep crawl extraction failed: {e}"
                 if attempt < max_retries - 1:
-                    logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
+                    )
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
@@ -326,8 +385,6 @@ class Crawl4aiExtractor:
                     return ExtractionResult.error(
                         f"Deep crawl extraction failed after {max_retries} attempts: {e}"
                     )
-
-
 
     def _create_filename_from_url(self, url: str) -> str:
         """Create safe filename from URL."""
