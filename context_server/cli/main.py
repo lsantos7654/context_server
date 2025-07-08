@@ -189,8 +189,8 @@ def config(ctx):
     config_table.add_row("Verbose Mode", "✓" if config.verbose else "✗")
     config_table.add_row("Color Output", "✓" if config.color else "✗")
 
-    if config.server.openai_api_key:
-        masked_key = f"{'*' * 20}...{config.server.openai_api_key[-8:]}"
+    if config.openai_api_key:
+        masked_key = f"{'*' * 20}...{config.openai_api_key[-8:]}"
         config_table.add_row("OpenAI API Key", f"[green]{masked_key}[/green]")
     else:
         config_table.add_row("OpenAI API Key", "[red]Not configured[/red]")

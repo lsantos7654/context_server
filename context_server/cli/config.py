@@ -28,6 +28,9 @@ class CLIConfig(BaseSettings):
         env_file=".env",
         extra="ignore",
     )
+    
+    # Direct environment variables (without prefix)
+    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
 
     # Server settings
     server: ServerConfig = Field(default_factory=ServerConfig)
