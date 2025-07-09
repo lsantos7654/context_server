@@ -42,11 +42,8 @@ def context():
 @context.command()
 @click.argument("name")
 @click.option("--description", "-d", default="", help="Context description")
-@click.option(
-    "--embedding-model", default="text-embedding-3-small", help="Embedding model to use"
-)
 @rich_help_option("-h", "--help")
-def create(name, description, embedding_model):
+def create(name, description):
     """Create a new documentation context.
 
     Creates a new context container for organizing and indexing
@@ -56,7 +53,6 @@ def create(name, description, embedding_model):
     Args:
         name: Unique name for the new context
         description: Optional description for the context
-        embedding_model: Embedding model to use for vector search
     """
 
     async def create_context():
@@ -66,7 +62,6 @@ def create(name, description, embedding_model):
             {
                 "name": name,
                 "description": description,
-                "embedding_model": embedding_model,
             },
         )
 
@@ -81,7 +76,6 @@ def create(name, description, embedding_model):
             table.add_row("ID", response["id"])
             table.add_row("Name", response["name"])
             table.add_row("Description", response["description"] or "None")
-            table.add_row("Embedding Model", response["embedding_model"])
             table.add_row("Created", str(response["created_at"]))
 
             console.print(table)
@@ -243,56 +237,6 @@ def delete(name, force):
 
     asyncio.run(delete_context())
 
-
-@context.command()
-@click.argument("old_name", shell_complete=complete_context_name)
-@click.argument("new_name")
-def rename(old_name, new_name):
-    """Rename a context.
-
-    Changes the name of an existing context while preserving
-    all documents and metadata.
-
-    Args:
-        old_name: Current context name
-        new_name: New context name
-    """
-    # This would require an API endpoint for renaming
-    echo_error("Context renaming is not yet implemented")
-    echo_info("As a workaround, you can create a new context and migrate documents")
-
-
-@context.command()
-@click.argument("name", shell_complete=complete_context_name)
-@click.option("--new-description", help="New description for the context")
-@click.option(
-    "--new-embedding-model",
-    help="New embedding model (requires re-embedding all documents)",
-)
-def update(name, new_description, new_embedding_model):
-    """Update context properties.
-
-    Modifies context metadata such as description or embedding model.
-    Changing the embedding model requires re-processing all documents.
-
-    Args:
-        name: Name of context to update
-        new_description: Updated description
-        new_embedding_model: New embedding model (triggers re-embedding)
-    """
-    if not new_description and not new_embedding_model:
-        echo_error("At least one property must be specified for update")
-        return
-
-    if new_embedding_model:
-        echo_warning("Changing embedding model will require re-embedding all documents")
-        if not confirm_action("Continue?", default=False):
-            echo_info("Update cancelled")
-            return
-
-    # This would require an API endpoint for updating contexts
-    echo_error("Context updating is not yet implemented")
-    echo_info("Context updates will be available in a future version")
 
 
 @context.command()

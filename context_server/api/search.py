@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.embeddings import EmbeddingService
+from ..core.embeddings import EmbeddingService, VoyageEmbeddingService
 from ..core.storage import DatabaseManager
 from .error_handlers import handle_search_errors
 from .models import SearchRequest, SearchResponse
@@ -24,6 +24,13 @@ def get_embedding_service(request: Request) -> EmbeddingService:
     if not hasattr(request.app.state, "embedding_service"):
         request.app.state.embedding_service = EmbeddingService()
     return request.app.state.embedding_service
+
+
+def get_code_embedding_service(request: Request) -> VoyageEmbeddingService:
+    """Dependency to get code embedding service."""
+    if not hasattr(request.app.state, "code_embedding_service"):
+        request.app.state.code_embedding_service = VoyageEmbeddingService()
+    return request.app.state.code_embedding_service
 
 
 @router.post("/contexts/{context_name}/search", response_model=SearchResponse)
@@ -183,6 +190,113 @@ def _merge_search_results(
 
     return final_results
 
+
+@router.post("/contexts/{context_name}/search/code")
+@handle_search_errors("search code snippets")
+async def search_code_snippets(
+    context_name: str,
+    search_request: SearchRequest,
+    db: DatabaseManager = Depends(get_db_manager),
+    code_embedding_service: VoyageEmbeddingService = Depends(get_code_embedding_service),
+):
+    """Search code snippets within a context using code-optimized embeddings."""
+    start_time = time.time()
+
+    # Verify context exists
+    context = await db.get_context_by_name(context_name)
+    if not context:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    context_id = context["id"]
+    results = []
+
+    if search_request.mode.value == "vector":
+        # Vector search using code embeddings
+        query_embedding = await code_embedding_service.embed_text(search_request.query)
+        results = await db.vector_search_code_snippets(
+            context_id=context_id,
+            query_embedding=query_embedding,
+            limit=search_request.limit,
+            min_similarity=0.1,  # Lower threshold for testing
+        )
+
+    elif search_request.mode.value == "fulltext":
+        # Full-text search in code snippets
+        results = await db.fulltext_search_code_snippets(
+            context_id=context_id,
+            query=search_request.query,
+            limit=search_request.limit,
+        )
+
+    elif search_request.mode.value == "hybrid":
+        # Hybrid search - combine vector and full-text for code
+        query_embedding = await code_embedding_service.embed_text(search_request.query)
+
+        # Get results from both methods
+        vector_results = await db.vector_search_code_snippets(
+            context_id=context_id,
+            query_embedding=query_embedding,
+            limit=search_request.limit * 2,  # Get more for merging
+            min_similarity=0.1,  # Lower threshold for testing
+        )
+
+        fulltext_results = await db.fulltext_search_code_snippets(
+            context_id=context_id,
+            query=search_request.query,
+            limit=search_request.limit * 2,  # Get more for merging
+        )
+
+        # Merge and rank results
+        results = _merge_search_results(
+            vector_results, fulltext_results, search_request.limit
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported search mode: {search_request.mode}",
+        )
+
+    # Format code search results with enhanced metadata
+    formatted_results = []
+    for result in results:
+        metadata = result.get("metadata", {})
+        formatted_result = {
+            "id": result["id"],
+            "document_id": result.get("document_id"),
+            "title": result["title"],
+            "content": result["content"],
+            "language": result.get("language", "text"),
+            "snippet_type": result.get("snippet_type", "code_block"),
+            "score": result["score"],
+            "metadata": metadata,
+            "url": result.get("url"),
+            "content_type": "code_snippet",
+            # Extract useful metadata to top level for easier access
+            "page_url": metadata.get("page_url", result.get("url")),
+            "source_type": metadata.get("source_type"),
+            "base_url": metadata.get("base_url"),
+            "source_title": metadata.get("source_title"),
+            "start_line": result.get("start_line"),
+            "end_line": result.get("end_line"),
+        }
+        formatted_results.append(formatted_result)
+
+    execution_time_ms = int((time.time() - start_time) * 1000)
+
+    logger.info(
+        f"Code search completed: query='{search_request.query}', "
+        f"mode={search_request.mode}, results={len(formatted_results)}, "
+        f"time={execution_time_ms}ms"
+    )
+
+    return SearchResponse(
+        results=formatted_results,
+        total=len(formatted_results),
+        query=search_request.query,
+        mode=search_request.mode.value,
+        execution_time_ms=execution_time_ms,
+    )
 
 
 @router.get("/contexts/{context_name}/search/suggestions")

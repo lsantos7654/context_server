@@ -20,18 +20,20 @@ from ..config import get_api_base_url, get_api_url
 from ..help_formatter import rich_help_option
 from ..utils import (
     check_api_health,
-    check_docker_compose_running,
     check_docker_running,
     confirm_action,
     echo_error,
     echo_info,
     echo_success,
     echo_warning,
-    get_project_root,
     run_command,
 )
 
 console = Console()
+
+# Container names (hardcoded for Context Server)
+API_CONTAINER = "context_server-api-1"
+POSTGRES_CONTAINER = "context_server-postgres-1"
 
 
 @click.group()
@@ -47,21 +49,16 @@ def server():
         ctx server down                     # Stop all services
         ctx server status                   # Check service health
         ctx server logs --follow api        # Follow API logs
-        ctx server reset-db --force        # Reset database
     """
     pass
 
 
 @server.command()
-@click.option("--build", is_flag=True, help="Build images before starting")
-@click.option(
-    "--detach/--no-detach", default=True, help="Run in detached mode (default: True)"
-)
 @rich_help_option("-h", "--help")
-def up(build, detach):
+def up():
     """Start the Context Server services.
 
-    Launches PostgreSQL database and FastAPI server using Docker Compose.
+    Starts PostgreSQL database and FastAPI server containers.
     Once running, Claude can connect via MCP if configured.
     """
     if not check_docker_running():
@@ -70,53 +67,51 @@ def up(build, detach):
 
     echo_info("Starting Context Server services...")
 
-    cmd = ["docker-compose", "up"]
-
-    if build:
-        cmd.append("--build")
-
-    if detach:
-        cmd.append("-d")
-
     try:
-        run_command(cmd)
+        # Start PostgreSQL container
+        echo_info(f"Starting {POSTGRES_CONTAINER}...")
+        run_command(["docker", "start", POSTGRES_CONTAINER])
+        
+        # Start API container
+        echo_info(f"Starting {API_CONTAINER}...")
+        run_command(["docker", "start", API_CONTAINER])
 
-        if detach:
-            echo_success("Context Server started in detached mode!")
-            echo_info(f"API available at: {get_api_base_url()}")
-            echo_info(f"API docs at: {get_api_base_url()}/docs")
-            echo_info("Database at: localhost:5432")
+        echo_success("Context Server started!")
+        echo_info(f"API available at: {get_api_base_url()}")
+        echo_info(f"API docs at: {get_api_base_url()}/docs")
+        echo_info("Database at: localhost:5432")
 
-            # Wait for services to be ready
-            echo_info("Waiting for services to be ready...")
-            if wait_for_services():
-                echo_success("All services are ready!")
-                echo_info("Configure Claude integration with: ctx init")
-            else:
-                echo_warning("Services may not be fully ready yet")
+        # Wait for services to be ready
+        echo_info("Waiting for services to be ready...")
+        if wait_for_services():
+            echo_success("All services are ready!")
+            echo_info("Configure Claude integration with: ctx init")
+        else:
+            echo_warning("Services may not be fully ready yet")
 
     except Exception as e:
         echo_error(f"Failed to start services: {e}")
+        echo_info("Hint: Make sure containers exist. Run 'docker-compose up' once to create them.")
 
 
 @server.command()
-@click.option("--volumes", is_flag=True, help="Remove volumes as well")
 @rich_help_option("-h", "--help")
-def down(volumes):
+def down():
     """Stop the Context Server services.
 
     Stops all running Docker containers for the Context Server.
-    Optionally removes associated volumes and data.
     """
     echo_info("Stopping Context Server services...")
 
-    cmd = ["docker-compose", "down"]
-
-    if volumes:
-        cmd.append("--volumes")
-
     try:
-        run_command(cmd)
+        # Stop API container
+        echo_info(f"Stopping {API_CONTAINER}...")
+        run_command(["docker", "stop", API_CONTAINER])
+        
+        # Stop PostgreSQL container
+        echo_info(f"Stopping {POSTGRES_CONTAINER}...")
+        run_command(["docker", "stop", POSTGRES_CONTAINER])
+
         echo_success("Context Server stopped!")
     except Exception as e:
         echo_error(f"Failed to stop services: {e}")
@@ -131,23 +126,26 @@ def restart():
     """
     echo_info("Restarting Context Server...")
 
-    # Stop services
-    from click.testing import CliRunner
+    try:
+        # Restart API container
+        echo_info(f"Restarting {API_CONTAINER}...")
+        run_command(["docker", "restart", API_CONTAINER])
+        
+        # Restart PostgreSQL container
+        echo_info(f"Restarting {POSTGRES_CONTAINER}...")
+        run_command(["docker", "restart", POSTGRES_CONTAINER])
 
-    runner = CliRunner()
+        echo_success("Context Server restarted!")
+        
+        # Wait for services to be ready
+        echo_info("Waiting for services to be ready...")
+        if wait_for_services():
+            echo_success("All services are ready!")
+        else:
+            echo_warning("Services may not be fully ready yet")
 
-    result = runner.invoke(down, [])
-    if result.exit_code != 0:
-        echo_error("Failed to stop services")
-        return
-
-    # Start services
-    result = runner.invoke(up, [])
-    if result.exit_code != 0:
-        echo_error("Failed to start services")
-        return
-
-    echo_success("Context Server restarted!")
+    except Exception as e:
+        echo_error(f"Failed to restart services: {e}")
 
 
 @server.command()
@@ -167,17 +165,39 @@ def logs(service, follow, tail):
         follow: Follow log output in real-time
         tail: Number of lines to show from end
     """
-    if not check_docker_compose_running():
-        echo_error("Docker Compose services are not running")
+    # Map service names to container names
+    container_map = {
+        "api": API_CONTAINER,
+        "postgres": POSTGRES_CONTAINER,
+    }
+    
+    if service not in container_map:
+        echo_error(f"Unknown service: {service}. Use 'api' or 'postgres'")
+        return
+        
+    container_name = container_map[service]
+    
+    # Check if container is running
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "-q", "-f", f"name={container_name}"],
+            capture_output=True,
+            text=True
+        )
+        if not result.stdout.strip():
+            echo_error(f"Container {container_name} is not running")
+            return
+    except Exception as e:
+        echo_error(f"Failed to check container status: {e}")
         return
 
-    cmd = ["docker-compose", "logs"]
+    cmd = ["docker", "logs"]
 
     if follow:
         cmd.append("-f")
 
     cmd.extend(["--tail", str(tail)])
-    cmd.append(service)
+    cmd.append(container_name)
 
     try:
         run_command(cmd)
@@ -207,13 +227,14 @@ def status(wait):
 
     echo_success("Docker is running")
 
-    # Check Docker Compose
-    if not check_docker_compose_running():
-        echo_error("Docker Compose services are not running")
+    # Check container status
+    containers_running = _check_containers_running()
+    if not containers_running:
+        echo_error("Context Server containers are not running")
         echo_info("Run: ctx server up")
         return
 
-    echo_success("Docker Compose services are running")
+    echo_success("Context Server containers are running")
 
     # Check API health
     if wait:
@@ -268,13 +289,24 @@ def shell(database, user):
         database: Database name to connect to
         user: Database user
     """
-    if not check_docker_compose_running():
-        echo_error("Docker Compose services are not running")
+    # Check if postgres container is running
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "-q", "-f", f"name={POSTGRES_CONTAINER}"],
+            capture_output=True,
+            text=True
+        )
+        if not result.stdout.strip():
+            echo_error(f"PostgreSQL container ({POSTGRES_CONTAINER}) is not running")
+            echo_info("Run: ctx server up")
+            return
+    except Exception as e:
+        echo_error(f"Failed to check container status: {e}")
         return
 
     echo_info(f"Connecting to database: {database}")
 
-    cmd = ["docker-compose", "exec", "postgres", "psql", "-U", user, "-d", database]
+    cmd = ["docker", "exec", "-it", POSTGRES_CONTAINER, "psql", "-U", user, "-d", database]
 
     try:
         run_command(cmd)
@@ -282,100 +314,21 @@ def shell(database, user):
         echo_error(f"Failed to connect to database: {e}")
 
 
-@server.command()
-@click.option("--force", is_flag=True, help="Skip confirmation prompt")
-def reset_db(force):
-    """Reset the database (WARNING: destroys all data).
-
-    Args:
-        force: Skip confirmation prompt
-    """
-    if not force and not confirm_action(
-        "This will destroy all data in the database. Continue?", default=False
-    ):
-        echo_info("Database reset cancelled")
-        return
-
-    if not check_docker_compose_running():
-        echo_error("Docker Compose services are not running")
-        return
-
-    echo_warning("Resetting database...")
-
-    cmd = [
-        "docker-compose",
-        "exec",
-        "postgres",
-        "psql",
-        "-U",
-        "context_user",
-        "-d",
-        "context_server",
-        "-c",
-        "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector;",
-    ]
-
+def _check_containers_running() -> bool:
+    """Check if Context Server containers are running."""
     try:
-        run_command(cmd)
-        echo_success("Database schema reset!")
-
-        # Reinitialize database tables through API
-        echo_info("Reinitializing database tables...")
-
-        async def reinitialize():
-            try:
-                async with httpx.AsyncClient() as client:
-                    # Use base URL directly for admin endpoints (not through /api/ prefix)
-                    admin_url = f"{get_api_base_url()}/admin/reinitialize-db"
-                    response = await client.post(admin_url, timeout=30.0)
-                    if response.status_code == 200:
-                        echo_success("Database reinitialization completed!")
-                        return True
-                    else:
-                        echo_error(
-                            f"Failed to reinitialize database: {response.status_code} - {response.text}"
-                        )
-                        return False
-            except Exception as e:
-                echo_error(f"Failed to call reinitialize API: {e}")
-                return False
-
-        success = asyncio.run(reinitialize())
-        if success:
-            echo_success("Database reset completed!")
-        else:
-            echo_warning(
-                "Database reset completed, but reinitialization may have failed. You may need to restart the API server."
+        containers = [API_CONTAINER, POSTGRES_CONTAINER]
+        for container in containers:
+            result = subprocess.run(
+                ["docker", "ps", "-q", "-f", f"name={container}"],
+                capture_output=True,
+                text=True
             )
-
-    except Exception as e:
-        echo_error(f"Failed to reset database: {e}")
-
-
-@server.command()
-@click.option(
-    "--format",
-    "output_format",
-    default="table",
-    type=click.Choice(["table", "json"]),
-    help="Output format",
-)
-def ps(output_format):
-    """Show running containers.
-
-    Args:
-        output_format: Output format (table, json)
-    """
-    cmd = ["docker-compose", "ps"]
-
-    if output_format == "json":
-        cmd.append("--format")
-        cmd.append("json")
-
-    try:
-        run_command(cmd)
-    except Exception as e:
-        echo_error(f"Failed to show containers: {e}")
+            if not result.stdout.strip():
+                return False
+        return True
+    except Exception:
+        return False
 
 
 def wait_for_services(timeout: int = 60, check_interval: float = 2.0) -> bool:

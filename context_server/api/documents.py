@@ -349,9 +349,13 @@ async def delete_documents(
 
 @router.get("/contexts/{context_name}/documents/{doc_id}/raw")
 async def get_document_raw(
-    context_name: str, doc_id: str, db: DatabaseManager = Depends(get_db_manager)
+    context_name: str, 
+    doc_id: str, 
+    page_number: int = 1,
+    page_size: int = 25000,
+    db: DatabaseManager = Depends(get_db_manager)
 ):
-    """Get raw document content."""
+    """Get raw document content with pagination support for Claude's 25k token limit."""
     try:
         # Get context
         context = await db.get_context_by_name(context_name)
@@ -363,7 +367,44 @@ async def get_document_raw(
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        return document
+        # Handle pagination
+        full_content = document.get("content", "")
+        full_content_length = len(full_content)
+        
+        # Calculate pagination
+        start_index = (page_number - 1) * page_size
+        end_index = start_index + page_size
+        
+        # Get the page content
+        page_content = full_content[start_index:end_index]
+        
+        # Calculate total pages
+        total_pages = max(1, (full_content_length + page_size - 1) // page_size)
+        
+        # Validate page number
+        if page_number > total_pages:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Page {page_number} not found. Document has {total_pages} pages."
+            )
+        
+        # Create paginated response
+        paginated_document = {
+            **document,
+            "content": page_content,
+            "full_content_length": full_content_length,
+            "pagination": {
+                "page_number": page_number,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "current_page_length": len(page_content),
+                "has_next_page": page_number < total_pages,
+                "has_previous_page": page_number > 1,
+                "content_truncated": full_content_length > page_size,
+            }
+        }
+
+        return paginated_document
 
     except HTTPException:
         raise

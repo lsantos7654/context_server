@@ -1,199 +1,333 @@
-# Context Server
+# Context Server - Documentation RAG System
 
-A local, containerized documentation RAG system with MCP integration. Extract, process, and search documentation using PostgreSQL + pgvector for vector storage.
+A modern CLI for documentation RAG system with FastAPI backend, PostgreSQL + pgvector storage, and semantic search capabilities.
 
-## Quick Start
+## 🚀 Current Enhancement Phase
 
-1. **Prerequisites**
-   ```bash
-   # Install Docker and Docker Compose
-   # Get an OpenAI API key for embeddings
-   ```
+We're currently implementing major improvements to the Context Server architecture. This README tracks our progress through the enhancement phase.
 
-2. **Setup**
-   ```bash
-   # Clone and setup
-   git clone <your-repo>
-   cd context_server
+### Enhancement Goals
 
-   # Configure environment
-   cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
-   ```
+1. **Modern Chunking Strategy** - Replace custom chunking with LangChain's RecursiveCharacterTextSplitter
+2. **MCP Document Pagination** - Handle Claude's 25k token limit with smart pagination
+3. **Three-Document Pipeline** - Process sources into original, code snippets, and cleaned markdown
+4. **Advanced Embeddings** - Upgrade to text-embedding-3-large (3072 dims) + voyage-code-3 for code
+5. **Enhanced Search** - Separate document and code search endpoints with optimized models
 
-3. **Start the server**
-   ```bash
-   make up
-   ```
+### Current Status
 
-   The API will be available at:
-   - **API**: http://localhost:8000
-   - **Docs**: http://localhost:8000/docs
-   - **Database**: localhost:5432
+#### ✅ Completed
+- Initial project analysis and planning
+- Enhancement plan approved
+- Added langchain and voyageai dependencies
+- Replaced chunking strategy with LangChain RecursiveCharacterTextSplitter
+- Updated database schema to use halfvec and add document_type field
+- Created VoyageAI embedding service for code snippets
+- Updated embedding service to support text-embedding-3-large
+- Modified document processing to create 3-document pipeline
+- Added code snippet metadata placeholders to cleaned markdown
 
-4. **Try an example**
-   ```bash
-   # Create context and extract FastAPI docs
-   make example-fastapi
+#### 🚧 In Progress
+- Enhancing summarization to generate 3-5 sentences
 
-   # Search the documentation
-   make search QUERY="dependency injection" CONTEXT=fastapi
-   ```
+#### 📋 Planned
+- MCP pagination support
+- Separate code search endpoint
+- Comprehensive testing
 
-## Core Commands
+### Architecture Overview
 
-### Server Management
-```bash
-make up          # Start server
-make down        # Stop server
-make logs        # View logs
-make status      # Check health
-make restart     # Restart server
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   URL/File      │    │   Processing    │    │   Storage       │
+│   Extraction    │───▶│   Pipeline      │───▶│   PostgreSQL    │
+│   (crawl4ai)    │    │                 │    │   + pgvector    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │  Three Documents │
+                       │  Per Source:     │
+                       │  • Original      │
+                       │  • Code Snippets │
+                       │  • Cleaned Text  │
+                       └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │   Embeddings    │
+                       │  • text-embed-  │
+                       │    3-large      │
+                       │  • voyage-code-3│
+                       └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │   Search APIs   │
+                       │  • Document     │
+                       │  • Code         │
+                       │  • MCP Tools    │
+                       └─────────────────┘
 ```
 
-### Context Management
+## Installation
+
+### Prerequisites
+- Python 3.12+
+- PostgreSQL with pgvector extension
+- Docker (for containerized services)
+- OpenAI API key
+- Voyage AI API key
+
+### Setup
 ```bash
-make create-context NAME=my-docs DESC="My documentation"
-make list-contexts
-make delete-context NAME=my-docs
+# 1. Clone and setup environment
+git clone <repository-url>
+cd context_server
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# 2. Install dependencies
+pip install -e .
+
+# 3. Setup environment variables
+cp .env.example .env
+# Edit .env with your API keys and database URL
+
+# 4. Start services
+ctx server up
+
+# 5. Verify installation
+ctx --help
 ```
 
-### Document Extraction
+## Usage
+
+### Basic Commands
 ```bash
-# Extract from URL
-make extract URL=https://docs.python.org/ CONTEXT=python-docs
+# Server management
+ctx server up              # Start Docker services
+ctx server down            # Stop services  
+ctx server restart         # Restart after changes
+ctx server logs           # View logs
 
-# Extract from file
-make extract-file FILE=./document.pdf CONTEXT=my-docs
+# Context management
+ctx context create my-docs              # Create context
+ctx context list                       # List contexts
+ctx context delete my-docs            # Delete context
 
-# List documents
-make list-documents CONTEXT=my-docs
+# Document extraction
+ctx docs extract https://docs.rust-lang.org rust-docs
+ctx docs extract ./my-project my-code --source-type local
+ctx docs list my-docs                  # List documents
+
+# Search
+ctx search query "async functions" my-docs
+ctx search query "error handling" my-docs --limit 10
 ```
 
-### Search
-```bash
-# Hybrid search (recommended)
-make search QUERY="async functions" CONTEXT=python-docs
+### MCP Integration
+The server provides MCP (Model Context Protocol) tools for Claude integration:
 
-# Vector-only search
-make search QUERY="async functions" CONTEXT=python-docs MODE=vector
+```python
+# Available MCP tools
+- create_context(name, description, embedding_model)
+- list_contexts()
+- get_context(context_name)
+- delete_context(context_name)
+- extract_url(context_name, url, max_pages)
+- extract_file(context_name, file_path)
+- search_context(context_name, query, mode, limit)
+- get_document(context_name, doc_id, page_number, page_size)  # New: Paginated
+- search_code(context_name, query, language, limit)           # New: Code search
+```
 
-# Full-text search
-make search QUERY="async functions" CONTEXT=python-docs MODE=fulltext
+## Technical Specifications
+
+### Current Configuration
+- **Text Chunking**: LangChain RecursiveCharacterTextSplitter
+  - Regular text: 1000 chars, 200 overlap
+  - Code: 700 chars, 150 overlap
+- **Embeddings**: 
+  - Documents: OpenAI text-embedding-3-large (3072 dims)
+  - Code: Voyage AI voyage-code-3 (2048 dims)
+- **Storage**: PostgreSQL with pgvector halfvec support
+- **Summarization**: 3-5 sentence summaries (50-150 words)
+
+### Database Schema
+```sql
+-- Core tables with halfvec support
+contexts (id, name, description, embedding_model)
+documents (id, context_id, url, title, content, document_type, metadata)
+chunks (id, document_id, content, embedding halfvec(3072), summary, metadata)
+code_snippets (id, document_id, content, language, embedding halfvec(2048), metadata)
+jobs (id, type, status, progress, metadata)
+```
+
+### Document Processing Pipeline
+1. **URL/File Extraction** - crawl4ai processes source content
+2. **Content Cleaning** - Remove noise, normalize structure
+3. **Code Extraction** - Separate code blocks from text
+4. **Three-Document Creation**:
+   - Original: Raw parsed markdown
+   - Code Snippets: Extracted code blocks
+   - Cleaned Markdown: Text with code snippet placeholders
+5. **Chunking** - LangChain RecursiveCharacterTextSplitter
+6. **Embedding Generation** - Dual embedding models
+7. **Storage** - PostgreSQL with vector indexes
+
+### Code Snippet Placeholders
+In cleaned markdown documents, code blocks are replaced with metadata:
+```markdown
+[CODE_SNIPPET: language=python, size=245_chars, summary="Function to handle user authentication with JWT tokens, validates credentials against database, and returns authentication status", snippet_id=uuid-here]
 ```
 
 ## API Endpoints
 
-The FastAPI server provides a full REST API:
-
-- `POST /api/contexts` - Create context
+### Core API
 - `GET /api/contexts` - List contexts
+- `POST /api/contexts` - Create context
+- `GET /api/contexts/{name}` - Get context details
 - `DELETE /api/contexts/{name}` - Delete context
-- `POST /api/contexts/{name}/documents` - Add documents
+
+### Document Management
+- `POST /api/contexts/{name}/documents` - Extract document
 - `GET /api/contexts/{name}/documents` - List documents
-- `POST /api/contexts/{name}/search` - Search documents
+- `GET /api/contexts/{name}/documents/{id}/raw` - Get document (paginated)
+- `DELETE /api/contexts/{name}/documents` - Delete documents
 
-See the interactive docs at http://localhost:8000/docs
+### Search
+- `GET /api/contexts/{name}/search` - Search documents
+- `GET /api/contexts/{name}/search/code` - Search code snippets
+- `GET /api/contexts/{name}/documents/{id}/code-snippets` - List code snippets
+- `GET /api/contexts/{name}/code-snippets/{id}` - Get code snippet
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Context Server                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────┐         ┌──────────────────┐         │
-│  │   FastAPI       │         │   Extraction     │         │
-│  │   Admin API     │────────▶│   Pipeline       │         │
-│  └─────────────────┘         └──────────────────┘         │
-│           │                           │                     │
-│           │                           ▼                     │
-│           │                   ┌──────────────────┐         │
-│           │                   │  PostgreSQL      │         │
-│           └──────────────────▶│   +pgvector      │         │
-│                               └──────────────────┘         │
-└─────────────────────────────────────────────────────────────┘
-```
+### Job Management
+- `GET /api/jobs/{id}/status` - Check job status
+- `POST /api/jobs/{id}/cancel` - Cancel job
+- `DELETE /api/jobs/cleanup` - Clean completed jobs
 
 ## Development
 
-```bash
-# Install development dependencies
-make init
-
-# Run tests
-make test
-
-# Format code
-make format
-
-# Lint code
-make lint
-
-# Quality check (format + lint + test)
-make quality-check
+### Project Structure
+```
+context_server/
+├── cli/                 # CLI commands and interface
+├── api/                 # FastAPI REST endpoints
+├── core/               # Core business logic
+│   ├── chunking.py     # LangChain text splitting
+│   ├── embeddings.py   # OpenAI + Voyage AI services
+│   ├── processing.py   # Document processing pipeline  
+│   ├── storage.py      # PostgreSQL + pgvector
+│   └── crawl4ai_extraction.py  # Web scraping
+├── mcp_server/         # MCP protocol implementation
+└── tests/              # Test suite
 ```
 
-## Examples
+### Enhancement Implementation Log
 
-### Rust Documentation
+#### Phase 1: Foundation (Completed)
+- [x] **Dependencies**: Add langchain and voyageai to pyproject.toml
+- [x] **Chunking**: Replace custom TextChunker with RecursiveCharacterTextSplitter
+- [x] **Database**: Migrate schema to halfvec support
+- [x] **Embeddings**: Implement dual embedding services
+
+#### Phase 2: Core Features (In Progress)
+- [x] **Document Pipeline**: Implement three-document processing
+- [x] **Code Placeholders**: Add metadata placeholders in cleaned markdown
+- [ ] **Summarization**: Enhance to 3-5 sentences
+- [ ] **Storage**: Update all database operations
+
+#### Phase 3: Search & MCP
+- [ ] **Code Search**: Implement separate code search endpoint
+- [ ] **Pagination**: Add MCP document pagination
+- [ ] **MCP Tools**: Update all MCP tools with new features
+- [ ] **Testing**: Comprehensive test suite
+
+### Contributing
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
+
+### Testing
 ```bash
-make example-rust
-make search QUERY="HashMap" CONTEXT=rust-std
+# Run all tests
+pytest
+
+# Run specific test categories
+pytest -m unit
+pytest -m integration
+pytest -m slow
+
+# Run with coverage
+pytest --cov=context_server --cov-report=html
 ```
-
-### FastAPI Documentation
-```bash
-make example-fastapi
-make search QUERY="dependency injection" CONTEXT=fastapi
-```
-
-### Textual Documentation
-```bash
-make example-textual
-make search QUERY="widgets" CONTEXT=textual
-```
-
-## Features
-
-- ✅ **Multiple Contexts**: Separate vector databases for different projects
-- ✅ **Hybrid Search**: Combine vector similarity with full-text search
-- ✅ **Smart Extraction**: Uses crawl4ai for JavaScript-rendered sites
-- ✅ **Clean Content**: Advanced markdown cleaning and noise reduction
-- ✅ **Docker Ready**: Easy deployment with Docker Compose
-- ✅ **REST API**: Full API for integration with other tools
-- 🚧 **MCP Integration**: Bridge to Claude Code (Phase 3)
-- 🚧 **Export/Import**: Context backup and sharing
-- 🚧 **Git Repositories**: Extract from code repositories
 
 ## Troubleshooting
 
-### Server won't start
-```bash
-# Check if ports are available
-lsof -i :8000 -i :5432
+### Common Issues
+1. **Command not found**: Always activate virtual environment first
+   ```bash
+   source .venv/bin/activate
+   ```
 
-# View logs
-make logs
-make logs-db
+2. **Import errors**: Check server logs and restart services
+   ```bash
+   ctx server logs
+   ctx server restart
+   ```
+
+3. **Connection errors**: Ensure PostgreSQL is running
+   ```bash
+   ctx server up
+   ctx server status
+   ```
+
+4. **API key issues**: Verify environment variables in `.env`
+   ```bash
+   echo $OPENAI_API_KEY
+   echo $VOYAGE_API_KEY
+   ```
+
+### Debug Commands
+```bash
+# Check server status
+ctx server status
+
+# View detailed logs
+ctx server logs
+
+# Test database connection
+ctx context list
+
+# Test embedding services
+ctx docs extract https://example.com test-context --max-pages 1
 ```
 
-### No search results
-```bash
-# Check if OpenAI API key is set
-grep OPENAI_API_KEY .env
+## License
+MIT License - See LICENSE file for details
 
-# Check document count
-make list-documents CONTEXT=your-context
-```
+## Changelog
 
-### Database issues
-```bash
-# Reset database (WARNING: destroys all data)
-make db-reset
+### v0.2.0 (In Development)
+- 🔄 **Enhanced Chunking**: LangChain RecursiveCharacterTextSplitter
+- 🔄 **Advanced Embeddings**: text-embedding-3-large + voyage-code-3
+- 🔄 **Three-Document Pipeline**: Original, code snippets, cleaned markdown
+- 🔄 **MCP Pagination**: Support for large documents
+- 🔄 **Code Search**: Separate code search with optimized embeddings
+- 🔄 **Enhanced Summaries**: 3-5 sentence summaries
 
-# Connect to database shell
-make db-shell
-```
+### v0.1.0 (Current)
+- ✅ **Core RAG System**: FastAPI + PostgreSQL + pgvector
+- ✅ **Document Extraction**: crawl4ai web scraping
+- ✅ **Vector Search**: OpenAI embeddings with similarity search
+- ✅ **MCP Integration**: Claude-compatible tools
+- ✅ **CLI Interface**: Comprehensive command-line tools
+- ✅ **Job Management**: Async processing with progress tracking
 
-For more details, see the [Vision Document](CONTEXT_SERVER_VISION.md).
+---
+
+*Last updated: 2025-01-09*
+*Enhancement phase: Active development*

@@ -258,25 +258,56 @@ class ContextServerTools:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
-    async def get_document(self, context_name: str, doc_id: str) -> dict[str, Any]:
-        """Get raw content of a specific document.
+    async def get_document(
+        self, 
+        context_name: str, 
+        doc_id: str, 
+        page_number: int = 1, 
+        page_size: int = 25000
+    ) -> dict[str, Any]:
+        """Get raw content of a specific document with pagination support.
 
         Args:
             context_name: Name of context containing the document
             doc_id: ID of the document to retrieve
+            page_number: Page number to retrieve (1-based)
+            page_size: Number of characters per page (default: 25000 for Claude's limit)
 
         Returns:
-            Dictionary with document content and metadata
+            Dictionary with document content and pagination metadata
 
         Raises:
             ContextServerError: If context or document not found
         """
         try:
+            params = {
+                "page_number": page_number,
+                "page_size": page_size
+            }
+            
             result = await self.client.get(
-                f"/api/contexts/{context_name}/documents/{doc_id}/raw"
+                f"/api/contexts/{context_name}/documents/{doc_id}/raw",
+                params
             )
-            logger.info(f"Retrieved document: {doc_id} from {context_name}")
-            return result
+            
+            # Add pagination metadata to the response
+            content_length = len(result.get("content", ""))
+            total_pages = max(1, (result.get("full_content_length", content_length) + page_size - 1) // page_size)
+            
+            paginated_result = {
+                **result,
+                "pagination": {
+                    "page_number": page_number,
+                    "page_size": page_size,
+                    "total_pages": total_pages,
+                    "current_page_length": content_length,
+                    "has_next_page": page_number < total_pages,
+                    "has_previous_page": page_number > 1,
+                }
+            }
+            
+            logger.info(f"Retrieved document page {page_number}/{total_pages}: {doc_id} from {context_name}")
+            return paginated_result
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -351,6 +382,84 @@ class ContextServerTools:
                     raise ContextServerError(
                         f"Code snippet '{snippet_id}' not found in context '{context_name}'"
                     )
+            raise
+
+    async def search_code(
+        self, context_name: str, query: str, language: str = None, limit: int = 10
+    ) -> dict[str, Any]:
+        """Search for code snippets within a context using code-optimized embeddings.
+
+        Args:
+            context_name: Name of context to search
+            query: Search query text (e.g., 'function definition', 'error handling')
+            language: Optional language filter (e.g., 'python', 'javascript')
+            limit: Maximum number of results to return
+
+        Returns:
+            Dictionary with code search results optimized for development
+
+        Raises:
+            ContextServerError: If context not found or search fails
+        """
+        try:
+            data = {
+                "query": query,
+                "mode": "hybrid",  # Use hybrid search for best results
+                "limit": limit
+            }
+
+            result = await self.client.post(
+                f"/api/contexts/{context_name}/search/code", data
+            )
+            
+            # Transform results to compact format for MCP with code-specific enhancements
+            compact_results = []
+            for item in result.get("results", []):
+                # Filter by language if specified
+                if language and item.get("language", "").lower() != language.lower():
+                    continue
+                
+                # Use content directly since code snippets are already concise
+                display_content = item.get("content", "")
+                
+                # Truncate very long code snippets
+                if len(display_content) > 500:
+                    display_content = display_content[:500] + "..."
+                
+                compact_result = {
+                    "id": item.get("id"),
+                    "document_id": item.get("document_id"),
+                    "title": item.get("title"),
+                    "content": display_content,
+                    "language": item.get("language", "text"),
+                    "snippet_type": item.get("snippet_type", "code_block"),
+                    "score": item.get("score"),
+                    "url": item.get("url"),
+                    "start_line": item.get("start_line"),
+                    "end_line": item.get("end_line"),
+                    "content_type": "code_snippet",
+                }
+                compact_results.append(compact_result)
+            
+            # Return compact response
+            compact_response = {
+                "results": compact_results,
+                "total": len(compact_results),
+                "query": query,
+                "mode": "hybrid",
+                "language_filter": language,
+                "execution_time_ms": result.get("execution_time_ms", 0),
+                "note": "Code search using voyage-code-3 embeddings for enhanced code understanding."
+            }
+            
+            logger.info(
+                f"Code search completed: {len(compact_results)} results for '{query}' in {context_name}"
+            )
+            return compact_response
+
+        except ContextServerError as e:
+            if e.status_code == 404:
+                raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
     # Job Management Tools

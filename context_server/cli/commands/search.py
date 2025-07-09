@@ -40,7 +40,8 @@ def search():
         ctx search query "async patterns" my-docs             # Basic hybrid search
         ctx search query "rendering" docs --mode vector       # Vector search only
         ctx search query "widgets" docs --limit 10             # More results
-        ctx search query "data" docs --verbose               # Show all metadata
+        ctx search code "function definition" my-docs         # Code search with voyage-code-3
+        ctx search code "error handling" docs --language python # Code search with language filter
         ctx search interactive my-docs                        # Interactive mode
     """
     pass
@@ -59,20 +60,14 @@ def search():
 @click.option(
     "--format",
     "output_format",
-    default="rich",
-    type=click.Choice(["rich", "table", "json"]),
+    default="table",
+    type=click.Choice(["table", "json"]),
     help="Output format",
 )
 @click.option(
     "--show-content/--no-show-content",
     default=True,
     help="Show result content snippets",
-)
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    help="Show all available metadata fields",
 )
 @rich_help_option("-h", "--help")
 def query(
@@ -82,7 +77,6 @@ def query(
     limit,
     output_format,
     show_content,
-    verbose,
 ):
     """Search for documents in a context.
 
@@ -132,8 +126,8 @@ def query(
 
             if output_format == "table":
                 display_results_table(results, show_content)
-            else:  # rich format
-                display_results_rich(results, query, show_content, verbose)
+            else:  # rich format - using table format as default
+                display_results_table(results, show_content)
 
         else:
             if "404" in str(response):
@@ -147,28 +141,98 @@ def query(
 
 
 @search.command()
+@click.argument("query")
 @click.argument("context_name", shell_complete=complete_context_name)
-@click.option("--limit", default=10, help="Maximum number of suggestions")
-def suggest(context_name, limit):
-    """Get search query suggestions for a context.
+@click.option("--language", help="Filter by programming language (e.g., python, javascript)")
+@click.option("--limit", default=10, help="Maximum number of results")
+@click.option(
+    "--format",
+    "output_format",
+    default="table",
+    type=click.Choice(["table", "json"]),
+    help="Output format",
+)
+@rich_help_option("-h", "--help")
+def code(query, context_name, language, limit, output_format):
+    """Search for code snippets in a context using code-optimized embeddings.
 
-    Analyzes context content to suggest relevant search queries
-    based on common terms and document titles.
+    Uses voyage-code-3 embeddings specifically designed for code search.
+    Results show code snippets with syntax highlighting and metadata.
 
     Args:
-        context_name: Name of context to analyze
-        limit: Maximum number of suggestions to return
+        query: Search query focused on code (e.g., 'function definition', 'error handling')
+        context_name: Name of context to search within
+        language: Optional programming language filter
+        limit: Maximum number of results to return
+        output_format: Display format (table or json)
     """
-    # This would require an API endpoint for search suggestions
-    echo_error("Search suggestions are not yet implemented")
-    echo_info("Search suggestions will be available in a future version")
+
+    async def search_code():
+        echo_info(f"Searching code in '{context_name}' for: {query}")
+        if language:
+            echo_info(f"Language filter: {language}")
+
+        client = APIClient(timeout=60.0)
+        success, response = await client.post(
+            f"contexts/{context_name}/search/code",
+            {
+                "query": query,
+                "mode": "hybrid",
+                "limit": limit,
+            },
+        )
+
+        if success:
+            results = response["results"]
+            total = response["total"]
+            execution_time = response["execution_time_ms"]
+
+            # Apply language filter if specified
+            if language:
+                results = [r for r in results if r.get("language", "").lower() == language.lower()]
+                total = len(results)
+
+            if output_format == "json":
+                filtered_response = {
+                    **response,
+                    "results": results,
+                    "total": total,
+                    "language_filter": language,
+                }
+                console.print(filtered_response)
+                return
+
+            if not results:
+                echo_info("No code snippets found")
+                if language:
+                    echo_info(f"Try removing the language filter ({language}) or using a different query")
+                else:
+                    echo_info("Try a different query or check if code snippets exist in this context")
+                return
+
+            echo_success(f"Found {total} code snippet(s) in {execution_time}ms")
+            console.print()
+
+            # Display code results in table format
+            display_code_results_table(results)
+
+        else:
+            if "404" in str(response):
+                echo_error(f"Context '{context_name}' not found")
+                echo_info("Create it with: ctx context create <name>")
+            else:
+                echo_error(f"Code search failed: {response}")
+                echo_info("Make sure the server is running: ctx server up")
+
+    asyncio.run(search_code())
+
+
 
 
 @search.command()
 @click.argument("context_name", shell_complete=complete_context_name)
-@click.option("--interactive", "-i", is_flag=True, help="Interactive search mode")
 @rich_help_option("-h", "--help")
-def interactive(context_name, interactive):
+def interactive(context_name):
     """Start an interactive search session.
 
     Provides a continuous search interface where you can enter
@@ -177,13 +241,11 @@ def interactive(context_name, interactive):
 
     Args:
         context_name: Name of context to search within
-        interactive: Enable interactive mode
     """
-    if not interactive:
-        echo_info("Starting interactive search session...")
-        echo_info("Type 'quit' or 'exit' to stop")
-        echo_info(f"Context: {context_name}")
-        console.print()
+    echo_info("Starting interactive search session...")
+    echo_info("Type 'quit' or 'exit' to stop")
+    echo_info(f"Context: {context_name}")
+    console.print()
 
     while True:
         try:
@@ -219,9 +281,7 @@ def interactive(context_name, interactive):
 
                     echo_success(f"Found {total} result(s) in {execution_time}ms")
                     console.print()
-                    display_results_rich(
-                        results, query, True, False
-                    )  # verbose=False for interactive
+                    display_results_table(results, True)  # show_content=True for interactive
 
                 else:
                     if "404" in str(response):
@@ -498,6 +558,63 @@ def highlight_query_terms(text: str, query: str) -> str:
             highlighted = pattern.sub(f"[bold yellow]{term}[/bold yellow]", highlighted)
 
     return highlighted
+
+
+def display_code_results_table(results: list):
+    """Display code search results in table format with syntax highlighting."""
+    from rich.syntax import Syntax
+    
+    table = Table(title="Code Search Results")
+    table.add_column("Score", style="bold green", width=8)
+    table.add_column("Language", style="cyan", width=12)
+    table.add_column("Type", style="yellow", width=12)
+    table.add_column("Title", style="bold", width=30)
+    table.add_column("Lines", style="blue", width=10)
+    table.add_column("Preview", style="dim", width=50)
+
+    for result in results:
+        score = f"{result['score']:.3f}"
+        language = result.get("language", "text")
+        snippet_type = result.get("snippet_type", "code_block")
+        
+        # Extract title (truncate if too long)
+        title = result.get("title", "")[:28] + ("..." if len(result.get("title", "")) > 28 else "")
+        
+        # Format line numbers
+        start_line = result.get("start_line", "")
+        end_line = result.get("end_line", "")
+        line_info = f"{start_line}-{end_line}" if start_line and end_line else "N/A"
+        
+        # Create code preview (first 100 chars)
+        content = result.get("content", "")
+        preview = content[:100] + ("..." if len(content) > 100 else "")
+        
+        table.add_row(score, language, snippet_type, title, line_info, preview)
+
+    console.print(table)
+    console.print()
+    
+    # Show first result with syntax highlighting
+    if results:
+        first_result = results[0]
+        content = first_result.get("content", "")
+        language = first_result.get("language", "text")
+        
+        console.print(f"[bold]Top Result Preview:[/bold]")
+        console.print(f"[dim]Language: {language} | Score: {first_result['score']:.3f}[/dim]")
+        
+        # Truncate very long code snippets
+        if len(content) > 1000:
+            content = content[:1000] + "\n... (truncated)"
+        
+        try:
+            syntax = Syntax(content, language, theme="monokai", line_numbers=True)
+            console.print(syntax)
+        except Exception:
+            # Fallback to plain text if syntax highlighting fails
+            console.print(f"[dim]{content}[/dim]")
+        
+        console.print()
 
 
 # Alias for the query command to avoid naming conflicts

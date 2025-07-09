@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .chunking import TextChunker
 from .crawl4ai_extraction import Crawl4aiExtractor
-from .embeddings import EmbeddingService
+from .embeddings import EmbeddingService, VoyageEmbeddingService
 from .summarization import SummarizationService
 
 logger = logging.getLogger(__name__)
@@ -240,10 +240,15 @@ class CodeSnippetExtractor:
 class DocumentProcessor:
     """Processes documents using existing extraction pipeline and creates embeddings."""
 
-    def __init__(self, embedding_service: EmbeddingService | None = None, summarization_service: SummarizationService | None = None):
+    def __init__(self, 
+                 embedding_service: EmbeddingService | None = None, 
+                 code_embedding_service: VoyageEmbeddingService | None = None,
+                 summarization_service: SummarizationService | None = None):
         self.embedding_service = embedding_service or EmbeddingService()
+        self.code_embedding_service = code_embedding_service or VoyageEmbeddingService()
         self.summarization_service = summarization_service or SummarizationService()
-        self.chunker = TextChunker()
+        self.text_chunker = TextChunker(chunk_size=1000, chunk_overlap=200, chunk_type="text")
+        self.code_chunker = TextChunker(chunk_size=700, chunk_overlap=150, chunk_type="code")
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
 
@@ -355,7 +360,7 @@ class DocumentProcessor:
 
                         # Process content with timeout protection
                         processing_timeout = 300  # 5 minutes per document
-                        document = await asyncio.wait_for(
+                        processed_documents = await asyncio.wait_for(
                             self._process_content(
                                 content=page_content,
                                 url=page_url,
@@ -364,7 +369,7 @@ class DocumentProcessor:
                             ),
                             timeout=processing_timeout,
                         )
-                        documents.append(document)
+                        documents.extend(processed_documents)  # Now extends with list of 3 documents
 
                         logger.info(
                             f"Successfully processed page {idx + 1}/{total_pages}: {page_title}"
@@ -400,7 +405,7 @@ class DocumentProcessor:
             else:
                 # Fallback to single document if no individual pages
                 try:
-                    document = await asyncio.wait_for(
+                    processed_documents = await asyncio.wait_for(
                         self._process_content(
                             content=result.content,
                             url=url,
@@ -409,7 +414,7 @@ class DocumentProcessor:
                         ),
                         timeout=300,  # 5 minute timeout
                     )
-                    documents = [document]
+                    documents = processed_documents
 
                     # Report progress for single document
                     if job_id and db:
@@ -477,7 +482,7 @@ class DocumentProcessor:
             if path.suffix.lower() in [".txt", ".md", ".rst"]:
                 content = path.read_text(encoding="utf-8")
 
-                document = await self._process_content(
+                processed_documents = await self._process_content(
                     content=content,
                     url=f"file://{file_path}",
                     title=path.stem,
@@ -487,7 +492,7 @@ class DocumentProcessor:
                     },
                 )
 
-                return ProcessingResult(documents=[document], success=True)
+                return ProcessingResult(documents=processed_documents, success=True)
 
             else:
                 return ProcessingResult(
@@ -502,8 +507,8 @@ class DocumentProcessor:
 
     async def _process_content(
         self, content: str, url: str, title: str, metadata: dict
-    ) -> ProcessedDocument:
-        """Process content into chunks with embeddings and extract code snippets."""
+    ) -> list[ProcessedDocument]:
+        """Process content into three documents: original, code snippets, and cleaned markdown."""
         try:
             # Extract code snippets before chunking
             (
@@ -511,138 +516,249 @@ class DocumentProcessor:
                 cleaned_content,
             ) = self.code_extractor.extract_code_snippets(content, url, title)
 
-            # Split cleaned content into chunks (without code blocks)
-            chunks = self.chunker.chunk_text(cleaned_content)
+            # Document 1: Original markdown (raw content)
+            original_chunks = self.text_chunker.chunk_text(content)
+            original_processed_chunks = await self._process_chunks_with_embeddings(
+                original_chunks, url, title, self.embedding_service
+            )
 
-            # Create embeddings for each chunk
-            processed_chunks = []
-
-            # Process chunks in batches to avoid rate limits
-            batch_size = 10
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i : i + batch_size]
-
-                # Get embeddings for the batch (handle missing API key)
-                try:
-                    embeddings = await self.embedding_service.embed_batch(
-                        [chunk.content for chunk in batch]
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to generate embeddings (missing API key?): {e}"
-                    )
-                    # Create dummy embeddings for testing
-                    embeddings = [[0.0] * 1536 for _ in batch]
-
-                # Generate summaries for the batch
-                summaries = []
-                summary_model = None
-                if self.summarization_service.client:
-                    try:
-                        chunk_data = [(f"chunk_{i}", chunk.content) for i, chunk in enumerate(batch)]
-                        summary_results = await self.summarization_service.summarize_chunks_batch(
-                            chunk_data, batch_size=5
-                        )
-                        summaries = [result[1] for result in summary_results]  # Extract summaries
-                        summary_model = self.summarization_service.model
-                        logger.debug(f"Generated {len([s for s in summaries if s])} summaries for batch")
-                    except Exception as e:
-                        logger.warning(f"Failed to generate summaries: {e}")
-                        summaries = [None] * len(batch)
-                else:
-                    logger.debug("Summarization service not available, using fallback")
-                    summaries = [
-                        self.summarization_service.get_fallback_summary(chunk.content)
-                        for chunk in batch
-                    ]
-
-                # Create processed chunks
-                for chunk, embedding, summary in zip(batch, embeddings, summaries):
-                    # Extract links from this chunk
-                    chunk_link_data = self._extract_links_from_chunk(chunk.content)
-
-                    processed_chunk = ProcessedChunk(
-                        content=chunk.content,
-                        embedding=embedding,
-                        summary=summary,
-                        summary_model=summary_model,
-                        metadata={
-                            **chunk.metadata,
-                            **chunk_link_data,  # Add chunk-level link data
-                            "source_url": url,
-                            "source_title": title,
-                        },
-                        tokens=chunk.tokens,
-                        start_line=chunk.start_line,
-                        end_line=chunk.end_line,
-                        char_start=chunk.char_start,
-                        char_end=chunk.char_end,
-                    )
-                    processed_chunks.append(processed_chunk)
-
-                # Small delay to be respectful to embedding API
-                if i + batch_size < len(chunks):
-                    await asyncio.sleep(0.1)
-
-            logger.info(f"Processed {len(processed_chunks)} chunks for {title}")
-
-            # Process code snippets with embeddings
-            processed_code_snippets = []
+            # Document 2: Code snippets only
+            code_snippets_content = ""
             if code_snippet_data:
-                # Get embeddings for code snippets in batches
-                for i in range(0, len(code_snippet_data), batch_size):
-                    batch = code_snippet_data[i : i + batch_size]
+                # Combine all code snippets into a single document
+                code_snippets_content = "\n\n".join([
+                    f"```{snippet['language']}\n{snippet['content']}\n```"
+                    for snippet in code_snippet_data
+                ])
 
-                    # Get embeddings for the batch
-                    try:
-                        embeddings = await self.embedding_service.embed_batch(
-                            [snippet["content"] for snippet in batch]
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to generate embeddings for code snippets: {e}"
-                        )
-                        # Create dummy embeddings for testing
-                        embeddings = [[0.0] * 1536 for _ in batch]
-
-                    # Create processed code snippets
-                    for snippet_data, embedding in zip(batch, embeddings):
-                        processed_snippet = CodeSnippet(
-                            content=snippet_data["content"],
-                            language=snippet_data["language"],
-                            embedding=embedding,
-                            metadata={
-                                **snippet_data,
-                                "source_url": url,
-                                "source_title": title,
-                            },
-                            start_line=snippet_data.get("start_line"),
-                            end_line=snippet_data.get("end_line"),
-                            char_start=snippet_data.get("char_start"),
-                            char_end=snippet_data.get("char_end"),
-                        )
-                        processed_code_snippets.append(processed_snippet)
-
-                    # Small delay to be respectful to embedding API
-                    if i + batch_size < len(code_snippet_data):
-                        await asyncio.sleep(0.1)
-
-                logger.info(
-                    f"Processed {len(processed_code_snippets)} code snippets for {title}"
+            code_processed_chunks = []
+            code_processed_snippets = []
+            
+            if code_snippets_content:
+                # Chunk the code snippets document with code-optimized chunking
+                code_chunks = self.code_chunker.chunk_text(code_snippets_content)
+                code_processed_chunks = await self._process_chunks_with_embeddings(
+                    code_chunks, url, title, self.code_embedding_service
                 )
 
-            return ProcessedDocument(
-                url=url,
-                title=title,
-                content=content,
-                chunks=processed_chunks,
-                code_snippets=processed_code_snippets,
-                metadata=metadata,
+                # Process individual code snippets with embeddings
+                code_processed_snippets = await self._process_code_snippets_with_embeddings(
+                    code_snippet_data, url, title
+                )
+
+            # Document 3: Cleaned markdown with code snippet placeholders
+            cleaned_with_placeholders = self._create_cleaned_markdown_with_placeholders(
+                cleaned_content, code_snippet_data
             )
+            cleaned_chunks = self.text_chunker.chunk_text(cleaned_with_placeholders)
+            cleaned_processed_chunks = await self._process_chunks_with_embeddings(
+                cleaned_chunks, url, title, self.embedding_service
+            )
+
+            # Create three ProcessedDocument objects
+            documents = []
+
+            # 1. Original document
+            documents.append(ProcessedDocument(
+                url=url,
+                title=f"{title} (Original)",
+                content=content,
+                chunks=original_processed_chunks,
+                code_snippets=[],
+                metadata={**metadata, "document_type": "original"},
+            ))
+
+            # 2. Code snippets document
+            documents.append(ProcessedDocument(
+                url=url,
+                title=f"{title} (Code Snippets)",
+                content=code_snippets_content,
+                chunks=code_processed_chunks,
+                code_snippets=code_processed_snippets,
+                metadata={**metadata, "document_type": "code_snippets"},
+            ))
+
+            # 3. Cleaned markdown document
+            documents.append(ProcessedDocument(
+                url=url,
+                title=f"{title} (Cleaned)",
+                content=cleaned_with_placeholders,
+                chunks=cleaned_processed_chunks,
+                code_snippets=[],
+                metadata={**metadata, "document_type": "cleaned_markdown"},
+            ))
+
+            logger.info(f"Processed content into 3 documents for {title}")
+            return documents
 
         except Exception as e:
             logger.error(f"Failed to process content for {title}: {e}")
             raise
+
+    async def _process_chunks_with_embeddings(
+        self, chunks: list, url: str, title: str, embedding_service
+    ) -> list[ProcessedChunk]:
+        """Process chunks with embeddings and summaries."""
+        processed_chunks = []
+        batch_size = 10
+
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+
+            # Get embeddings for the batch
+            try:
+                embeddings = await embedding_service.embed_batch(
+                    [chunk.content for chunk in batch]
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to generate embeddings (missing API key?): {e}"
+                )
+                # Create dummy embeddings for testing
+                embedding_dim = embedding_service.get_dimension()
+                embeddings = [[0.0] * embedding_dim for _ in batch]
+
+            # Generate summaries for the batch
+            summaries = []
+            summary_model = None
+            if self.summarization_service.client:
+                try:
+                    chunk_data = [(f"chunk_{i+j}", chunk.content) for j, chunk in enumerate(batch)]
+                    summary_results = await self.summarization_service.summarize_chunks_batch(
+                        chunk_data, batch_size=5
+                    )
+                    summaries = [result[1] for result in summary_results]
+                    summary_model = self.summarization_service.model
+                    logger.debug(f"Generated {len([s for s in summaries if s])} summaries for batch")
+                except Exception as e:
+                    logger.warning(f"Failed to generate summaries: {e}")
+                    summaries = [None] * len(batch)
+            else:
+                logger.debug("Summarization service not available, using fallback")
+                summaries = [
+                    self.summarization_service.get_fallback_summary(chunk.content)
+                    for chunk in batch
+                ]
+
+            # Create processed chunks
+            for chunk, embedding, summary in zip(batch, embeddings, summaries):
+                # Extract links from this chunk
+                chunk_link_data = self._extract_links_from_chunk(chunk.content)
+
+                processed_chunk = ProcessedChunk(
+                    content=chunk.content,
+                    embedding=embedding,
+                    summary=summary,
+                    summary_model=summary_model,
+                    metadata={
+                        **chunk.metadata,
+                        **chunk_link_data,
+                        "source_url": url,
+                        "source_title": title,
+                    },
+                    tokens=chunk.tokens,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
+                )
+                processed_chunks.append(processed_chunk)
+
+            # Small delay to be respectful to embedding API
+            if i + batch_size < len(chunks):
+                await asyncio.sleep(0.1)
+
+        return processed_chunks
+
+    async def _process_code_snippets_with_embeddings(
+        self, code_snippet_data: list, url: str, title: str
+    ) -> list[CodeSnippet]:
+        """Process code snippets with embeddings."""
+        processed_code_snippets = []
+        batch_size = 10
+
+        for i in range(0, len(code_snippet_data), batch_size):
+            batch = code_snippet_data[i : i + batch_size]
+
+            # Get embeddings for the batch using code embedding service
+            try:
+                embeddings = await self.code_embedding_service.embed_batch(
+                    [snippet["content"] for snippet in batch]
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to generate code embeddings: {e}"
+                )
+                # Create dummy embeddings for testing
+                embedding_dim = self.code_embedding_service.get_dimension()
+                embeddings = [[0.0] * embedding_dim for _ in batch]
+
+            # Create processed code snippets
+            for snippet_data, embedding in zip(batch, embeddings):
+                processed_snippet = CodeSnippet(
+                    content=snippet_data["content"],
+                    language=snippet_data["language"],
+                    embedding=embedding,
+                    metadata={
+                        **snippet_data,
+                        "source_url": url,
+                        "source_title": title,
+                    },
+                    start_line=snippet_data.get("start_line"),
+                    end_line=snippet_data.get("end_line"),
+                    char_start=snippet_data.get("char_start"),
+                    char_end=snippet_data.get("char_end"),
+                )
+                processed_code_snippets.append(processed_snippet)
+
+            # Small delay to be respectful to embedding API
+            if i + batch_size < len(code_snippet_data):
+                await asyncio.sleep(0.1)
+
+        return processed_code_snippets
+
+    def _create_cleaned_markdown_with_placeholders(
+        self, cleaned_content: str, code_snippet_data: list
+    ) -> str:
+        """Create cleaned markdown with code snippet placeholders."""
+        import uuid
+        
+        # If no code snippets, return cleaned content as-is
+        if not code_snippet_data:
+            return cleaned_content
+        
+        # For now, append placeholders at the end since we don't have precise positioning
+        # In a full implementation, we'd need to track original positions more carefully
+        placeholders = []
+        
+        for snippet in code_snippet_data:
+            snippet_id = str(uuid.uuid4())
+            
+            # Create summary for the code snippet (limit to 100 chars)
+            summary = snippet.get("content", "")[:100].replace("\n", " ")
+            if len(summary) == 100:
+                summary += "..."
+            
+            # Create more detailed summary if content is longer
+            if len(snippet.get("content", "")) > 100:
+                # Try to create a more meaningful summary
+                lines = snippet.get("content", "").split("\n")
+                if len(lines) > 1:
+                    summary = f"Code block with {len(lines)} lines"
+                    # Try to get function/class names
+                    for line in lines[:3]:  # Check first 3 lines
+                        if any(keyword in line for keyword in ["def ", "class ", "function ", "const ", "let ", "var "]):
+                            summary += f": {line.strip()[:50]}"
+                            break
+            
+            placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, summary=\"{summary}\", snippet_id={snippet_id}]"
+            placeholders.append(placeholder)
+        
+        # Add placeholders to the cleaned content
+        if placeholders:
+            cleaned_content += "\n\n" + "\n\n".join(placeholders)
+        
+        return cleaned_content
 
     def _create_title_from_url(self, page_url: str, base_url: str) -> str:
         """Create a meaningful title from the page URL."""

@@ -18,14 +18,14 @@ class SummarizationService:
         self,
         model: str = "gpt-4o-mini",
         api_key: str | None = None,
-        target_length: int = 100,
+        target_length: int = 150,
     ):
         """Initialize the summarization service.
         
         Args:
             model: OpenAI model to use for summarization
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
-            target_length: Target summary length in characters
+            target_length: Target summary length in characters (150 for 3-5 sentences)
         """
         self.model = model
         self.target_length = target_length
@@ -48,7 +48,7 @@ class SummarizationService:
         )
 
         # Default prompt for summarization
-        self.summarization_prompt = """Summarize this documentation chunk in 1-2 concise sentences focusing on key concepts and actionable information. Target ~{target_length} characters.
+        self.summarization_prompt = """Summarize this documentation chunk in 3-5 clear, informative sentences (50-150 words). Focus on key concepts, actionable information, and main takeaways. Make it comprehensive but concise.
 
 Content:
 {content}
@@ -72,14 +72,12 @@ Summary:"""
             return None, "OpenAI API key not configured"
 
         # Skip summarization for very short content
-        if len(content) <= 200:
+        if len(content) <= 150:
             return content[:self.target_length], None
 
         try:
             # Format the prompt
-            prompt = self.summarization_prompt.format(
-                target_length=self.target_length, content=content
-            )
+            prompt = self.summarization_prompt.format(content=content)
 
             # Call OpenAI API with retry logic
             for attempt in range(3):
@@ -93,7 +91,7 @@ Summary:"""
                                     "content": prompt,
                                 }
                             ],
-                            max_tokens=150,  # Limit output tokens for cost control
+                            max_tokens=200,  # Increased for 3-5 sentence summaries
                             temperature=0.3,  # Lower temperature for consistent summaries
                         ),
                         timeout=timeout,
@@ -102,9 +100,9 @@ Summary:"""
                     summary = response.choices[0].message.content.strip()
 
                     # Validate summary length and quality
-                    if len(summary) > self.target_length * 2:
-                        # Truncate if too long
-                        summary = summary[: self.target_length] + "..."
+                    if len(summary) > self.target_length * 3:
+                        # Truncate if too long (more lenient for 3-5 sentences)
+                        summary = summary[: self.target_length * 2] + "..."
 
                     logger.debug(
                         f"Generated summary: {len(content)} chars -> {len(summary)} chars"
@@ -189,8 +187,8 @@ Summary:"""
         if len(content) <= self.target_length:
             return content
 
-        # Try to truncate at sentence boundary
-        truncated = content[: self.target_length]
+        # Try to truncate at sentence boundary for fallback
+        truncated = content[: self.target_length * 2]  # Allow more length for fallback
         last_period = truncated.rfind(".")
         last_exclamation = truncated.rfind("!")
         last_question = truncated.rfind("?")
@@ -198,9 +196,9 @@ Summary:"""
         # Find the last sentence ending
         last_sentence_end = max(last_period, last_exclamation, last_question)
 
-        if last_sentence_end > self.target_length // 2:
-            # Truncate at sentence boundary if it's not too short
+        if last_sentence_end > self.target_length:
+            # Truncate at sentence boundary if it's reasonable length
             return content[: last_sentence_end + 1]
         else:
             # Truncate at character boundary with ellipsis
-            return content[: self.target_length - 3] + "..."
+            return content[: self.target_length * 2 - 3] + "..."

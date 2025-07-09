@@ -11,14 +11,9 @@ console = Console()
 
 
 @click.group()
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
-@click.option("--no-color", is_flag=True, help="Disable colored output")
-@click.option(
-    "--config-file", type=click.Path(exists=True), help="Path to configuration file"
-)
 @rich_help_option("-h", "--help")
 @click.pass_context
-def cli(ctx, verbose, no_color, config_file):
+def cli(ctx):
     """Context Server - Modern CLI for documentation RAG system.
 
     A powerful command-line interface for managing your local documentation
@@ -38,12 +33,6 @@ def cli(ctx, verbose, no_color, config_file):
 
     # Load configuration
     config = get_config()
-
-    # Update config from CLI options
-    if verbose:
-        config.verbose = verbose
-    if no_color:
-        config.color = False
 
     # Store in context
     ctx.obj["config"] = config

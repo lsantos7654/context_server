@@ -160,7 +160,7 @@ class DatabaseManager:
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     name VARCHAR(100) UNIQUE NOT NULL,
                     description TEXT DEFAULT '',
-                    embedding_model VARCHAR(100) DEFAULT 'text-embedding-3-small',
+                    embedding_model VARCHAR(100) DEFAULT 'text-embedding-3-large',
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     document_count INTEGER DEFAULT 0,
@@ -281,7 +281,7 @@ class DatabaseManager:
 
             # Code snippets indexes
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_code_snippets_embedding ON code_snippets USING ivfflat (embedding vector_cosine_ops)"
+                "CREATE INDEX IF NOT EXISTS idx_code_snippets_embedding ON code_snippets USING ivfflat (embedding halfvec_cosine_ops)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_code_snippets_context_id ON code_snippets(context_id)"
@@ -323,7 +323,7 @@ class DatabaseManager:
         self,
         name: str,
         description: str = "",
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str = "text-embedding-3-large",
     ) -> dict:
         """Create a new context."""
         async with self.pool.acquire() as conn:
@@ -831,6 +831,128 @@ class DatabaseManager:
                         }
                     ),
                     "chunk_index": row["chunk_index"],
+                    "start_line": row.get("start_line"),
+                    "end_line": row.get("end_line"),
+                    "char_start": row.get("char_start"),
+                    "char_end": row.get("char_end"),
+                }
+                for row in rows
+            ]
+
+    async def vector_search_code_snippets(
+        self,
+        context_id: str,
+        query_embedding: list[float],
+        limit: int = 10,
+        min_similarity: float = 0.7,
+    ) -> list[dict]:
+        """Perform vector similarity search on code snippets."""
+        async with self.pool.acquire() as conn:
+            # Convert embedding list to PostgreSQL vector format
+            embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+            rows = await conn.fetch(
+                """
+                SELECT
+                    cs.id, cs.content, cs.language, cs.snippet_type, d.title, d.url, 
+                    d.metadata as doc_metadata, cs.metadata as snippet_metadata, 
+                    d.id as document_id, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    1 - (cs.embedding <=> $2::halfvec) as similarity
+                FROM code_snippets cs
+                JOIN documents d ON cs.document_id = d.id
+                WHERE cs.context_id = $1
+                    AND 1 - (cs.embedding <=> $2::halfvec) > $3
+                ORDER BY cs.embedding <=> $2::halfvec
+                LIMIT $4
+            """,
+                uuid.UUID(context_id),
+                embedding_str,
+                min_similarity,
+                limit,
+            )
+
+            return [
+                {
+                    "id": str(row["id"]),
+                    "document_id": str(row["document_id"]),
+                    "content": row["content"],
+                    "language": row["language"],
+                    "snippet_type": row["snippet_type"],
+                    "title": row["title"],
+                    "url": row["url"],
+                    "score": float(row["similarity"]),
+                    "metadata": self._filter_metadata_for_search(
+                        {
+                            **(
+                                json.loads(row["doc_metadata"])
+                                if row["doc_metadata"]
+                                else {}
+                            ),
+                            **(
+                                json.loads(row["snippet_metadata"])
+                                if row["snippet_metadata"]
+                                else {}
+                            ),
+                            "document_id": str(row["document_id"]),
+                        }
+                    ),
+                    "start_line": row.get("start_line"),
+                    "end_line": row.get("end_line"),
+                    "char_start": row.get("char_start"),
+                    "char_end": row.get("char_end"),
+                }
+                for row in rows
+            ]
+
+    async def fulltext_search_code_snippets(
+        self, context_id: str, query: str, limit: int = 10
+    ) -> list[dict]:
+        """Perform full-text search on code snippets."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    cs.id, cs.content, cs.language, cs.snippet_type, d.title, d.url,
+                    d.metadata as doc_metadata, cs.metadata as snippet_metadata,
+                    d.id as document_id, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    ts_rank(to_tsvector('english', cs.content), plainto_tsquery('english', $2)) as score
+                FROM code_snippets cs
+                JOIN documents d ON cs.document_id = d.id
+                WHERE cs.context_id = $1
+                    AND to_tsvector('english', cs.content) @@ plainto_tsquery('english', $2)
+                ORDER BY score DESC
+                LIMIT $3
+            """,
+                uuid.UUID(context_id),
+                query,
+                limit,
+            )
+
+            return [
+                {
+                    "id": str(row["id"]),
+                    "document_id": str(row["document_id"]),
+                    "content": row["content"],
+                    "language": row["language"],
+                    "snippet_type": row["snippet_type"],
+                    "title": row["title"],
+                    "url": row["url"],
+                    "score": float(row["score"]),
+                    "metadata": self._filter_metadata_for_search(
+                        {
+                            **(
+                                json.loads(row["doc_metadata"])
+                                if row["doc_metadata"]
+                                else {}
+                            ),
+                            **(
+                                json.loads(row["snippet_metadata"])
+                                if row["snippet_metadata"]
+                                else {}
+                            ),
+                            "document_id": str(row["document_id"]),
+                        }
+                    ),
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),

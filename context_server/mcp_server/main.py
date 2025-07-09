@@ -161,7 +161,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_document",
-            description="Get the full raw content of a specific document. Use this when search_context returns summaries and you need the complete document text for detailed analysis or code examples.",
+            description="Get the full raw content of a specific document with pagination support for Claude's 25k token limit. Use this when search_context returns summaries and you need the complete document text for detailed analysis or code examples.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -172,6 +172,16 @@ async def handle_list_tools() -> list[types.Tool]:
                     "doc_id": {
                         "type": "string",
                         "description": "ID of the document to retrieve (from search results)",
+                    },
+                    "page_number": {
+                        "type": "integer",
+                        "description": "Page number to retrieve (1-based). Default is 1.",
+                        "default": 1,
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "description": "Number of characters per page. Default is 25000 for Claude's context limit.",
+                        "default": 25000,
                     },
                 },
                 "required": ["context_name", "doc_id"],
@@ -211,6 +221,33 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["context_name", "snippet_id"],
+            },
+        ),
+        types.Tool(
+            name="search_code",
+            description="Search for code snippets within a context using code-optimized embeddings (voyage-code-3). This is specialized for finding code examples, functions, and programming patterns.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "context_name": {
+                        "type": "string",
+                        "description": "Name of context to search",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query text focused on code (e.g., 'function definition', 'error handling', 'async pattern')",
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Optional language filter (e.g., 'python', 'javascript', 'rust')",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return",
+                        "default": 10,
+                    },
+                },
+                "required": ["context_name", "query"],
             },
         ),
         # Job Management Tools
@@ -354,6 +391,8 @@ async def handle_call_tool(
             result = await tools.get_code_snippets(**arguments)
         elif name == "get_code_snippet":
             result = await tools.get_code_snippet(**arguments)
+        elif name == "search_code":
+            result = await tools.search_code(**arguments)
         elif name == "get_job_status":
             result = await tools.get_job_status(**arguments)
         elif name == "cancel_job":

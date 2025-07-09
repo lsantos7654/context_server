@@ -394,21 +394,35 @@ def status(job_id):
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.argument("document_id")
 @click.option("--output-file", help="Save content to file instead of displaying")
+@click.option("--page", default=1, help="Page number to display (default: 1)")
+@click.option("--page-size", default=25000, help="Characters per page (default: 25000)")
 @rich_help_option("-h", "--help")
-def show(context_name, document_id, output_file):
-    """Show raw document content.
+def show(context_name, document_id, output_file, page, page_size):
+    """Show raw document content with pagination support.
+
+    Large documents are automatically paginated for better display.
+    Use --page and --page-size to navigate through content.
 
     Args:
         context_name: Context name
         document_id: Document ID
-        output_file: Output file path
+        output_file: Output file path (saves full content, ignores pagination)
+        page: Page number to display (1-based)
+        page_size: Characters per page (default optimized for Claude's limit)
     """
 
     async def show_document():
         try:
             async with httpx.AsyncClient() as client:
+                # Add pagination parameters
+                params = {}
+                if not output_file:  # Only paginate for display, not for file output
+                    params["page_number"] = page
+                    params["page_size"] = page_size
+                
                 response = await client.get(
                     get_api_url(f"contexts/{context_name}/documents/{document_id}/raw"),
+                    params=params,
                     timeout=30.0,
                 )
 
@@ -433,6 +447,22 @@ def show(context_name, document_id, output_file):
                         header += f"\nSource: {document.get('source_type', 'unknown')}"
                         if document.get("created_at"):
                             header += f"\nCreated: {document['created_at'][:19]}"
+                        
+                        # Add pagination info if available
+                        pagination = document.get("pagination", {})
+                        if pagination:
+                            current_page = pagination.get("page_number", 1)
+                            total_pages = pagination.get("total_pages", 1)
+                            current_length = pagination.get("current_page_length", 0)
+                            full_length = document.get("full_content_length", current_length)
+                            
+                            header += f"\nPage: {current_page}/{total_pages}"
+                            header += f"\nShowing: {current_length:,} chars of {full_length:,} total"
+                            
+                            if pagination.get("has_next_page"):
+                                header += f"\nNext page: --page {current_page + 1}"
+                            if pagination.get("has_previous_page"):
+                                header += f"\nPrevious page: --page {current_page - 1}"
 
                         # Try to detect if content is markdown/code for syntax highlighting
                         content = document["content"]
@@ -462,11 +492,19 @@ def show(context_name, document_id, output_file):
                         else:
                             syntax = content
 
+                        # Create subtitle with pagination info
+                        subtitle = f"[dim]{len(content):,} characters"
+                        if pagination:
+                            total_pages = pagination.get("total_pages", 1)
+                            current_page = pagination.get("page_number", 1)
+                            subtitle += f" (Page {current_page}/{total_pages})"
+                        subtitle += "[/dim]"
+                        
                         # Display in panel
                         panel = Panel(
                             syntax,
                             title=f"[bold blue]{document['title']}[/bold blue]",
-                            subtitle=f"[dim]{len(content):,} characters[/dim]",
+                            subtitle=subtitle,
                             border_style="blue",
                             padding=(1, 2),
                         )
@@ -888,45 +926,3 @@ def code_snippets(context_name, document_id, output_format):
     asyncio.run(list_code_snippets())
 
 
-@docs.command()
-@click.argument("context_name", shell_complete=complete_context_name)
-@click.argument("snippet_id")
-@click.option("--output-file", "-o", help="Save to file instead of displaying")
-@rich_help_option("-h", "--help")
-def snippet(context_name, snippet_id, output_file):
-    """Get a specific code snippet by ID.
-
-    Args:
-        context_name: Context name
-        snippet_id: Code snippet ID
-        output_file: Optional output file path
-    """
-    import asyncio
-
-    from rich.syntax import Syntax
-
-    async def get_code_snippet():
-        client = APIClient()
-        success, response = await client.get(
-            f"contexts/{context_name}/code-snippets/{snippet_id}"
-        )
-
-        if success:
-            snippet = response
-            content = snippet.get("content", "")
-            language = snippet.get("language", "text")
-
-            if output_file:
-                with open(output_file, "w") as f:
-                    f.write(content)
-                echo_success(f"Code snippet saved to {output_file}")
-            else:
-                # Display with syntax highlighting
-                syntax = Syntax(content, language, theme="monokai", line_numbers=True)
-                console.print(f"\n[bold]Code Snippet ID: {snippet_id}[/bold]")
-                console.print(f"[dim]Language: {language}[/dim]")
-                console.print(syntax)
-        else:
-            echo_error(f"Failed to get code snippet: {response}")
-
-    asyncio.run(get_code_snippet())
