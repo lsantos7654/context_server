@@ -31,6 +31,7 @@ class CLIConfig(BaseSettings):
     
     # Direct environment variables (without prefix)
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
+    voyage_api_key: Optional[str] = Field(default=None, alias="VOYAGE_API_KEY")
 
     # Server settings
     server: ServerConfig = Field(default_factory=ServerConfig)

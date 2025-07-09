@@ -199,6 +199,7 @@ async def _process_document_background(
                             end_line=chunk.end_line,
                             char_start=chunk.char_start,
                             char_end=chunk.char_end,
+                            is_code=chunk.metadata.get("is_code", False),
                         )
 
                     # Store code snippets with embeddings

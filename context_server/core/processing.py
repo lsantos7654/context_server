@@ -519,7 +519,7 @@ class DocumentProcessor:
             # Document 1: Original markdown (raw content)
             original_chunks = self.text_chunker.chunk_text(content)
             original_processed_chunks = await self._process_chunks_with_embeddings(
-                original_chunks, url, title, self.embedding_service
+                original_chunks, url, title, self.embedding_service, is_code=False
             )
 
             # Document 2: Code snippets only
@@ -535,13 +535,13 @@ class DocumentProcessor:
             code_processed_snippets = []
             
             if code_snippets_content:
-                # Chunk the code snippets document with code-optimized chunking
+                # Chunk the code snippets document with code embeddings for chunks table
                 code_chunks = self.code_chunker.chunk_text(code_snippets_content)
                 code_processed_chunks = await self._process_chunks_with_embeddings(
-                    code_chunks, url, title, self.code_embedding_service
+                    code_chunks, url, title, self.code_embedding_service, is_code=True
                 )
 
-                # Process individual code snippets with embeddings
+                # Process individual code snippets with code embeddings for code_snippets table
                 code_processed_snippets = await self._process_code_snippets_with_embeddings(
                     code_snippet_data, url, title
                 )
@@ -552,7 +552,7 @@ class DocumentProcessor:
             )
             cleaned_chunks = self.text_chunker.chunk_text(cleaned_with_placeholders)
             cleaned_processed_chunks = await self._process_chunks_with_embeddings(
-                cleaned_chunks, url, title, self.embedding_service
+                cleaned_chunks, url, title, self.embedding_service, is_code=False
             )
 
             # Create three ProcessedDocument objects
@@ -573,8 +573,8 @@ class DocumentProcessor:
                 url=url,
                 title=f"{title} (Code Snippets)",
                 content=code_snippets_content,
-                chunks=code_processed_chunks,
-                code_snippets=code_processed_snippets,
+                chunks=code_processed_chunks,  # Chunked code content with text embeddings
+                code_snippets=code_processed_snippets,  # Individual code snippets with code embeddings
                 metadata={**metadata, "document_type": "code_snippets"},
             ))
 
@@ -596,7 +596,7 @@ class DocumentProcessor:
             raise
 
     async def _process_chunks_with_embeddings(
-        self, chunks: list, url: str, title: str, embedding_service
+        self, chunks: list, url: str, title: str, embedding_service, is_code: bool = False
     ) -> list[ProcessedChunk]:
         """Process chunks with embeddings and summaries."""
         processed_chunks = []
@@ -655,6 +655,7 @@ class DocumentProcessor:
                         **chunk_link_data,
                         "source_url": url,
                         "source_title": title,
+                        "is_code": is_code,
                     },
                     tokens=chunk.tokens,
                     start_line=chunk.start_line,

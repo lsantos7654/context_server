@@ -22,7 +22,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 
 # Install Python dependencies
-RUN uv pip install --system -e ".[dev,test]"
+RUN uv pip install --system -e "."
 
 # Install Playwright browsers for crawl4ai
 RUN playwright install chromium

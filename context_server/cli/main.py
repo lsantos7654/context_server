@@ -172,17 +172,18 @@ def config(ctx):
     config_table.add_column("Setting", style="bold cyan", width=20)
     config_table.add_column("Value", style="white")
 
-    config_table.add_row("Server Host", f"{config.server.host}:{config.server.port}")
-    config_table.add_row("Database URL", config.server.database_url)
-    config_table.add_row("Config Directory", str(config.config_dir))
-    config_table.add_row("Verbose Mode", "✓" if config.verbose else "✗")
-    config_table.add_row("Color Output", "✓" if config.color else "✗")
 
     if config.openai_api_key:
         masked_key = f"{'*' * 20}...{config.openai_api_key[-8:]}"
         config_table.add_row("OpenAI API Key", f"[green]{masked_key}[/green]")
     else:
         config_table.add_row("OpenAI API Key", "[red]Not configured[/red]")
+
+    if config.voyage_api_key:
+        masked_key = f"{'*' * 20}...{config.voyage_api_key[-8:]}"
+        config_table.add_row("Voyage API Key", f"[green]{masked_key}[/green]")
+    else:
+        config_table.add_row("Voyage API Key", "[red]Not configured[/red]")
 
     # Check server status
     async def get_status():

@@ -305,7 +305,13 @@ class VoyageEmbeddingService:
             try:
                 # Use asyncio.wait_for to enforce total timeout
                 response = await asyncio.wait_for(
-                    self.client.embed(texts=[text], model=self.model),
+                    self.client.embed(
+                        texts=[text], 
+                        model=self.model,
+                        output_dimension=self.get_dimension(),
+                        input_type="document",
+                        output_dtype="float"
+                    ),
                     timeout=timeout,
                 )
 
@@ -361,7 +367,13 @@ class VoyageEmbeddingService:
                         try:
                             # Individual batch timeout
                             response = await asyncio.wait_for(
-                                self.client.embed(texts=batch, model=self.model),
+                                self.client.embed(
+                                    texts=batch, 
+                                    model=self.model,
+                                    output_dimension=self.get_dimension(),
+                                    input_type="document",
+                                    output_dtype="float"
+                                ),
                                 timeout=batch_timeout,
                             )
 

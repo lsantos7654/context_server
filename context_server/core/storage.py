@@ -197,7 +197,8 @@ class DatabaseManager:
                     content TEXT NOT NULL,
                     summary TEXT,  -- LLM-generated summary for compact responses
                     summary_model VARCHAR(50),  -- Model used to generate summary
-                    embedding vector(1536),  -- OpenAI embedding dimension
+                    text_embedding halfvec(3072),  -- text-embedding-3-large dimension
+                    code_embedding halfvec(2048),  -- voyage-code-3 dimension
                     chunk_index INTEGER NOT NULL,
                     metadata JSONB DEFAULT '{}',
                     tokens INTEGER,
@@ -220,7 +221,7 @@ class DatabaseManager:
                     context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
                     language VARCHAR(50) NOT NULL DEFAULT 'text',
-                    embedding vector(1536),  -- OpenAI embedding dimension
+                    embedding halfvec(2048),  -- voyage-code-3 dimension
                     metadata JSONB DEFAULT '{}',
                     start_line INTEGER,
                     end_line INTEGER,
@@ -267,7 +268,10 @@ class DatabaseManager:
 
             # Create indexes for performance
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops)"
+                "CREATE INDEX IF NOT EXISTS idx_chunks_text_embedding ON chunks USING ivfflat (text_embedding halfvec_cosine_ops)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_code_embedding ON chunks USING ivfflat (code_embedding halfvec_cosine_ops)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_context_id ON chunks(context_id)"
@@ -547,29 +551,64 @@ class DatabaseManager:
         end_line: int = None,
         char_start: int = None,
         char_end: int = None,
+        is_code: bool = False,
     ) -> str:
         """Create a new chunk with embedding and line tracking."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
             embedding_str = "[" + ",".join(map(str, embedding)) + "]"
 
-            chunk_id = await conn.fetchval(
-                """
-                INSERT INTO chunks (document_id, context_id, content, summary, summary_model, embedding, chunk_index, metadata, tokens, start_line, end_line, char_start, char_end)
-                VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13)
-                ON CONFLICT (document_id, chunk_index) DO UPDATE SET
-                    content = EXCLUDED.content,
-                    summary = EXCLUDED.summary,
-                    summary_model = EXCLUDED.summary_model,
-                    embedding = EXCLUDED.embedding,
-                    metadata = EXCLUDED.metadata,
-                    tokens = EXCLUDED.tokens,
-                    start_line = EXCLUDED.start_line,
-                    end_line = EXCLUDED.end_line,
-                    char_start = EXCLUDED.char_start,
-                    char_end = EXCLUDED.char_end
-                RETURNING id
-            """,
+            # Choose the appropriate embedding column
+            if is_code:
+                chunk_id = await conn.fetchval(
+                    """
+                    INSERT INTO chunks (document_id, context_id, content, summary, summary_model, code_embedding, chunk_index, metadata, tokens, start_line, end_line, char_start, char_end)
+                    VALUES ($1, $2, $3, $4, $5, $6::halfvec, $7, $8, $9, $10, $11, $12, $13)
+                    ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+                        content = EXCLUDED.content,
+                        summary = EXCLUDED.summary,
+                        summary_model = EXCLUDED.summary_model,
+                        code_embedding = EXCLUDED.code_embedding,
+                        metadata = EXCLUDED.metadata,
+                        tokens = EXCLUDED.tokens,
+                        start_line = EXCLUDED.start_line,
+                        end_line = EXCLUDED.end_line,
+                        char_start = EXCLUDED.char_start,
+                        char_end = EXCLUDED.char_end
+                    RETURNING id
+                """,
+                uuid.UUID(document_id),
+                uuid.UUID(context_id),
+                content,
+                summary,
+                summary_model,
+                embedding_str,
+                chunk_index,
+                json.dumps(metadata or {}),
+                tokens,
+                start_line,
+                end_line,
+                char_start,
+                char_end,
+            )
+            else:
+                chunk_id = await conn.fetchval(
+                    """
+                    INSERT INTO chunks (document_id, context_id, content, summary, summary_model, text_embedding, chunk_index, metadata, tokens, start_line, end_line, char_start, char_end)
+                    VALUES ($1, $2, $3, $4, $5, $6::halfvec, $7, $8, $9, $10, $11, $12, $13)
+                    ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+                        content = EXCLUDED.content,
+                        summary = EXCLUDED.summary,
+                        summary_model = EXCLUDED.summary_model,
+                        text_embedding = EXCLUDED.text_embedding,
+                        metadata = EXCLUDED.metadata,
+                        tokens = EXCLUDED.tokens,
+                        start_line = EXCLUDED.start_line,
+                        end_line = EXCLUDED.end_line,
+                        char_start = EXCLUDED.char_start,
+                        char_end = EXCLUDED.char_end
+                    RETURNING id
+                """,
                 uuid.UUID(document_id),
                 uuid.UUID(context_id),
                 content,
@@ -687,26 +726,38 @@ class DatabaseManager:
         query_embedding: list[float],
         limit: int = 10,
         min_similarity: float = 0.7,
+        embedding_type: str = "text",
     ) -> list[dict]:
-        """Perform vector similarity search."""
+        """Perform vector similarity search on text or code embeddings."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
             embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
+            # Determine which embedding column to use based on embedding type
+            if embedding_type == "code":
+                embedding_column = "c.code_embedding"
+                # Use halfvec for code embeddings (2048 dimensions)
+                vector_type = "halfvec"
+            else:
+                embedding_column = "c.text_embedding"
+                # Use halfvec for text embeddings (3072 dimensions)
+                vector_type = "halfvec"
+
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT
                     c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
                     c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                     c.start_line, c.end_line, c.char_start, c.char_end,
                     LENGTH(d.content) as parent_page_size,
                     d.chunk_count as parent_total_chunks,
-                    1 - (c.embedding <=> $2::vector) as similarity
+                    1 - ({embedding_column} <=> $2::{vector_type}) as similarity
                 FROM chunks c
                 JOIN documents d ON c.document_id = d.id
                 WHERE c.context_id = $1
-                    AND 1 - (c.embedding <=> $2::vector) > $3
-                ORDER BY c.embedding <=> $2::vector
+                    AND {embedding_column} IS NOT NULL
+                    AND 1 - ({embedding_column} <=> $2::{vector_type}) > $3
+                ORDER BY {embedding_column} <=> $2::{vector_type}
                 LIMIT $4
             """,
                 uuid.UUID(context_id),
