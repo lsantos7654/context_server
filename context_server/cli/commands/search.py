@@ -40,6 +40,8 @@ def search():
         ctx search query "async patterns" my-docs             # Basic hybrid search
         ctx search query "rendering" docs --mode vector       # Vector search only
         ctx search query "widgets" docs --limit 10             # More results
+        ctx search query "widget traits" docs --format mcp_json      # Compact JSON format like MCP server
+        ctx search query "async patterns" docs --format cards      # Detailed card layout (default)
         ctx search code "function definition" my-docs         # Code search with voyage-code-3
         ctx search code "error handling" docs --language python # Code search with language filter
         ctx search interactive my-docs                        # Interactive mode
@@ -60,8 +62,8 @@ def search():
 @click.option(
     "--format",
     "output_format",
-    default="table",
-    type=click.Choice(["table", "json"]),
+    default="cards",
+    type=click.Choice(["cards", "json", "mcp_json"]),
     help="Output format",
 )
 @click.option(
@@ -89,7 +91,7 @@ def query(
         context_name: Name of context to search within
         mode: Search algorithm (vector, fulltext, hybrid)
         limit: Maximum number of results to return
-        output_format: Display format (rich, table, json)
+        output_format: Display format (cards, json, mcp_json)
         show_content: Whether to display content snippets
     """
 
@@ -112,22 +114,33 @@ def query(
             total = response["total"]
             execution_time = response["execution_time_ms"]
 
-            if output_format == "json":
-                console.print(response)
-                return
-
             if not results:
                 echo_info("No results found")
                 echo_info("Try a different query or search mode")
                 return
 
+            if output_format == "json":
+                console.print(response)
+                return
+
             echo_success(f"Found {total} result(s) in {execution_time}ms")
             console.print()  # Empty line
 
-            if output_format == "table":
-                display_results_table(results, show_content)
-            else:  # rich format - using table format as default
-                display_results_table(results, show_content)
+            if output_format == "mcp_json":
+                # Use the shared transformation method from DatabaseManager
+                from ...core.storage import DatabaseManager
+                db_manager = DatabaseManager()
+                compact_response = db_manager._transform_to_compact_format(
+                    results,
+                    query=query,
+                    mode=mode,
+                    execution_time_ms=execution_time
+                )
+                console.print(compact_response)
+            elif output_format == "cards":
+                display_results_cards(results, show_content, query)
+            else:  # default to cards format
+                display_results_cards(results, show_content, query)
 
         else:
             if "404" in str(response):
@@ -148,8 +161,8 @@ def query(
 @click.option(
     "--format",
     "output_format",
-    default="table",
-    type=click.Choice(["table", "json"]),
+    default="cards",
+    type=click.Choice(["cards", "json", "mcp_json"]),
     help="Output format",
 )
 @rich_help_option("-h", "--help")
@@ -164,7 +177,7 @@ def code(query, context_name, language, limit, output_format):
         context_name: Name of context to search within
         language: Optional programming language filter
         limit: Maximum number of results to return
-        output_format: Display format (table or json)
+        output_format: Display format (cards, json, mcp_json)
     """
 
     async def search_code():
@@ -213,8 +226,19 @@ def code(query, context_name, language, limit, output_format):
             echo_success(f"Found {total} code snippet(s) in {execution_time}ms")
             console.print()
 
-            # Display code results in table format
-            display_code_results_table(results)
+            # Display code results
+            if output_format == "mcp_json":
+                # Use the shared transformation method from DatabaseManager
+                from ...core.storage import DatabaseManager
+                db_manager = DatabaseManager()
+                compact_response = db_manager._transform_code_to_compact_format(
+                    results,
+                    query=query,
+                    execution_time_ms=execution_time
+                )
+                console.print(compact_response)
+            else:  # cards format
+                display_code_results_cards(results)
 
         else:
             if "404" in str(response):
@@ -281,7 +305,7 @@ def interactive(context_name):
 
                     echo_success(f"Found {total} result(s) in {execution_time}ms")
                     console.print()
-                    display_results_table(results, True)  # show_content=True for interactive
+                    display_results_cards(results, True, query)  # show_content=True for interactive
 
                 else:
                     if "404" in str(response):
@@ -300,8 +324,115 @@ def interactive(context_name):
             break
 
 
+def display_results_cards(results: list, show_content: bool = True, query: str = ""):
+    """Display search results in card format with all metadata from MCP format."""
+    for i, result in enumerate(results, 1):
+        # Create simple card header
+        score = result['score']
+        
+        header = f"Result {i} • Score: {score:.3f}"
+        
+        # Create card content
+        card_content = []
+        
+        # Title and URL
+        title = result["title"]
+        url = result.get("url", "")
+        card_content.append(f"[bold blue]{title}[/bold blue]")
+        if url:
+            card_content.append(f"[dim blue]{url}[/dim blue]")
+        
+        # Metadata information
+        result_id = result.get("id", "N/A")
+        doc_id = result.get("document_id", "N/A")
+        content_type = result.get("content_type", "chunk")
+        has_summary = bool(result.get("summary"))
+        
+        card_content.append("")  # Empty line
+        card_content.append(f"[dim cyan]ID: {result_id}[/dim cyan]")
+        card_content.append(f"[dim cyan]Doc: {doc_id}[/dim cyan]")
+        card_content.append(f"[dim cyan]Type: {content_type} • Summary: {has_summary}[/dim cyan]")
+        
+        # Summary (if available and show_content is True)
+        if show_content:
+            summary = result.get("summary", "")
+            if summary:
+                card_content.append("")  # Empty line
+                card_content.append("[bold yellow]Summary:[/bold yellow]")
+                # Highlight query terms in summary
+                highlighted_summary = highlight_query_terms(summary, query) if query else summary
+                card_content.append(f"[italic]{highlighted_summary}[/italic]")
+            
+            # Content preview
+            content = result.get("content", "")
+            if content and len(content.strip()) > 0:
+                if not summary:  # Only show content if no summary
+                    card_content.append("")  # Empty line
+                    card_content.append("[bold white]Content:[/bold white]")
+                    # Truncate content for card view
+                    preview = content[:300] + "..." if len(content) > 300 else content
+                    card_content.append(f"[dim]{preview}[/dim]")
+        
+        # Enhanced metadata (code snippets, chunk info) - same as MCP format
+        metadata = result.get("metadata", {})
+        code_snippets = metadata.get("code_snippets", [])
+        code_snippets_count = len(code_snippets)
+        chunk_index = result.get("chunk_index", "N/A")
+        
+        # Generate detailed code snippet info like MCP format
+        code_snippet_details = []
+        if code_snippets:
+            # Import the transformation logic
+            from ...core.storage import DatabaseManager
+            db_manager = DatabaseManager()
+            
+            for snippet in code_snippets:
+                if isinstance(snippet, dict) and "id" in snippet:
+                    snippet_detail = {
+                        "id": snippet["id"],
+                        "size": len(snippet.get("preview", snippet.get("content", ""))),
+                        "summary": db_manager._generate_code_summary(snippet)
+                    }
+                    code_snippet_details.append(snippet_detail)
+        
+        if code_snippets_count > 0 or chunk_index != "N/A":
+            card_content.append("")  # Empty line
+            metadata_line = []
+            if chunk_index != "N/A":
+                metadata_line.append(f"Chunk: {chunk_index}")
+            if code_snippets_count > 0:
+                metadata_line.append(f"Code snippets: {code_snippets_count}")
+            card_content.append(f"[dim cyan]{' • '.join(metadata_line)}[/dim cyan]")
+            
+            # Show detailed code snippet information
+            if code_snippet_details:
+                card_content.append("")
+                card_content.append("[bold cyan]Code Snippets:[/bold cyan]")
+                for snippet in code_snippet_details[:3]:  # Show first 3
+                    snippet_id_short = str(snippet["id"])[:8] + "..."
+                    card_content.append(f"[cyan]• {snippet_id_short}[/cyan] ({snippet['size']} chars)")
+                    if snippet["summary"]:
+                        # Show full code summary (no truncation for enhanced 3-4 sentence summaries)
+                        summary = snippet["summary"]
+                        card_content.append(f"  [dim]{summary}[/dim]")
+                
+                if len(code_snippet_details) > 3:
+                    remaining = len(code_snippet_details) - 3
+                    card_content.append(f"[dim]  ... and {remaining} more[/dim]")
+        
+        # Create panel
+        panel = Panel(
+            "\n".join(card_content),
+            title=header,
+            border_style="blue",
+            padding=(1, 2),
+        )
+        console.print(panel)
+        console.print()  # Empty line between cards
+
+
 def display_results_table(results: list, show_content: bool = True):
-    """Display search results in table format."""
+    """Display search results in table format (legacy)."""
     table = Table(title="Search Results")
     table.add_column("Score", style="bold green", width=8)
     table.add_column("Doc ID", style="cyan", width=12)
@@ -555,13 +686,79 @@ def highlight_query_terms(text: str, query: str) -> str:
             import re
 
             pattern = re.compile(re.escape(term), re.IGNORECASE)
-            highlighted = pattern.sub(f"[bold yellow]{term}[/bold yellow]", highlighted)
+            highlighted = pattern.sub(lambda m: f"[bold yellow]{m.group(0)}[/bold yellow]", highlighted)
 
     return highlighted
 
 
+def display_code_results_cards(results: list):
+    """Display code search results in card format with syntax highlighting."""
+    for i, result in enumerate(results, 1):
+        # Create card header
+        score = result['score']
+        language = result.get("language", "text")
+        snippet_type = result.get("snippet_type", "code_block")
+        
+        header = f"Code Result {i} • Score: {score:.3f} • Language: {language} • Type: {snippet_type}"
+        
+        # Create card content
+        card_content = []
+        
+        # Title and URL
+        title = result.get("title", "")
+        if title:
+            card_content.append(f"[bold blue]{title}[/bold blue]")
+        
+        url = result.get("url", "")
+        if url:
+            card_content.append(f"[dim blue]{url}[/dim blue]")
+        
+        # Line information
+        start_line = result.get("start_line", "")
+        end_line = result.get("end_line", "")
+        if start_line and end_line:
+            card_content.append(f"[dim cyan]Lines: {start_line}-{end_line}[/dim cyan]")
+        
+        # Code content with syntax highlighting
+        content = result.get("content", "")
+        if content:
+            card_content.append("")  # Empty line
+            card_content.append("[bold white]Code:[/bold white]")
+            
+            # Truncate very long code snippets for card view
+            if len(content) > 800:
+                content = content[:800] + "\n... (truncated)"
+            
+            try:
+                # Use syntax highlighting for the code
+                syntax = Syntax(content, language, theme="monokai", line_numbers=True, word_wrap=True)
+                card_content.append("")  # Let Rich handle the syntax display separately
+            except Exception:
+                # Fallback to plain text if syntax highlighting fails
+                card_content.append(f"[dim]{content}[/dim]")
+                syntax = None
+        else:
+            syntax = None
+        
+        # Create panel
+        panel_text = "\n".join(card_content)
+        panel = Panel(
+            panel_text,
+            title=header,
+            border_style="green",
+            padding=(1, 2),
+        )
+        console.print(panel)
+        
+        # Display syntax-highlighted code separately if available
+        if syntax is not None:
+            console.print(syntax)
+        
+        console.print()  # Empty line between cards
+
+
 def display_code_results_table(results: list):
-    """Display code search results in table format with syntax highlighting."""
+    """Display code search results in table format (legacy)."""
     from rich.syntax import Syntax
     
     table = Table(title="Code Search Results")

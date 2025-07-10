@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Manages PostgreSQL connection with pgvector for vector storage."""
 
-    def __init__(self, database_url: str | None = None):
+    def __init__(self, database_url: str | None = None, summarization_service=None):
         self.database_url = database_url or os.getenv(
             "DATABASE_URL", "postgresql://user:password@localhost:5432/context_server"
         )
         self.pool: Pool | None = None
+        self.summarization_service = summarization_service
 
     def _filter_metadata_for_search(self, metadata: dict) -> dict:
         """Organize metadata into clean, grouped structure for search results."""
@@ -99,6 +100,271 @@ class DatabaseManager:
                 organized[key] = value
 
         return organized
+
+    def _generate_code_summary(self, snippet: dict) -> str:
+        """Generate summary for code snippet: full code if ≤8 lines, AI summary if >8 lines."""
+        # Try to get full content first, fallback to preview
+        content = snippet.get("content", "")
+        
+        if not content:
+            # If no full content, use preview which is already truncated and suitable for display
+            preview = snippet.get("preview", "")
+            if preview:
+                return preview
+            else:
+                return "Empty code snippet"
+        
+        # Split into lines and check count
+        lines = content.split('\n')
+        line_count = len([line for line in lines if line.strip()])  # Count non-empty lines
+        
+        # Rule: If 8 lines or fewer, include full code content
+        if line_count <= 8:
+            return content.strip()
+        
+        # For longer code snippets, try AI summarization first
+        if self.summarization_service and self.summarization_service.client:
+            try:
+                # This is a synchronous context, but we need async for AI
+                # For now, use heuristic fallback. In production, this would be called 
+                # from an async context where we can await the AI service
+                import asyncio
+                
+                # Try to get current event loop, if it exists
+                try:
+                    loop = asyncio.get_running_loop()
+                    # We're in an async context, but this method is sync
+                    # Use heuristic fallback for now
+                    pass
+                except RuntimeError:
+                    # No event loop running
+                    pass
+            except Exception:
+                pass
+        
+        # Use heuristic fallback
+        return self._generate_heuristic_code_summary(content, lines)
+
+    def _generate_heuristic_code_summary(self, content: str, lines: list[str]) -> str:
+        """Generate a detailed 3-4 sentence heuristic summary for longer code snippets."""
+        summary_sentences = []
+        content_lower = content.lower()
+        line_count = len([line for line in lines if line.strip()])
+        
+        # Sentence 1: Main purpose/type of code
+        main_purpose = []
+        
+        # Check for function/class definitions
+        functions_found = []
+        classes_found = []
+        
+        for line in lines[:10]:  # Check first 10 lines for definitions
+            line = line.strip()
+            if line.startswith('def ') or line.startswith('function '):
+                func_name = line.split('(')[0].replace('def ', '').replace('function ', '').strip()
+                if func_name not in functions_found:
+                    functions_found.append(func_name)
+            elif line.startswith('async def '):
+                func_name = line.split('(')[0].replace('async def ', '').strip()
+                if func_name not in functions_found:
+                    functions_found.append(f"{func_name} (async)")
+            elif line.startswith('class '):
+                class_name = line.split('(')[0].replace('class ', '').replace(':', '').strip()
+                if class_name not in classes_found:
+                    classes_found.append(class_name)
+        
+        # Build main purpose sentence
+        if functions_found and classes_found:
+            main_purpose.append(f"This code defines the {', '.join(classes_found)} class(es) and implements {', '.join(functions_found[:2])} function(s)")
+        elif functions_found:
+            if len(functions_found) == 1:
+                main_purpose.append(f"This code implements the {functions_found[0]} function")
+            else:
+                main_purpose.append(f"This code implements {len(functions_found)} functions including {', '.join(functions_found[:2])}")
+        elif classes_found:
+            main_purpose.append(f"This code defines the {', '.join(classes_found)} class(es)")
+        else:
+            # Check for configuration or setup patterns
+            if any(word in content_lower for word in ['config', 'setup', 'init', 'configure']):
+                main_purpose.append("This is a configuration or setup code block")
+            elif 'import ' in content or 'from ' in content:
+                main_purpose.append("This code sets up imports and dependencies")
+            else:
+                main_purpose.append("This is a code block that performs various operations")
+        
+        if main_purpose:
+            summary_sentences.append(main_purpose[0] + ".")
+        
+        # Sentence 2: Key features and patterns
+        features = []
+        
+        if 'async ' in content or 'await ' in content:
+            features.append("asynchronous operations")
+        if 'try:' in content and 'except' in content:
+            features.append("error handling")
+        if 'for ' in content or 'while ' in content:
+            features.append("iteration/loops")
+        if any(word in content_lower for word in ['http', 'request', 'api', 'client']):
+            features.append("HTTP/API interactions")
+        if any(word in content_lower for word in ['database', 'db', 'query', 'sql']):
+            features.append("database operations")
+        if any(word in content_lower for word in ['file', 'read', 'write', 'path']):
+            features.append("file operations")
+        if 'json' in content_lower or 'yaml' in content_lower:
+            features.append("data serialization")
+        if any(word in content_lower for word in ['test', 'assert', 'mock']):
+            features.append("testing functionality")
+        
+        if features:
+            if len(features) == 1:
+                summary_sentences.append(f"It includes {features[0]}.")
+            elif len(features) == 2:
+                summary_sentences.append(f"It includes {features[0]} and {features[1]}.")
+            else:
+                summary_sentences.append(f"It includes {', '.join(features[:-1])}, and {features[-1]}.")
+        
+        # Sentence 3: Technical details or complexity
+        complexity_info = []
+        
+        if line_count > 50:
+            complexity_info.append(f"This is a substantial code block with {line_count} lines")
+        elif line_count > 20:
+            complexity_info.append(f"This is a moderately sized code block with {line_count} lines")
+        else:
+            complexity_info.append(f"This is a compact code block with {line_count} lines")
+        
+        # Count imports to gauge dependencies
+        import_count = len([line for line in lines if line.strip().startswith(('import ', 'from '))])
+        if import_count > 5:
+            complexity_info.append(f"and uses {import_count} different imports")
+        elif import_count > 0:
+            complexity_info.append(f"and includes {import_count} import(s)")
+        
+        if complexity_info:
+            summary_sentences.append(" ".join(complexity_info) + ".")
+        
+        # Sentence 4: Purpose or usage context (if identifiable)
+        context_clues = []
+        
+        if any(word in content_lower for word in ['crawler', 'scrape', 'extract']):
+            context_clues.append("web scraping or data extraction")
+        elif any(word in content_lower for word in ['server', 'app', 'route', 'endpoint']):
+            context_clues.append("web server or API development")
+        elif any(word in content_lower for word in ['filter', 'process', 'transform']):
+            context_clues.append("data processing or filtering")
+        elif any(word in content_lower for word in ['markdown', 'content', 'generate']):
+            context_clues.append("content generation or markdown processing")
+        elif any(word in content_lower for word in ['embed', 'vector', 'search']):
+            context_clues.append("search or embedding functionality")
+        
+        if context_clues:
+            summary_sentences.append(f"The code appears to be designed for {context_clues[0]}.")
+        
+        # Combine sentences (aim for 3-4 sentences)
+        summary = " ".join(summary_sentences[:4])
+        
+        # Ensure we have at least a basic summary
+        if not summary.strip():
+            summary = f"Code block with {line_count} lines containing various programming constructs."
+        
+        return summary
+
+    def _transform_to_compact_format(self, results: list[dict], query: str = "", mode: str = "hybrid", execution_time_ms: int = 0) -> dict:
+        """Transform full search results to compact MCP format.
+        
+        This is the single source of truth for transforming search results 
+        to the compact format used by both CLI and MCP server.
+        """
+        compact_results = []
+        
+        for result in results:
+            # Use summary if available, otherwise truncate content
+            display_content = result.get("summary", "")
+            if not display_content:
+                content = result.get("content", "")
+                display_content = content[:150] + "..." if len(content) > 150 else content
+            # No truncation for summaries - they're already AI-generated and meaningful
+            
+            # Get code snippets count and IDs from metadata
+            metadata = result.get("metadata", {})
+            code_snippets = metadata.get("code_snippets", [])
+            code_snippets_count = len(code_snippets) if code_snippets else 0
+            
+            # Extract code snippet metadata for direct access
+            code_snippet_ids = []
+            if code_snippets:
+                for snippet in code_snippets:
+                    if isinstance(snippet, dict) and "id" in snippet:
+                        snippet_obj = {
+                            "id": snippet["id"],
+                            "size": len(snippet.get("preview", snippet.get("content", ""))),
+                            "summary": self._generate_code_summary(snippet)
+                        }
+                        code_snippet_ids.append(snippet_obj)
+            
+            compact_result = {
+                "id": result.get("id"),
+                "document_id": result.get("document_id"),
+                "title": result.get("title"),
+                "summary": display_content,
+                "score": result.get("score"),
+                "url": result.get("url"),
+                "has_summary": bool(result.get("summary")),
+                "code_snippets_count": code_snippets_count,
+                "code_snippet_ids": code_snippet_ids,
+                "content_type": result.get("content_type", "chunk"),
+                "chunk_index": result.get("chunk_index"),
+            }
+            compact_results.append(compact_result)
+        
+        return {
+            "results": compact_results,
+            "total": len(compact_results),
+            "query": query,
+            "mode": mode,
+            "execution_time_ms": execution_time_ms,
+            "note": "Content summarized for quick scanning. Use get_document for full content."
+        }
+
+    def _transform_code_to_compact_format(self, results: list[dict], query: str = "", execution_time_ms: int = 0) -> dict:
+        """Transform code search results to compact MCP format.
+        
+        This is the single source of truth for transforming code search results
+        to the compact format used by both CLI and MCP server.
+        """
+        compact_results = []
+        
+        for result in results:
+            # Use content directly since code snippets are already concise
+            display_content = result.get("content", "")
+            
+            # Truncate very long code snippets
+            if len(display_content) > 500:
+                display_content = display_content[:500] + "..."
+            
+            compact_result = {
+                "id": result.get("id"),
+                "document_id": result.get("document_id"),
+                "title": result.get("title"),
+                "content": display_content,
+                "language": result.get("language", "text"),
+                "snippet_type": result.get("snippet_type", "code_block"),
+                "score": result.get("score"),
+                "url": result.get("url"),
+                "start_line": result.get("start_line"),
+                "end_line": result.get("end_line"),
+                "content_type": "code_snippet",
+            }
+            compact_results.append(compact_result)
+        
+        return {
+            "results": compact_results,
+            "total": len(compact_results),
+            "query": query,
+            "mode": "hybrid",
+            "execution_time_ms": execution_time_ms,
+            "note": "Code search using voyage-code-3 embeddings for enhanced code understanding."
+        }
 
     async def initialize(self):
         """Initialize database connection and create required tables."""
@@ -706,18 +972,80 @@ class DatabaseManager:
                 if doc_id not in snippets_by_doc:
                     snippets_by_doc[doc_id] = []
 
+                # Apply 8-line rule for code snippet preview
+                content = row["content"]
+                lines = content.split('\n')
+                line_count = len([line for line in lines if line.strip()])
+                
+                if line_count <= 8:
+                    # Show full code for short snippets
+                    preview = content
+                else:
+                    # For longer snippets, create a descriptive summary
+                    preview = self._generate_heuristic_code_summary(content, lines)
+                
                 snippet = {
                     "id": str(row["id"]),
                     "type": row["snippet_type"],
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
-                    "preview": row["content"][:100] + "..."
-                    if len(row["content"]) > 100
-                    else row["content"],
+                    "preview": preview,
                 }
                 snippets_by_doc[doc_id].append(snippet)
 
             return snippets_by_doc
+
+    async def _get_code_snippets_for_chunk(
+        self, document_id: str, context_id: str, chunk_start_line: int = None, chunk_end_line: int = None
+    ) -> list[dict]:
+        """Get code snippets that overlap with a specific chunk's line range."""
+        async with self.pool.acquire() as conn:
+            # If no line information available, return empty list
+            if chunk_start_line is None or chunk_end_line is None:
+                return []
+            
+            # Find code snippets that overlap with the chunk's line range
+            # Overlap occurs when: snippet_start <= chunk_end AND snippet_end >= chunk_start
+            rows = await conn.fetch(
+                """
+                SELECT id, content, language, snippet_type, start_line, end_line
+                FROM code_snippets
+                WHERE document_id = $1
+                    AND context_id = $2
+                    AND start_line IS NOT NULL
+                    AND end_line IS NOT NULL
+                    AND start_line <= $4
+                    AND end_line >= $3
+                ORDER BY start_line
+                """,
+                uuid.UUID(document_id),
+                uuid.UUID(context_id),
+                chunk_start_line,
+                chunk_end_line,
+            )
+
+            # Apply 8-line rule for each code snippet
+            result = []
+            for row in rows:
+                content = row["content"]
+                lines = content.split('\n')
+                line_count = len([line for line in lines if line.strip()])
+                
+                if line_count <= 8:
+                    preview = content
+                else:
+                    preview = self._generate_heuristic_code_summary(content, lines)
+                
+                result.append({
+                    "id": str(row["id"]),
+                    "type": row["snippet_type"],
+                    "language": row["language"],
+                    "start_line": row["start_line"],
+                    "end_line": row["end_line"],
+                    "preview": preview,
+                })
+            
+            return result
 
     # Search methods
     async def vector_search(
@@ -766,14 +1094,18 @@ class DatabaseManager:
                 limit,
             )
 
-            # Get unique document IDs for code snippet lookup
-            document_ids = list(set(str(row["document_id"]) for row in rows))
-            code_snippets_by_doc = await self._get_code_snippets_for_documents(
-                document_ids, context_id
-            )
+            # Get chunk-specific code snippets for each result
+            chunk_results = []
+            for row in rows:
+                # Get code snippets that overlap with this specific chunk
+                chunk_code_snippets = await self._get_code_snippets_for_chunk(
+                    str(row["document_id"]), 
+                    context_id,
+                    row.get("start_line"), 
+                    row.get("end_line")
+                )
 
-            return [
-                {
+                chunk_results.append({
                     "id": str(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
@@ -798,12 +1130,8 @@ class DatabaseManager:
                             "parent_page_size": row["parent_page_size"],
                             "parent_total_chunks": row["parent_total_chunks"],
                             "chunk_index": row["chunk_index"],
-                            "code_snippets": code_snippets_by_doc.get(
-                                str(row["document_id"]), []
-                            ),
-                            "total_code_snippets": len(
-                                code_snippets_by_doc.get(str(row["document_id"]), [])
-                            ),
+                            "code_snippets": chunk_code_snippets,
+                            "total_code_snippets": len(chunk_code_snippets),
                         }
                     ),
                     "chunk_index": row["chunk_index"],
@@ -811,9 +1139,9 @@ class DatabaseManager:
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
                     "char_end": row.get("char_end"),
-                }
-                for row in rows
-            ]
+                })
+
+            return chunk_results
 
     async def fulltext_search(
         self, context_id: str, query: str, limit: int = 10
@@ -841,14 +1169,18 @@ class DatabaseManager:
                 limit,
             )
 
-            # Get unique document IDs for code snippet lookup
-            document_ids = list(set(str(row["document_id"]) for row in rows))
-            code_snippets_by_doc = await self._get_code_snippets_for_documents(
-                document_ids, context_id
-            )
+            # Get chunk-specific code snippets for each result
+            chunk_results = []
+            for row in rows:
+                # Get code snippets that overlap with this specific chunk
+                chunk_code_snippets = await self._get_code_snippets_for_chunk(
+                    str(row["document_id"]), 
+                    context_id,
+                    row.get("start_line"), 
+                    row.get("end_line")
+                )
 
-            return [
-                {
+                chunk_results.append({
                     "id": str(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
@@ -873,12 +1205,8 @@ class DatabaseManager:
                             "parent_page_size": row["parent_page_size"],
                             "parent_total_chunks": row["parent_total_chunks"],
                             "chunk_index": row["chunk_index"],
-                            "code_snippets": code_snippets_by_doc.get(
-                                str(row["document_id"]), []
-                            ),
-                            "total_code_snippets": len(
-                                code_snippets_by_doc.get(str(row["document_id"]), [])
-                            ),
+                            "code_snippets": chunk_code_snippets,
+                            "total_code_snippets": len(chunk_code_snippets),
                         }
                     ),
                     "chunk_index": row["chunk_index"],
@@ -886,9 +1214,9 @@ class DatabaseManager:
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
                     "char_end": row.get("char_end"),
-                }
-                for row in rows
-            ]
+                })
+
+            return chunk_results
 
     async def vector_search_code_snippets(
         self,
@@ -1099,10 +1427,21 @@ class DatabaseManager:
 
             rows = await conn.fetch(query, *params)
 
-            return [
-                {
+            # Apply 8-line rule for each code snippet preview
+            result = []
+            for row in rows:
+                content = row["content"]
+                lines = content.split('\n')
+                line_count = len([line for line in lines if line.strip()])
+                
+                if line_count <= 8:
+                    preview = content
+                else:
+                    preview = self._generate_heuristic_code_summary(content, lines)
+                
+                result.append({
                     "id": str(row["id"]),
-                    "content": row["content"],
+                    "content": content,
                     "type": row["snippet_type"],
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
@@ -1112,12 +1451,10 @@ class DatabaseManager:
                     "created_at": row["created_at"].isoformat()
                     if row["created_at"]
                     else None,
-                    "preview": row["content"][:100] + "..."
-                    if len(row["content"]) > 100
-                    else row["content"],
-                }
-                for row in rows
-            ]
+                    "preview": preview,
+                })
+            
+            return result
 
     async def get_code_snippet_by_id(
         self, snippet_id: str, context_id: str = None

@@ -108,10 +108,15 @@ class CodeSnippetExtractor:
             line_char_map.append(char_pos)
             char_pos += len(line) + 1  # +1 for newline
 
-        # Extract markdown code blocks
+        # Extract markdown code blocks (filter out very short ones)
         for match in self.markdown_code_pattern.finditer(content):
             language = match.group(1) or "text"
             code_content = match.group(2).strip()
+            
+            # Skip very short code blocks (likely just noise)
+            if len(code_content) < 20:
+                continue
+                
             start_char = match.start()
             end_char = match.end()
 
@@ -183,10 +188,11 @@ class CodeSnippetExtractor:
         # Remove indented code patterns
         cleaned_content = self.indented_code_pattern.sub("", cleaned_content)
 
-        # Also extract significant inline code (longer than 10 chars)
+        # Extract significant inline code (longer than 50 chars to reduce noise)
         for match in self.inline_code_pattern.finditer(content):
             code_content = match.group(1)
-            if len(code_content) > 10:  # Only significant inline code
+            # Filter out short inline code snippets that are just noise
+            if len(code_content) > 50 and '\n' not in code_content:  # Only substantial single-line inline code
                 start_char = match.start()
                 end_char = match.end()
                 start_line = self._char_to_line(start_char, line_char_map)
@@ -247,8 +253,8 @@ class DocumentProcessor:
         self.embedding_service = embedding_service or EmbeddingService()
         self.code_embedding_service = code_embedding_service or VoyageEmbeddingService()
         self.summarization_service = summarization_service or SummarizationService()
-        self.text_chunker = TextChunker(chunk_size=1000, chunk_overlap=200, chunk_type="text")
-        self.code_chunker = TextChunker(chunk_size=700, chunk_overlap=150, chunk_type="code")
+        self.text_chunker = TextChunker(chunk_size=1500, chunk_overlap=300, chunk_type="text")
+        self.code_chunker = TextChunker(chunk_size=1000, chunk_overlap=200, chunk_type="code")
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
 

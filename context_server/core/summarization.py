@@ -55,6 +55,19 @@ Content:
 
 Summary:"""
 
+        # Prompt for code snippet summarization
+        self.code_summarization_prompt = """Analyze this code snippet and create a concise summary in 80-300 characters. Focus on what the code DOES, not what it is. Include function/class names if present.
+
+Examples:
+- "Configures AsyncWebCrawler with deep crawling strategy and content filtering"
+- "Defines User class with authentication methods and password validation"  
+- "Processes API response data and handles error cases with retry logic"
+
+Code:
+{code_content}
+
+Summary:"""
+
     async def summarize_chunk(
         self, content: str, timeout: float = 30.0
     ) -> tuple[str | None, str | None]:
@@ -99,10 +112,8 @@ Summary:"""
 
                     summary = response.choices[0].message.content.strip()
 
-                    # Validate summary length and quality
-                    if len(summary) > self.target_length * 3:
-                        # Truncate if too long (more lenient for 3-5 sentences)
-                        summary = summary[: self.target_length * 2] + "..."
+                    # No truncation for AI-generated summaries - they're already optimized
+                    # The AI was specifically instructed to generate appropriate length summaries
 
                     logger.debug(
                         f"Generated summary: {len(content)} chars -> {len(summary)} chars"
@@ -130,6 +141,89 @@ Summary:"""
 
         except Exception as e:
             logger.error(f"Summarization failed: {e}")
+            return None, str(e)
+
+        return None, "All retry attempts failed"
+
+    async def summarize_code_snippet(
+        self, code_content: str, timeout: float = 15.0
+    ) -> tuple[str | None, str | None]:
+        """Generate a summary for a code snippet.
+        
+        Args:
+            code_content: Code content to summarize
+            timeout: API timeout in seconds (shorter than regular summarization)
+            
+        Returns:
+            tuple: (summary_text, error_message)
+                   Returns (None, error) if summarization fails
+        """
+        if not self.client:
+            return None, "OpenAI API key not configured"
+
+        # Skip summarization for very short code
+        if len(code_content) <= 50:
+            return code_content.strip(), None
+
+        try:
+            # Format the code summarization prompt
+            prompt = self.code_summarization_prompt.format(code_content=code_content)
+
+            # Call OpenAI API with retry logic
+            for attempt in range(3):
+                try:
+                    response = await asyncio.wait_for(
+                        self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": prompt,
+                                }
+                            ],
+                            max_tokens=75,  # Limit for 80-300 char summaries
+                            temperature=0.2,  # Lower temperature for consistent summaries
+                        ),
+                        timeout=timeout,
+                    )
+
+                    summary = response.choices[0].message.content.strip()
+                    
+                    # Ensure summary is within the expected range
+                    if len(summary) > 300:
+                        summary = summary[:297] + "..."
+                    elif len(summary) < 80:
+                        # If too short, pad with basic info
+                        lines = code_content.split('\n')
+                        line_count = len([line for line in lines if line.strip()])
+                        summary += f" ({line_count} lines)"
+
+                    logger.debug(
+                        f"Generated code summary: {len(code_content)} chars -> {len(summary)} chars"
+                    )
+                    return summary, None
+
+                except RateLimitError:
+                    if attempt < 2:
+                        # Exponential backoff for rate limits
+                        wait_time = 2**attempt
+                        logger.warning(
+                            f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/3"
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        return None, "Rate limit exceeded after retries"
+
+                except APITimeoutError:
+                    if attempt < 2:
+                        logger.warning(f"Timeout on attempt {attempt + 1}/3, retrying...")
+                        continue
+                    else:
+                        return None, "API timeout after retries"
+
+        except Exception as e:
+            logger.error(f"Code summarization failed: {e}")
             return None, str(e)
 
         return None, "All retry attempts failed"

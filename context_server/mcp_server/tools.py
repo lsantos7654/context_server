@@ -202,54 +202,29 @@ class ContextServerTools:
                 f"/api/contexts/{context_name}/search", data
             )
             
-            # Transform results to compact format for MCP
-            compact_results = []
-            for item in result.get("results", []):
-                # Use summary if available, otherwise truncate content
-                display_content = item.get("summary")
-                if not display_content:
-                    # Fallback to truncated content
-                    content = item.get("content", "")
-                    display_content = content[:150] + "..." if len(content) > 150 else content
-                
-                # Count code snippets and extract IDs for direct access
-                code_snippets = item.get("metadata", {}).get("code_snippets", [])
-                code_snippets_count = len(code_snippets) if code_snippets else 0
-                
-                # Extract code snippet IDs for direct access
-                code_snippet_ids = []
-                if code_snippets:
-                    for snippet in code_snippets:
-                        if isinstance(snippet, dict) and "id" in snippet:
-                            code_snippet_ids.append(snippet["id"])
-                
-                compact_result = {
-                    "id": item.get("id"),
-                    "document_id": item.get("document_id"),
-                    "title": item.get("title"),
-                    "summary": display_content,
-                    "score": item.get("score"),
-                    "url": item.get("url"),
-                    "has_summary": bool(item.get("summary")),
-                    "code_snippets_count": code_snippets_count,
-                    "code_snippet_ids": code_snippet_ids,
-                    "content_type": item.get("content_type", "chunk"),
-                    "chunk_index": item.get("chunk_index"),
-                }
-                compact_results.append(compact_result)
+            # Use the shared compact transformation (this should be done by the API)
+            # For now, we'll call the compact API endpoint directly
+            compact_data = {**data, "format": "compact"}
+            compact_result = await self.client.post(
+                f"/api/contexts/{context_name}/search", compact_data
+            )
             
-            # Return compact response
-            compact_response = {
-                "results": compact_results,
-                "total": result.get("total", len(compact_results)),
-                "query": result.get("query", query),
-                "mode": result.get("mode", mode),
-                "execution_time_ms": result.get("execution_time_ms", 0),
-                "note": "Content summarized for MCP. Use get_document for full content."
-            }
+            # If the API doesn't support compact format yet, fall back to manual transformation
+            if "note" not in compact_result:
+                # Import the DatabaseManager for transformation
+                from ..core.storage import DatabaseManager
+                db_manager = DatabaseManager()
+                compact_response = db_manager._transform_to_compact_format(
+                    result.get("results", []),
+                    query=query,
+                    mode=mode,
+                    execution_time_ms=result.get("execution_time_ms", 0)
+                )
+            else:
+                compact_response = compact_result
             
             logger.info(
-                f"MCP search completed: {len(compact_results)} compact results for '{query}' in {context_name}"
+                f"MCP search completed: {len(compact_response.get('results', []))} compact results for '{query}' in {context_name}"
             )
             return compact_response
 
@@ -412,48 +387,30 @@ class ContextServerTools:
                 f"/api/contexts/{context_name}/search/code", data
             )
             
-            # Transform results to compact format for MCP with code-specific enhancements
-            compact_results = []
-            for item in result.get("results", []):
-                # Filter by language if specified
-                if language and item.get("language", "").lower() != language.lower():
-                    continue
-                
-                # Use content directly since code snippets are already concise
-                display_content = item.get("content", "")
-                
-                # Truncate very long code snippets
-                if len(display_content) > 500:
-                    display_content = display_content[:500] + "..."
-                
-                compact_result = {
-                    "id": item.get("id"),
-                    "document_id": item.get("document_id"),
-                    "title": item.get("title"),
-                    "content": display_content,
-                    "language": item.get("language", "text"),
-                    "snippet_type": item.get("snippet_type", "code_block"),
-                    "score": item.get("score"),
-                    "url": item.get("url"),
-                    "start_line": item.get("start_line"),
-                    "end_line": item.get("end_line"),
-                    "content_type": "code_snippet",
-                }
-                compact_results.append(compact_result)
+            # Use the shared compact transformation for code search
+            from ..core.storage import DatabaseManager
+            db_manager = DatabaseManager()
             
-            # Return compact response
-            compact_response = {
-                "results": compact_results,
-                "total": len(compact_results),
-                "query": query,
-                "mode": "hybrid",
-                "language_filter": language,
-                "execution_time_ms": result.get("execution_time_ms", 0),
-                "note": "Code search using voyage-code-3 embeddings for enhanced code understanding."
-            }
+            # Filter by language if specified before transformation
+            filtered_results = result.get("results", [])
+            if language:
+                filtered_results = [
+                    r for r in filtered_results 
+                    if r.get("language", "").lower() == language.lower()
+                ]
+            
+            compact_response = db_manager._transform_code_to_compact_format(
+                filtered_results,
+                query=query,
+                execution_time_ms=result.get("execution_time_ms", 0)
+            )
+            
+            # Add language filter info
+            if language:
+                compact_response["language_filter"] = language
             
             logger.info(
-                f"Code search completed: {len(compact_results)} results for '{query}' in {context_name}"
+                f"Code search completed: {len(compact_response.get('results', []))} results for '{query}' in {context_name}"
             )
             return compact_response
 

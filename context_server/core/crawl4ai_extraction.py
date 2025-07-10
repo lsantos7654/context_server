@@ -93,18 +93,12 @@ class Crawl4aiExtractor:
                 )
 
                 async with AsyncWebCrawler(verbose=False, headless=True) as crawler:
-                    # Create content filter for cleaner extraction
-                    if self.content_filter_type == "bm25":
-                        content_filter = BM25ContentFilter(
-                            user_query=self.query_terms,
-                            bm25_threshold=0.5,  # More balanced threshold to capture concepts + examples
-                        )
-                    else:
-                        content_filter = PruningContentFilter(
-                            threshold=0.35,  # More aggressive threshold for noise removal
-                            min_word_threshold=15,  # Higher minimum word count
-                            threshold_type="fixed",
-                        )
+                    # Create content filter optimized for documentation cleaning
+                    content_filter = PruningContentFilter(
+                        threshold=0.45,  # Dynamic threshold for adaptive content filtering
+                        threshold_type="dynamic",
+                        min_word_threshold=5,  # Ignore very short text blocks
+                    )
 
                     # Configure deep crawling strategy
                     deep_crawl_strategy = BFSDeepCrawlStrategy(
@@ -114,19 +108,20 @@ class Crawl4aiExtractor:
                         # Note: Removed score_threshold as it was filtering out too many valid links
                     )
 
-                    # Enhanced configuration with aggressive content filtering
+                    # Enhanced configuration with documentation-optimized filtering
                     config = CrawlerRunConfig(
                         # Deep crawling configuration
                         deep_crawl_strategy=deep_crawl_strategy,
-                        # Content filtering and cleaning - Balanced approach for link discovery
+                        # Content filtering optimized for documentation sites
                         excluded_tags=[
-                            "footer",
-                            ".breadcrumb",
-                            ".pagination",
-                        ],  # Keep nav/header for link discovery
-                        word_count_threshold=20,  # Skip short content blocks
+                            "nav", "footer", "header", "sidebar",  # Navigation elements
+                            ".breadcrumb", ".pagination", ".toc",  # Navigation helpers
+                            ".version-list", ".highlights", ".releases",  # Version/release content
+                            ".navigation", ".menu", ".nav-menu",  # More navigation variants
+                        ],
+                        word_count_threshold=10,  # Filter out very short content blocks
                         exclude_external_links=True,
-                        # Enhanced markdown generation with aggressive filtering
+                        # Enhanced markdown generation with dynamic content filtering
                         markdown_generator=DefaultMarkdownGenerator(
                             content_filter=content_filter
                         ),
