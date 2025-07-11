@@ -148,7 +148,7 @@ def extract(
                         await wait_for_extraction(job_id)
                     else:
                         echo_info("Extraction running in background")
-                        echo_info(f"Check status with: ctx docs status {job_id}")
+                        echo_info(f"Check status with: ctx job status {job_id}")
 
                 elif response.status_code == 404:
                     echo_error(f"Context '{context_name}' not found")
@@ -301,93 +301,6 @@ def delete(context_name, document_ids, force):
     asyncio.run(delete_documents())
 
 
-@docs.command()
-@click.argument("job_id", shell_complete=complete_job_id)
-@rich_help_option("-h", "--help")
-def status(job_id):
-    """Check the status of a document extraction job.
-
-    Args:
-        job_id: Extraction job ID
-    """
-
-    async def get_job_status():
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    get_api_url(f"jobs/{job_id}/status"),
-                    timeout=10.0,
-                )
-
-                if response.status_code == 200:
-                    job_data = response.json()
-
-                    # Create a status table
-                    from rich.panel import Panel
-                    from rich.table import Table
-
-                    table = Table(title=f"Job Status: {job_id}")
-                    table.add_column("Property", style="cyan")
-                    table.add_column("Value", style="white")
-
-                    table.add_row("Status", job_data["status"])
-                    table.add_row("Progress", f"{int(job_data['progress'] * 100)}%")
-                    table.add_row("Type", job_data["type"])
-                    table.add_row(
-                        "Started",
-                        job_data["started_at"][:19]
-                        if job_data["started_at"]
-                        else "N/A",
-                    )
-                    table.add_row(
-                        "Updated",
-                        job_data["updated_at"][:19]
-                        if job_data["updated_at"]
-                        else "N/A",
-                    )
-
-                    if job_data["completed_at"]:
-                        table.add_row("Completed", job_data["completed_at"][:19])
-
-                    if job_data["error_message"]:
-                        table.add_row("Error", job_data["error_message"])
-
-                    console.print(table)
-
-                    # Show metadata if available
-                    if job_data["metadata"]:
-                        metadata = job_data["metadata"]
-                        if "phase" in metadata:
-                            echo_info(f"Current phase: {metadata['phase']}")
-                        if "source" in metadata:
-                            echo_info(f"Source: {metadata['source']}")
-
-                    # Show result data if completed
-                    if job_data["status"] == "completed" and job_data["result_data"]:
-                        result_data = job_data["result_data"]
-                        echo_success("Extraction Results:")
-                        echo_info(
-                            f"  Documents processed: {result_data.get('documents_processed', 0)}"
-                        )
-                        echo_info(
-                            f"  Total chunks: {result_data.get('total_chunks', 0)}"
-                        )
-                        echo_info(
-                            f"  Code snippets: {result_data.get('total_code_snippets', 0)}"
-                        )
-
-                elif response.status_code == 404:
-                    echo_error(f"Job '{job_id}' not found")
-                else:
-                    echo_error(
-                        f"Failed to get job status: {response.status_code} - {response.text}"
-                    )
-
-        except httpx.RequestError as e:
-            echo_error(f"Connection error: {e}")
-            echo_info("Make sure the server is running: ctx server up")
-
-    asyncio.run(get_job_status())
 
 
 @docs.command()
@@ -686,7 +599,7 @@ async def wait_for_extraction(
             await asyncio.sleep(check_interval)
 
         echo_warning("Extraction timed out, but may still be running in the background")
-        echo_info(f"Check status with: ctx docs status {job_id}")
+        echo_info(f"Check status with: ctx job status {job_id}")
 
 
 async def handle_local_extraction(
@@ -859,70 +772,5 @@ async def handle_local_extraction(
     echo_info(f"Try: ctx search query '<your-query>' {context_name}")
 
 
-@docs.command()
-@click.argument("context_name", shell_complete=complete_context_name)
-@click.argument("document_id")
-@click.option(
-    "--output-format",
-    "-f",
-    type=click.Choice(["table", "json"]),
-    default="table",
-    help="Output format",
-)
-@rich_help_option("-h", "--help")
-def code_snippets(context_name, document_id, output_format):
-    """List code snippets from a document.
-
-    Args:
-        context_name: Context name
-        document_id: Document ID
-        output_format: Output format (table or json)
-    """
-    import asyncio
-    import json
-
-    from rich.syntax import Syntax
-    from rich.table import Table
-
-    async def list_code_snippets():
-        client = APIClient()
-        success, response = await client.get(
-            f"contexts/{context_name}/documents/{document_id}/code-snippets"
-        )
-
-        if success:
-            snippets = response
-
-            if output_format == "json":
-                console.print(json.dumps(snippets, indent=2))
-            else:
-                if not snippets:
-                    echo_info("No code snippets found in this document")
-                    return
-
-                table = Table(title=f"Code Snippets - {document_id}")
-                table.add_column("ID", style="cyan")
-                table.add_column("Language", style="green")
-                table.add_column("Lines", style="yellow")
-                table.add_column("Preview", style="white", max_width=50)
-
-                for snippet in snippets:
-                    preview = snippet.get("content", "")[:100]
-                    if len(preview) == 100:
-                        preview += "..."
-
-                    table.add_row(
-                        snippet.get("id", "N/A"),
-                        snippet.get("language", "unknown"),
-                        str(snippet.get("line_count", 0)),
-                        preview.replace("\n", " "),
-                    )
-
-                console.print(table)
-                echo_info(f"Found {len(snippets)} code snippets")
-        else:
-            echo_error(f"Failed to get code snippets: {response}")
-
-    asyncio.run(list_code_snippets())
 
 

@@ -93,11 +93,12 @@ class CodeSnippetExtractor:
         self, content: str, url: str = "", title: str = ""
     ) -> tuple[list[dict], str]:
         """
-        Extract code snippets from content and return cleaned content.
+        Extract code snippets from content and return cleaned content with inline placeholders.
 
         Returns:
-            Tuple of (code_snippets_list, content_without_code_blocks)
+            Tuple of (code_snippets_list, content_with_inline_placeholders)
         """
+        import uuid
         snippets = []
         lines = content.splitlines()
 
@@ -107,6 +108,9 @@ class CodeSnippetExtractor:
         for line in lines:
             line_char_map.append(char_pos)
             char_pos += len(line) + 1  # +1 for newline
+
+        # Track replacements to apply them in reverse order (to maintain positions)
+        replacements = []
 
         # Extract markdown code blocks (filter out very short ones)
         for match in self.markdown_code_pattern.finditer(content):
@@ -124,6 +128,9 @@ class CodeSnippetExtractor:
             start_line = self._char_to_line(start_char, line_char_map)
             end_line = self._char_to_line(end_char, line_char_map)
 
+            # Generate unique snippet ID for this instance
+            snippet_id = str(uuid.uuid4())
+
             snippet = {
                 "content": code_content,
                 "language": language,
@@ -134,16 +141,15 @@ class CodeSnippetExtractor:
                 "type": "code_block",
                 "source_url": url,
                 "source_title": title,
+                "snippet_id": snippet_id,  # Add the unique ID
             }
             snippets.append(snippet)
 
-        # Remove all types of code blocks from content for regular chunking
-        cleaned_content = self.markdown_code_pattern.sub("", content)
-        
-        # Remove HTML code/pre tags
-        cleaned_content = self.html_code_pattern.sub("", cleaned_content)
-        
-        # Extract and remove HTML code blocks
+            # Create placeholder for inline replacement
+            placeholder = f"[CODE_SNIPPET: language={language}, size={len(code_content)}chars, snippet_id={snippet_id}]"
+            replacements.append((start_char, end_char, placeholder))
+
+        # Extract and handle HTML code blocks
         for match in self.html_code_pattern.finditer(content):
             code_content = match.group(1).strip()
             if len(code_content) > 20:  # Only substantial code blocks
@@ -151,6 +157,9 @@ class CodeSnippetExtractor:
                 end_char = match.end()
                 start_line = self._char_to_line(start_char, line_char_map)
                 end_line = self._char_to_line(end_char, line_char_map)
+
+                # Generate unique snippet ID for this instance
+                snippet_id = str(uuid.uuid4())
 
                 snippet = {
                     "content": code_content,
@@ -162,31 +171,13 @@ class CodeSnippetExtractor:
                     "type": "html_code_block",
                     "source_url": url,
                     "source_title": title,
+                    "snippet_id": snippet_id,
                 }
                 snippets.append(snippet)
 
-        # Extract and remove indented code blocks (4 spaces or tab)
-        indented_blocks = []
-        for match in self.indented_code_pattern.finditer(content):
-            indented_blocks.append(match.group(1))
-        
-        if indented_blocks and len('\n'.join(indented_blocks)) > 50:
-            combined_code = '\n'.join(indented_blocks)
-            snippet = {
-                "content": combined_code,
-                "language": "text",
-                "start_line": 0,  # Approximate
-                "end_line": len(indented_blocks),
-                "char_start": 0,
-                "char_end": 0,
-                "type": "indented_code_block",
-                "source_url": url,
-                "source_title": title,
-            }
-            snippets.append(snippet)
-            
-        # Remove indented code patterns
-        cleaned_content = self.indented_code_pattern.sub("", cleaned_content)
+                # Create placeholder for inline replacement
+                placeholder = f"[CODE_SNIPPET: language=html, size={len(code_content)}chars, snippet_id={snippet_id}]"
+                replacements.append((start_char, end_char, placeholder))
 
         # Extract significant inline code (longer than 50 chars to reduce noise)
         for match in self.inline_code_pattern.finditer(content):
@@ -198,6 +189,9 @@ class CodeSnippetExtractor:
                 start_line = self._char_to_line(start_char, line_char_map)
                 end_line = start_line
 
+                # Generate unique snippet ID for this instance
+                snippet_id = str(uuid.uuid4())
+
                 snippet = {
                     "content": code_content,
                     "language": "text",  # Unknown language for inline code
@@ -208,8 +202,21 @@ class CodeSnippetExtractor:
                     "type": "inline_code",
                     "source_url": url,
                     "source_title": title,
+                    "snippet_id": snippet_id,
                 }
                 snippets.append(snippet)
+
+                # Create placeholder for inline replacement
+                placeholder = f"[CODE_SNIPPET: language=text, size={len(code_content)}chars, snippet_id={snippet_id}]"
+                replacements.append((start_char, end_char, placeholder))
+
+        # Apply all replacements in reverse order to maintain character positions
+        cleaned_content = content
+        for start_char, end_char, placeholder in reversed(sorted(replacements)):
+            cleaned_content = cleaned_content[:start_char] + placeholder + cleaned_content[end_char:]
+
+        # Note: Skipping indented code blocks for now as they're harder to position accurately
+        # They can be handled in a future enhancement if needed
 
         # Additional cleaning: remove extra whitespace and empty lines left by code removal
         cleaned_content = self._clean_whitespace_artifacts(cleaned_content)
@@ -727,43 +734,35 @@ class DocumentProcessor:
     def _create_cleaned_markdown_with_placeholders(
         self, cleaned_content: str, code_snippet_data: list
     ) -> str:
-        """Create cleaned markdown with code snippet placeholders."""
-        import uuid
-        
+        """Create cleaned markdown with enhanced code snippet placeholders using storage layer summaries."""
         # If no code snippets, return cleaned content as-is
         if not code_snippet_data:
             return cleaned_content
         
-        # For now, append placeholders at the end since we don't have precise positioning
-        # In a full implementation, we'd need to track original positions more carefully
-        placeholders = []
+        # Import storage manager to use consistent summary generation
+        from ..core.storage import DatabaseManager
+        
+        # Create a temporary database manager instance for summary generation
+        # This ensures we use the same logic as search results
+        db_manager = DatabaseManager()
+        
+        # Process each snippet to add enhanced summaries to placeholders
+        # The cleaned_content already has inline placeholders from extract_code_snippets()
+        # We need to update those placeholders with proper summaries
         
         for snippet in code_snippet_data:
-            snippet_id = str(uuid.uuid4())
+            snippet_id = snippet.get("snippet_id")
+            if not snippet_id:
+                continue  # Skip if no snippet_id (shouldn't happen with new logic)
             
-            # Create summary for the code snippet (limit to 100 chars)
-            summary = snippet.get("content", "")[:100].replace("\n", " ")
-            if len(summary) == 100:
-                summary += "..."
+            # Generate summary using the same logic as the storage layer
+            summary = db_manager._generate_code_summary(snippet)
             
-            # Create more detailed summary if content is longer
-            if len(snippet.get("content", "")) > 100:
-                # Try to create a more meaningful summary
-                lines = snippet.get("content", "").split("\n")
-                if len(lines) > 1:
-                    summary = f"Code block with {len(lines)} lines"
-                    # Try to get function/class names
-                    for line in lines[:3]:  # Check first 3 lines
-                        if any(keyword in line for keyword in ["def ", "class ", "function ", "const ", "let ", "var "]):
-                            summary += f": {line.strip()[:50]}"
-                            break
+            # Find and replace the placeholder in cleaned_content
+            old_placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, snippet_id={snippet_id}]"
+            new_placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, summary=\"{summary}\", snippet_id={snippet_id}]"
             
-            placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, summary=\"{summary}\", snippet_id={snippet_id}]"
-            placeholders.append(placeholder)
-        
-        # Add placeholders to the cleaned content
-        if placeholders:
-            cleaned_content += "\n\n" + "\n\n".join(placeholders)
+            cleaned_content = cleaned_content.replace(old_placeholder, new_placeholder)
         
         return cleaned_content
 

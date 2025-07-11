@@ -409,8 +409,8 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
                 card_content.append("")
                 card_content.append("[bold cyan]Code Snippets:[/bold cyan]")
                 for snippet in code_snippet_details[:3]:  # Show first 3
-                    snippet_id_short = str(snippet["id"])[:8] + "..."
-                    card_content.append(f"[cyan]• {snippet_id_short}[/cyan] ({snippet['size']} chars)")
+                    snippet_id_full = str(snippet["id"])
+                    card_content.append(f"[cyan]• {snippet_id_full}[/cyan] ({snippet['size']} chars)")
                     if snippet["summary"]:
                         # Show full code summary (no truncation for enhanced 3-4 sentence summaries)
                         summary = snippet["summary"]
