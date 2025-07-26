@@ -76,9 +76,6 @@ class Crawl4aiExtractor:
 
         # Content filtering strategy
         self.content_filter_type = self.filtering_config.get("content_filter", "bm25")
-        self.query_terms = self.filtering_config.get(
-            "query_terms", "documentation examples tutorial guide api reference"
-        )
 
     async def extract_from_url(self, url: str, max_pages: int = 50) -> ExtractionResult:
         """Extract content from URL using crawl4ai's built-in deep crawling and filtering."""
@@ -163,7 +160,6 @@ class Crawl4aiExtractor:
 
                         # Process multiple results from deep crawl
                         extracted_contents = []
-                        total_original_length = 0
                         successful_pages = 0
 
                         logger.info(f"Deep crawl found {len(results)} pages")
@@ -184,12 +180,7 @@ class Crawl4aiExtractor:
                                     hasattr(result, "fit_markdown")
                                     and result.fit_markdown
                                 ):
-                                    compression_ratio = 1 - (
-                                        len(result.fit_markdown) / len(result.markdown)
-                                    )
-                                    logger.info(
-                                        f"Content filtering for {result.url}: {compression_ratio:.1%} size reduction"
-                                    )
+                                    logger.info(f"Using filtered content for {result.url}")
                                     content = result.fit_markdown
                                 else:
                                     logger.info(
@@ -220,9 +211,6 @@ class Crawl4aiExtractor:
                                     }
                                 )
 
-                                total_original_length += (
-                                    len(result.markdown) if result.markdown else 0
-                                )
                                 successful_pages += 1
 
                                 # Save individual files
@@ -252,21 +240,10 @@ class Crawl4aiExtractor:
                             [item["content"] for item in extracted_contents]
                         )
 
-                        # Create metadata
+                        # Create minimal metadata
                         metadata = {
                             "source_type": "crawl4ai_deep",
                             "base_url": url,
-                            "content_filter": self.content_filter_type,
-                            "query_terms": self.query_terms,
-                            "pages_crawled": len(results),
-                            "pages_extracted": successful_pages,
-                            "total_original_length": total_original_length,
-                            "total_filtered_length": len(combined_content),
-                            "compression_ratio": 1
-                            - (len(combined_content) / total_original_length)
-                            if total_original_length > 0
-                            else 0,
-                            "extraction_time": datetime.now().isoformat(),
                             "extracted_pages": extracted_contents,
                         }
 
@@ -287,12 +264,7 @@ class Crawl4aiExtractor:
 
                         # Prioritize fit_markdown for cleaner content
                         if hasattr(result, "fit_markdown") and result.fit_markdown:
-                            compression_ratio = 1 - (
-                                len(result.fit_markdown) / len(result.markdown)
-                            )
-                            logger.info(
-                                f"Content filtering: {compression_ratio:.1%} size reduction ({len(result.fit_markdown)} vs {len(result.markdown)} chars)"
-                            )
+                            logger.info("Using filtered content")
                             content = result.fit_markdown
                         else:
                             logger.info(
@@ -321,26 +293,10 @@ class Crawl4aiExtractor:
                             file_path.write_text(combined_content, encoding="utf-8")
                             logger.debug(f"Saved filtered content to {file_path}")
 
-                        # Create metadata
+                        # Create minimal metadata
                         metadata = {
                             "source_type": "crawl4ai_deep",
                             "base_url": url,
-                            "content_filter": self.content_filter_type,
-                            "query_terms": self.query_terms,
-                            "pages_crawled": 1,
-                            "pages_extracted": 1,
-                            "total_original_length": len(result.markdown)
-                            if result.markdown
-                            else 0,
-                            "total_filtered_length": len(combined_content),
-                            "compression_ratio": 1
-                            - (len(combined_content) / len(result.markdown))
-                            if result.markdown
-                            else 0,
-                            "extraction_time": datetime.now().isoformat(),
-                            "links_discovered": len(result.links.get("internal", []))
-                            if result.links
-                            else 0,
                         }
 
                         # Add link information if available
@@ -350,15 +306,7 @@ class Crawl4aiExtractor:
                                 "external": len(result.links.get("external", [])),
                             }
 
-                    logger.info(
-                        "Deep crawl extraction completed",
-                        extra={
-                            "pages_crawled": metadata["pages_crawled"],
-                            "pages_extracted": metadata["pages_extracted"],
-                            "total_filtered_size": metadata["total_filtered_length"],
-                            "compression": f"{metadata['compression_ratio']:.1%}",
-                        },
-                    )
+                    logger.info("Deep crawl extraction completed")
 
                     return ExtractionResult(
                         success=True, content=combined_content, metadata=metadata

@@ -205,6 +205,15 @@ async def _process_document_background(
                     # Store code snippets with embeddings
                     snippet_count = len(doc.code_snippets)
                     for snippet in doc.code_snippets:
+                        # Generate summary for the code snippet
+                        snippet_dict = {
+                            "content": snippet.content,
+                            "language": snippet.language,
+                            "metadata": snippet.metadata,
+                        }
+                        summary = db._generate_code_summary(snippet_dict)
+                        summary_model = "heuristic"  # Since we're using the heuristic method
+                        
                         await db.create_code_snippet(
                             document_id=doc_id,
                             context_id=context["id"],
@@ -216,6 +225,8 @@ async def _process_document_background(
                             end_line=snippet.end_line,
                             char_start=snippet.char_start,
                             char_end=snippet.char_end,
+                            summary=summary,
+                            summary_model=summary_model,
                             snippet_type=snippet.metadata.get("type", "code_block"),
                         )
 

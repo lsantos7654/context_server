@@ -35,6 +35,7 @@ class DatabaseManager:
             "full_content",
             "raw_content",
             "page_content",
+            "content",  # Already provided at top level, don't duplicate in metadata
         ]
 
         # Internal extraction details not needed by search consumers
@@ -49,6 +50,20 @@ class DatabaseManager:
             "source_type",  # Always "crawl4ai", not useful
             "is_individual_page",  # Always true, not meaningful
             "source_url",  # Redundant with page_url
+            # Extraction pipeline statistics
+            "pages_crawled",
+            "pages_extracted",
+            "compression_ratio",
+            "total_filtered_length",
+            "total_original_length",
+            "query_terms",  # Generic terms not related to actual search
+            "document_type",  # Usually "cleaned_markdown", not useful
+            "content_filter",  # Processing detail, not search-relevant
+            # Chunking implementation details
+            "chunk_size",
+            "chunk_type",
+            "chunk_overlap",
+            "is_code",  # Usually false for text chunks
         ]
 
         # Remove unwanted fields
@@ -58,26 +73,42 @@ class DatabaseManager:
         # Organize into clean structure
         organized = {}
 
-        # Document-level information
-        organized["document"] = {
-            "id": raw_metadata.get("document_id"),
-            "title": raw_metadata.get("source_title"),
-            "url": raw_metadata.get("page_url", raw_metadata.get("base_url")),
-            "size": raw_metadata.get("parent_page_size"),
-            "total_chunks": raw_metadata.get("parent_total_chunks"),
-            "total_links": raw_metadata.get("total_page_links"),
-        }
+        # Document-level information (only include non-null values)
+        document_info = {}
+        if raw_metadata.get("document_id"):
+            document_info["id"] = raw_metadata.get("document_id")
+        if raw_metadata.get("source_title"):
+            document_info["title"] = raw_metadata.get("source_title")
+        if raw_metadata.get("page_url") or raw_metadata.get("base_url"):
+            document_info["url"] = raw_metadata.get("page_url", raw_metadata.get("base_url"))
+        if raw_metadata.get("parent_page_size"):
+            document_info["size"] = raw_metadata.get("parent_page_size")
+        if raw_metadata.get("parent_total_chunks"):
+            document_info["total_chunks"] = raw_metadata.get("parent_total_chunks")
+        if raw_metadata.get("total_page_links"):
+            document_info["total_links"] = raw_metadata.get("total_page_links")
+        
+        if document_info:  # Only include document section if it has data
+            organized["document"] = document_info
 
-        # Chunk-level information
-        organized["chunk"] = {
-            "index": raw_metadata.get("chunk_index"),
-            "links_count": raw_metadata.get("total_links_in_chunk"),
-            "links": raw_metadata.get("chunk_links", {}),
-        }
+        # Chunk-level information (only include non-null values)
+        chunk_info = {}
+        if raw_metadata.get("chunk_index") is not None:
+            chunk_info["index"] = raw_metadata.get("chunk_index")
+        if raw_metadata.get("total_links_in_chunk"):
+            chunk_info["links_count"] = raw_metadata.get("total_links_in_chunk")
+        chunk_links = raw_metadata.get("chunk_links", {})
+        if chunk_links:
+            chunk_info["links"] = chunk_links
+        
+        if chunk_info:  # Only include chunk section if it has data
+            organized["chunk"] = chunk_info
 
-        # Code snippets information
-        organized["code_snippets"] = raw_metadata.get("code_snippets", [])
-        organized["code_snippets_count"] = raw_metadata.get("total_code_snippets", 0)
+        # Code snippets information (only include if non-empty)
+        code_snippets = raw_metadata.get("code_snippets", [])
+        if code_snippets:
+            organized["code_snippets"] = code_snippets
+            organized["code_snippets_count"] = len(code_snippets)
 
         # Keep any other metadata fields that weren't specifically handled
         handled_fields = {
@@ -95,9 +126,12 @@ class DatabaseManager:
             "total_code_snippets",
         }
 
+        # Add any remaining fields that have meaningful values
         for key, value in raw_metadata.items():
             if key not in handled_fields and key not in large_fields + internal_fields:
-                organized[key] = value
+                # Only include non-null, non-empty values
+                if value is not None and value != "" and value != {} and value != []:
+                    organized[key] = value
 
         return organized
 
@@ -146,128 +180,23 @@ class DatabaseManager:
         return self._generate_heuristic_code_summary(content, lines)
 
     def _generate_heuristic_code_summary(self, content: str, lines: list[str]) -> str:
-        """Generate a detailed 3-4 sentence heuristic summary for longer code snippets."""
-        summary_sentences = []
+        """Generate a concise summary for code snippets."""
         content_lower = content.lower()
         line_count = len([line for line in lines if line.strip()])
         
-        # Sentence 1: Main purpose/type of code
-        main_purpose = []
-        
-        # Check for function/class definitions
-        functions_found = []
-        classes_found = []
-        
-        for line in lines[:10]:  # Check first 10 lines for definitions
-            line = line.strip()
-            if line.startswith('def ') or line.startswith('function '):
-                func_name = line.split('(')[0].replace('def ', '').replace('function ', '').strip()
-                if func_name not in functions_found:
-                    functions_found.append(func_name)
-            elif line.startswith('async def '):
-                func_name = line.split('(')[0].replace('async def ', '').strip()
-                if func_name not in functions_found:
-                    functions_found.append(f"{func_name} (async)")
-            elif line.startswith('class '):
-                class_name = line.split('(')[0].replace('class ', '').replace(':', '').strip()
-                if class_name not in classes_found:
-                    classes_found.append(class_name)
-        
-        # Build main purpose sentence
-        if functions_found and classes_found:
-            main_purpose.append(f"This code defines the {', '.join(classes_found)} class(es) and implements {', '.join(functions_found[:2])} function(s)")
-        elif functions_found:
-            if len(functions_found) == 1:
-                main_purpose.append(f"This code implements the {functions_found[0]} function")
-            else:
-                main_purpose.append(f"This code implements {len(functions_found)} functions including {', '.join(functions_found[:2])}")
-        elif classes_found:
-            main_purpose.append(f"This code defines the {', '.join(classes_found)} class(es)")
+        # Simple language/type detection
+        if 'def ' in content or 'function ' in content:
+            code_type = "function"
+        elif 'class ' in content:
+            code_type = "class"
+        elif any(keyword in content_lower for keyword in ['config', 'settings', 'options']):
+            code_type = "configuration"
+        elif any(keyword in content_lower for keyword in ['import', 'from ', 'require']):
+            code_type = "imports"
         else:
-            # Check for configuration or setup patterns
-            if any(word in content_lower for word in ['config', 'setup', 'init', 'configure']):
-                main_purpose.append("This is a configuration or setup code block")
-            elif 'import ' in content or 'from ' in content:
-                main_purpose.append("This code sets up imports and dependencies")
-            else:
-                main_purpose.append("This is a code block that performs various operations")
-        
-        if main_purpose:
-            summary_sentences.append(main_purpose[0] + ".")
-        
-        # Sentence 2: Key features and patterns
-        features = []
-        
-        if 'async ' in content or 'await ' in content:
-            features.append("asynchronous operations")
-        if 'try:' in content and 'except' in content:
-            features.append("error handling")
-        if 'for ' in content or 'while ' in content:
-            features.append("iteration/loops")
-        if any(word in content_lower for word in ['http', 'request', 'api', 'client']):
-            features.append("HTTP/API interactions")
-        if any(word in content_lower for word in ['database', 'db', 'query', 'sql']):
-            features.append("database operations")
-        if any(word in content_lower for word in ['file', 'read', 'write', 'path']):
-            features.append("file operations")
-        if 'json' in content_lower or 'yaml' in content_lower:
-            features.append("data serialization")
-        if any(word in content_lower for word in ['test', 'assert', 'mock']):
-            features.append("testing functionality")
-        
-        if features:
-            if len(features) == 1:
-                summary_sentences.append(f"It includes {features[0]}.")
-            elif len(features) == 2:
-                summary_sentences.append(f"It includes {features[0]} and {features[1]}.")
-            else:
-                summary_sentences.append(f"It includes {', '.join(features[:-1])}, and {features[-1]}.")
-        
-        # Sentence 3: Technical details or complexity
-        complexity_info = []
-        
-        if line_count > 50:
-            complexity_info.append(f"This is a substantial code block with {line_count} lines")
-        elif line_count > 20:
-            complexity_info.append(f"This is a moderately sized code block with {line_count} lines")
-        else:
-            complexity_info.append(f"This is a compact code block with {line_count} lines")
-        
-        # Count imports to gauge dependencies
-        import_count = len([line for line in lines if line.strip().startswith(('import ', 'from '))])
-        if import_count > 5:
-            complexity_info.append(f"and uses {import_count} different imports")
-        elif import_count > 0:
-            complexity_info.append(f"and includes {import_count} import(s)")
-        
-        if complexity_info:
-            summary_sentences.append(" ".join(complexity_info) + ".")
-        
-        # Sentence 4: Purpose or usage context (if identifiable)
-        context_clues = []
-        
-        if any(word in content_lower for word in ['crawler', 'scrape', 'extract']):
-            context_clues.append("web scraping or data extraction")
-        elif any(word in content_lower for word in ['server', 'app', 'route', 'endpoint']):
-            context_clues.append("web server or API development")
-        elif any(word in content_lower for word in ['filter', 'process', 'transform']):
-            context_clues.append("data processing or filtering")
-        elif any(word in content_lower for word in ['markdown', 'content', 'generate']):
-            context_clues.append("content generation or markdown processing")
-        elif any(word in content_lower for word in ['embed', 'vector', 'search']):
-            context_clues.append("search or embedding functionality")
-        
-        if context_clues:
-            summary_sentences.append(f"The code appears to be designed for {context_clues[0]}.")
-        
-        # Combine sentences (aim for 3-4 sentences)
-        summary = " ".join(summary_sentences[:4])
-        
-        # Ensure we have at least a basic summary
-        if not summary.strip():
-            summary = f"Code block with {line_count} lines containing various programming constructs."
-        
-        return summary
+            code_type = "code"
+            
+        return f"{line_count}-line {code_type} snippet"
 
     def _transform_to_compact_format(self, results: list[dict], query: str = "", mode: str = "hybrid", execution_time_ms: int = 0) -> dict:
         """Transform full search results to compact MCP format.
@@ -494,6 +423,8 @@ class DatabaseManager:
                     char_start INTEGER,
                     char_end INTEGER,
                     snippet_type VARCHAR(20) DEFAULT 'code_block',  -- 'code_block' or 'inline_code'
+                    summary TEXT,
+                    summary_model VARCHAR(50),
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
             """
@@ -681,6 +612,20 @@ class DatabaseManager:
             return result == "DELETE 1"
 
     # Document management methods
+    def _normalize_url(self, url: str) -> str:
+        """Normalize URL to prevent duplicates (strip trailing slashes, etc.)."""
+        if not url:
+            return url
+        
+        # Strip trailing slashes
+        normalized = url.rstrip('/')
+        
+        # Ensure we have a valid URL
+        if not normalized:
+            return url
+            
+        return normalized
+
     async def create_document(
         self,
         context_id: str,
@@ -691,6 +636,9 @@ class DatabaseManager:
         source_type: str,
     ) -> str:
         """Create a new document."""
+        # Normalize URL to prevent duplicates
+        normalized_url = self._normalize_url(url)
+        
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 # Insert document
@@ -706,7 +654,7 @@ class DatabaseManager:
                     RETURNING id
                 """,
                     uuid.UUID(context_id),
-                    url,
+                    normalized_url,
                     title,
                     content,
                     json.dumps(metadata),
@@ -905,6 +853,8 @@ class DatabaseManager:
         char_start: int = None,
         char_end: int = None,
         snippet_type: str = "code_block",
+        summary: str = None,
+        summary_model: str = None,
     ) -> str:
         """Create a new code snippet with embedding and line tracking."""
         async with self.pool.acquire() as conn:
@@ -913,8 +863,8 @@ class DatabaseManager:
 
             snippet_id = await conn.fetchval(
                 """
-                INSERT INTO code_snippets (document_id, context_id, content, language, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type)
-                VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11)
+                INSERT INTO code_snippets (document_id, context_id, content, language, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type, summary, summary_model)
+                VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11, $12, $13)
                 RETURNING id
             """,
                 uuid.UUID(document_id),
@@ -928,6 +878,8 @@ class DatabaseManager:
                 char_start,
                 char_end,
                 snippet_type,
+                summary,
+                summary_model,
             )
 
             return str(snippet_id)
@@ -1236,6 +1188,7 @@ class DatabaseManager:
                     cs.id, cs.content, cs.language, cs.snippet_type, d.title, d.url, 
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata, 
                     d.id as document_id, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    cs.summary, cs.summary_model,
                     1 - (cs.embedding <=> $2::halfvec) as similarity
                 FROM code_snippets cs
                 JOIN documents d ON cs.document_id = d.id
@@ -1260,6 +1213,8 @@ class DatabaseManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
+                    "summary": row["summary"],
+                    "summary_model": row["summary_model"],
                     "metadata": self._filter_metadata_for_search(
                         {
                             **(
@@ -1294,6 +1249,7 @@ class DatabaseManager:
                     cs.id, cs.content, cs.language, cs.snippet_type, d.title, d.url,
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata,
                     d.id as document_id, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    cs.summary, cs.summary_model,
                     ts_rank(to_tsvector('english', cs.content), plainto_tsquery('english', $2)) as score
                 FROM code_snippets cs
                 JOIN documents d ON cs.document_id = d.id
@@ -1317,6 +1273,8 @@ class DatabaseManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),
+                    "summary": row["summary"],
+                    "summary_model": row["summary_model"],
                     "metadata": self._filter_metadata_for_search(
                         {
                             **(

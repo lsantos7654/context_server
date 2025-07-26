@@ -68,10 +68,6 @@ class TextChunker:
                         tokens=self._estimate_tokens(chunk_content),
                         metadata={
                             "chunk_index": i, 
-                            "method": "langchain_recursive",
-                            "chunk_type": self.chunk_type,
-                            "chunk_size": self.chunk_size,
-                            "chunk_overlap": self.chunk_overlap
                         },
                         start_line=start_line,
                         end_line=end_line,

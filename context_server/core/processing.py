@@ -179,11 +179,11 @@ class CodeSnippetExtractor:
                 placeholder = f"[CODE_SNIPPET: language=html, size={len(code_content)}chars, snippet_id={snippet_id}]"
                 replacements.append((start_char, end_char, placeholder))
 
-        # Extract significant inline code (longer than 50 chars to reduce noise)
+        # Extract significant inline code (longer than 100 chars to reduce noise)
         for match in self.inline_code_pattern.finditer(content):
             code_content = match.group(1)
             # Filter out short inline code snippets that are just noise
-            if len(code_content) > 50 and '\n' not in code_content:  # Only substantial single-line inline code
+            if len(code_content) > 100 and '\n' not in code_content:  # Only substantial single-line inline code
                 start_char = match.start()
                 end_char = match.end()
                 start_line = self._char_to_line(start_char, line_char_map)

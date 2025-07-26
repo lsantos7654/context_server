@@ -115,15 +115,21 @@ async def search_context(
             "score": result["score"],
             "metadata": metadata,
             "url": result.get("url"),
-            "chunk_index": result.get("chunk_index"),
             "content_type": result.get("content_type", "chunk"),
-            # Extract useful metadata to top level for easier access
+        }
+        
+        # Add chunk_index only for text chunks, not code snippets
+        if result.get("content_type") == "chunk":
+            formatted_result["chunk_index"] = result.get("chunk_index")
+        
+        # Extract useful metadata to top level for easier access
+        formatted_result.update({
             "page_url": metadata.get("page_url", result.get("url")),
             "source_type": metadata.get("source_type"),
             "base_url": metadata.get("base_url"),
             "is_individual_page": metadata.get("is_individual_page", False),
             "source_title": metadata.get("source_title"),
-        }
+        })
         formatted_results.append(formatted_result)
 
     execution_time_ms = int((time.time() - start_time) * 1000)

@@ -56,12 +56,12 @@ Content:
 Summary:"""
 
         # Prompt for code snippet summarization
-        self.code_summarization_prompt = """Analyze this code snippet and create a concise summary in 80-300 characters. Focus on what the code DOES, not what it is. Include function/class names if present.
+        self.code_summarization_prompt = """Summarize this code in 50-150 characters. Focus on what it does.
 
 Examples:
-- "Configures AsyncWebCrawler with deep crawling strategy and content filtering"
-- "Defines User class with authentication methods and password validation"  
-- "Processes API response data and handles error cases with retry logic"
+- "Configures web crawler with filtering"
+- "User class with auth methods"  
+- "API response handler with retry"
 
 Code:
 {code_content}
