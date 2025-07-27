@@ -48,7 +48,7 @@ async def handle_list_tools() -> list[types.Tool]:
                     "embedding_model": {
                         "type": "string",
                         "description": "Embedding model to use for vector search",
-                        "default": "text-embedding-3-small",
+                        "default": "text-embedding-3-large",
                     },
                 },
                 "required": ["name"],

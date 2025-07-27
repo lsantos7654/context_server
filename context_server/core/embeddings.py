@@ -229,7 +229,7 @@ class EmbeddingService:
         text = " ".join(text.split())
 
         # Truncate if too long (OpenAI has token limits)
-        # For text-embedding-3-small, limit is around 8192 tokens
+        # For text-embedding-3-large, limit is around 8192 tokens
         # Rough approximation: 1 token ≈ 4 characters
         max_chars = 30000  # Conservative limit
         if len(text) > max_chars:

@@ -35,7 +35,7 @@ class ContextCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Context name")
     description: str = Field("", max_length=500, description="Context description")
     embedding_model: str = Field(
-        "text-embedding-3-small", description="Embedding model to use"
+        "text-embedding-3-large", description="Embedding model to use"
     )
 
 

@@ -43,7 +43,7 @@ def search():
         ctx search query "widget traits" docs --format mcp_json      # Compact JSON format like MCP server
         ctx search query "async patterns" docs --format cards      # Detailed card layout (default)
         ctx search code "function definition" my-docs         # Code search with voyage-code-3
-        ctx search code "error handling" docs --language python # Code search with language filter
+        ctx search code "error handling" docs                 # Code search without filters
         ctx search interactive my-docs                        # Interactive mode
     """
     pass
@@ -156,7 +156,6 @@ def query(
 @search.command()
 @click.argument("query")
 @click.argument("context_name", shell_complete=complete_context_name)
-@click.option("--language", help="Filter by programming language (e.g., python, javascript)")
 @click.option("--limit", default=10, help="Maximum number of results")
 @click.option(
     "--format",
@@ -166,7 +165,7 @@ def query(
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def code(query, context_name, language, limit, output_format):
+def code(query, context_name, limit, output_format):
     """Search for code snippets in a context using code-optimized embeddings.
 
     Uses voyage-code-3 embeddings specifically designed for code search.
@@ -175,15 +174,12 @@ def code(query, context_name, language, limit, output_format):
     Args:
         query: Search query focused on code (e.g., 'function definition', 'error handling')
         context_name: Name of context to search within
-        language: Optional programming language filter
         limit: Maximum number of results to return
         output_format: Display format (cards, json, mcp_json)
     """
 
     async def search_code():
         echo_info(f"Searching code in '{context_name}' for: {query}")
-        if language:
-            echo_info(f"Language filter: {language}")
 
         client = APIClient(timeout=60.0)
         success, response = await client.post(
@@ -200,27 +196,13 @@ def code(query, context_name, language, limit, output_format):
             total = response["total"]
             execution_time = response["execution_time_ms"]
 
-            # Apply language filter if specified
-            if language:
-                results = [r for r in results if r.get("language", "").lower() == language.lower()]
-                total = len(results)
-
             if output_format == "json":
-                filtered_response = {
-                    **response,
-                    "results": results,
-                    "total": total,
-                    "language_filter": language,
-                }
-                console.print(filtered_response)
+                console.print(response)
                 return
 
             if not results:
                 echo_info("No code snippets found")
-                if language:
-                    echo_info(f"Try removing the language filter ({language}) or using a different query")
-                else:
-                    echo_info("Try a different query or check if code snippets exist in this context")
+                echo_info("Try a different query or check if code snippets exist in this context")
                 return
 
             echo_success(f"Found {total} code snippet(s) in {execution_time}ms")
@@ -696,10 +678,9 @@ def display_code_results_cards(results: list):
     for i, result in enumerate(results, 1):
         # Create card header
         score = result['score']
-        language = result.get("language", "text")
         snippet_type = result.get("snippet_type", "code_block")
         
-        header = f"Code Result {i} • Score: {score:.3f} • Language: {language} • Type: {snippet_type}"
+        header = f"Code Result {i} • Score: {score:.3f} • Type: {snippet_type}"
         
         # Create card content
         card_content = []
@@ -730,7 +711,8 @@ def display_code_results_cards(results: list):
                 content = content[:800] + "\n... (truncated)"
             
             try:
-                # Use syntax highlighting for the code
+                # Use syntax highlighting for the code - auto-detect language from content
+                language = result.get("language", "text")
                 syntax = Syntax(content, language, theme="monokai", line_numbers=True, word_wrap=True)
                 card_content.append("")  # Let Rich handle the syntax display separately
             except Exception:
@@ -763,7 +745,6 @@ def display_code_results_table(results: list):
     
     table = Table(title="Code Search Results")
     table.add_column("Score", style="bold green", width=8)
-    table.add_column("Language", style="cyan", width=12)
     table.add_column("Type", style="yellow", width=12)
     table.add_column("Title", style="bold", width=30)
     table.add_column("Lines", style="blue", width=10)
@@ -771,7 +752,6 @@ def display_code_results_table(results: list):
 
     for result in results:
         score = f"{result['score']:.3f}"
-        language = result.get("language", "text")
         snippet_type = result.get("snippet_type", "code_block")
         
         # Extract title (truncate if too long)
@@ -786,7 +766,7 @@ def display_code_results_table(results: list):
         content = result.get("content", "")
         preview = content[:100] + ("..." if len(content) > 100 else "")
         
-        table.add_row(score, language, snippet_type, title, line_info, preview)
+        table.add_row(score, snippet_type, title, line_info, preview)
 
     console.print(table)
     console.print()
@@ -798,7 +778,7 @@ def display_code_results_table(results: list):
         language = first_result.get("language", "text")
         
         console.print(f"[bold]Top Result Preview:[/bold]")
-        console.print(f"[dim]Language: {language} | Score: {first_result['score']:.3f}[/dim]")
+        console.print(f"[dim]Score: {first_result['score']:.3f}[/dim]")
         
         # Truncate very long code snippets
         if len(content) > 1000:
@@ -818,50 +798,3 @@ def display_code_results_table(results: list):
 query_cmd = query
 
 
-@search.command()
-@click.argument("context_name", shell_complete=complete_context_name)
-@click.argument("query_text")
-@click.option("--limit", "-l", default=5, help="Number of suggestions")
-@rich_help_option("-h", "--help")
-def suggest(context_name, query_text, limit):
-    """Get search query suggestions.
-
-    Args:
-        context_name: Context to search in
-        query_text: Query text to get suggestions for
-        limit: Maximum number of suggestions
-    """
-    import asyncio
-
-    from rich.table import Table
-
-    async def get_suggestions():
-        client = APIClient()
-        success, response = await client.get(
-            f"contexts/{context_name}/search/suggestions",
-            {"query": query_text, "limit": limit},
-        )
-
-        if success:
-            suggestions = response.get("suggestions", [])
-
-            if not suggestions:
-                echo_info("No suggestions available")
-                return
-
-            table = Table(title=f"Search Suggestions for '{query_text}'")
-            table.add_column("#", style="cyan", width=3)
-            table.add_column("Suggestion", style="white")
-            table.add_column("Score", style="yellow", width=8)
-
-            for i, suggestion in enumerate(suggestions, 1):
-                score = suggestion.get("score", 0.0)
-                text = suggestion.get("text", "")
-                table.add_row(str(i), text, f"{score:.3f}")
-
-            console.print(table)
-            echo_info(f"Found {len(suggestions)} suggestions")
-        else:
-            echo_error(f"Failed to get suggestions: {response}")
-
-    asyncio.run(get_suggestions())

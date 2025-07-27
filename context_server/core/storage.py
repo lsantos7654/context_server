@@ -1622,6 +1622,83 @@ class DatabaseManager:
                 for row in rows
             ]
 
+    async def get_chunk_by_id(
+        self, chunk_id: str, context_id: str = None
+    ) -> dict | None:
+        """Get a specific chunk by ID with full content and metadata."""
+        async with self.pool.acquire() as conn:
+            query = """
+                SELECT
+                    c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
+                    c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
+                    c.start_line, c.end_line, c.char_start, c.char_end, c.tokens,
+                    LENGTH(d.content) as parent_page_size,
+                    d.chunk_count as parent_total_chunks,
+                    c.created_at, c.context_id
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                WHERE c.id = $1
+            """
+            params = [uuid.UUID(chunk_id)]
+
+            if context_id:
+                query += " AND c.context_id = $2"
+                params.append(uuid.UUID(context_id))
+
+            row = await conn.fetchrow(query, *params)
+
+            if not row:
+                return None
+
+            # Get code snippets that overlap with this specific chunk
+            chunk_code_snippets = await self._get_code_snippets_for_chunk(
+                str(row["document_id"]), 
+                str(row["context_id"]),
+                row.get("start_line"), 
+                row.get("end_line")
+            )
+
+            return {
+                "id": str(row["id"]),
+                "document_id": str(row["document_id"]),
+                "content": row["content"],
+                "summary": row["summary"],
+                "summary_model": row["summary_model"],
+                "title": row["title"],
+                "url": row["url"],
+                "tokens": row["tokens"],
+                "metadata": self._filter_metadata_for_search(
+                    {
+                        **(
+                            json.loads(row["doc_metadata"])
+                            if row["doc_metadata"]
+                            else {}
+                        ),
+                        **(
+                            json.loads(row["chunk_metadata"])
+                            if row["chunk_metadata"]
+                            else {}
+                        ),
+                        "document_id": str(row["document_id"]),
+                        "parent_page_size": row["parent_page_size"],
+                        "parent_total_chunks": row["parent_total_chunks"],
+                        "chunk_index": row["chunk_index"],
+                        "code_snippets": chunk_code_snippets,
+                        "total_code_snippets": len(chunk_code_snippets),
+                    }
+                ),
+                "chunk_index": row["chunk_index"],
+                "start_line": row.get("start_line"),
+                "end_line": row.get("end_line"),
+                "char_start": row.get("char_start"),
+                "char_end": row.get("char_end"),
+                "created_at": row["created_at"].isoformat()
+                if row["created_at"]
+                else None,
+                "content_type": "chunk",
+                "has_summary": bool(row["summary"]),
+            }
+
     async def cleanup_old_jobs(self, days: int = 7) -> int:
         """Clean up completed jobs older than specified days."""
         async with self.pool.acquire() as conn:

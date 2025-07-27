@@ -482,3 +482,30 @@ async def get_code_snippet(
             f"Failed to get code snippet {snippet_id} from context {context_name}: {e}"
         )
         raise HTTPException(status_code=500, detail="Failed to get code snippet")
+
+
+@router.get("/contexts/{context_name}/chunks/{chunk_id}")
+async def get_chunk(
+    context_name: str, chunk_id: str, db: DatabaseManager = Depends(get_db_manager)
+):
+    """Get a specific chunk by ID with full content and metadata."""
+    try:
+        # Get context
+        context = await db.get_context_by_name(context_name)
+        if not context:
+            raise HTTPException(status_code=404, detail="Context not found")
+
+        # Get chunk
+        chunk = await db.get_chunk_by_id(chunk_id, context["id"])
+        if not chunk:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+
+        return chunk
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to get chunk {chunk_id} from context {context_name}: {e}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to get chunk")

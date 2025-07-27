@@ -4,9 +4,11 @@ import asyncio
 from datetime import datetime
 
 import click
+import httpx
 from rich.console import Console
 from rich.table import Table
 
+from ..config import get_api_url
 from ..help_formatter import rich_help_option
 from ..utils import (
     APIClient,
@@ -24,7 +26,7 @@ console = Console()
 @click.group()
 @rich_help_option("-h", "--help")
 def context():
-    """Manage documentation contexts for organizing documents.
+    """Manage documentation contexts and their documents.
 
     Contexts are containers that group related documents together.
     Each context maintains its own search index and can contain
@@ -33,6 +35,8 @@ def context():
     Examples:
         ctx context create my-docs                # Create new context
         ctx context list                          # List all contexts
+        ctx context documents my-docs             # List documents in context
+        ctx context count my-docs                 # Count documents in context
         ctx context info my-docs                  # Show context details
         ctx context delete my-docs --force       # Delete context
     """
@@ -351,3 +355,200 @@ def merge(source_context, target_context, strategy):
             echo_error(f"Failed to merge contexts: {response}")
 
     asyncio.run(merge_contexts())
+
+
+@context.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.option("--offset", default=0, help="Number of documents to skip")
+@click.option("--limit", default=50, help="Maximum number of documents to show")
+@click.option(
+    "--format",
+    "output_format",
+    default="table",
+    type=click.Choice(["table", "json"]),
+    help="Output format",
+)
+@rich_help_option("-h", "--help")
+def documents(context_name, offset, limit, output_format):
+    """List documents in a context.
+
+    Args:
+        context_name: Context name
+        offset: Number of documents to skip
+        limit: Maximum documents to show
+        output_format: Output format (table or json)
+    """
+
+    async def list_documents():
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    get_api_url(f"contexts/{context_name}/documents"),
+                    params={"offset": offset, "limit": limit},
+                    timeout=30.0,
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    documents = result["documents"]
+                    total = result["total"]
+
+                    if output_format == "json":
+                        console.print(result)
+                    else:
+                        if not documents:
+                            echo_info(f"No documents found in context '{context_name}'")
+                            echo_info(
+                                "Extract some with: ctx extract <source> <context>"
+                            )
+                            return
+
+                        table = Table(
+                            title=f"Documents in '{context_name}' ({total} total)"
+                        )
+                        table.add_column("Title")
+                        table.add_column("URL")
+                        table.add_column("Chunks")
+                        table.add_column("Indexed")
+
+                        for doc in documents:
+                            # Truncate long URLs
+                            url = doc["url"]
+                            if len(url) > 50:
+                                url = url[:47] + "..."
+
+                            table.add_row(
+                                doc["title"][:50]
+                                + ("..." if len(doc["title"]) > 50 else ""),
+                                url,
+                                str(doc["chunks"]),
+                                str(doc["indexed_at"])[:19],  # Truncate timestamp
+                            )
+
+                        console.print(table)
+
+                        if total > offset + limit:
+                            echo_info(
+                                f"Showing {offset + 1}-{min(offset + limit, total)} of {total} documents"
+                            )
+                            echo_info(f"Use --offset {offset + limit} to see more")
+
+                elif response.status_code == 404:
+                    echo_error(f"Context '{context_name}' not found")
+                else:
+                    echo_error(
+                        f"Failed to list documents: {response.status_code} - {response.text}"
+                    )
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: ctx server up")
+
+    asyncio.run(list_documents())
+
+
+@context.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.option(
+    "--source-type",
+    type=click.Choice(["url", "file"]),
+    help="Filter by source type",
+)
+@click.option("--since", help="Show documents indexed since date (YYYY-MM-DD)")
+def count(context_name, source_type, since):
+    """Count documents in a context.
+
+    Args:
+        context_name: Context name
+        source_type: Filter by source type
+        since: Show documents since date
+    """
+
+    async def count_documents():
+        try:
+            async with httpx.AsyncClient() as client:
+                params = {}
+                if source_type:
+                    params["source_type"] = source_type
+                if since:
+                    params["since"] = since
+
+                response = await client.get(
+                    get_api_url(f"contexts/{context_name}/documents"),
+                    params={**params, "limit": 1},  # We just need the total
+                    timeout=30.0,
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    total = result["total"]
+
+                    filters = []
+                    if source_type:
+                        filters.append(f"source_type={source_type}")
+                    if since:
+                        filters.append(f"since={since}")
+
+                    filter_text = f" ({', '.join(filters)})" if filters else ""
+                    echo_info(
+                        f"Context '{context_name}' contains {total} document(s){filter_text}"
+                    )
+
+                elif response.status_code == 404:
+                    echo_error(f"Context '{context_name}' not found")
+                else:
+                    echo_error(
+                        f"Failed to count documents: {response.status_code} - {response.text}"
+                    )
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: ctx server up")
+
+    asyncio.run(count_documents())
+
+
+@context.command()
+@click.argument("context_name", shell_complete=complete_context_name)
+@click.argument("document_ids", nargs=-1, required=True)
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def delete_documents(context_name, document_ids, force):
+    """Delete documents from a context.
+
+    Args:
+        context_name: Context name
+        document_ids: Document IDs to delete
+        force: Skip confirmation prompt
+    """
+    if not force and not confirm_action(
+        f"This will permanently delete {len(document_ids)} document(s). Continue?",
+        default=False,
+    ):
+        echo_info("Document deletion cancelled")
+        return
+
+    async def delete_documents():
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(
+                    get_api_url(f"contexts/{context_name}/documents"),
+                    json={"document_ids": list(document_ids)},
+                    timeout=30.0,
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    deleted_count = result["deleted_count"]
+                    echo_success(f"Deleted {deleted_count} document(s) successfully!")
+                elif response.status_code == 404:
+                    echo_error(f"Context '{context_name}' not found")
+                else:
+                    echo_error(
+                        f"Failed to delete documents: {response.status_code} - {response.text}"
+                    )
+
+        except httpx.RequestError as e:
+            echo_error(f"Connection error: {e}")
+            echo_info("Make sure the server is running: ctx server up")
+
+    asyncio.run(delete_documents())

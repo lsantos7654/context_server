@@ -21,7 +21,7 @@ class ContextServerTools:
         self,
         name: str,
         description: str = "",
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str = "text-embedding-3-large",
     ) -> dict[str, Any]:
         """Create a new context for storing documentation.
 
