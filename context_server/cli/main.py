@@ -106,13 +106,6 @@ def register_commands():
     # Remove redundant 'ctx code' command group
 
     try:
-        from .commands.job import job
-
-        cli.add_command(job)
-    except ImportError as e:
-        echo_error(f"Failed to load job commands: {e}")
-
-    try:
         from .commands.get import get
 
         cli.add_command(get)

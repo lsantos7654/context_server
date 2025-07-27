@@ -128,9 +128,6 @@ class CodeSnippetExtractor:
             start_line = self._char_to_line(start_char, line_char_map)
             end_line = self._char_to_line(end_char, line_char_map)
 
-            # Generate unique snippet ID for this instance
-            snippet_id = str(uuid.uuid4())
-
             snippet = {
                 "content": code_content,
                 "language": language,
@@ -141,12 +138,11 @@ class CodeSnippetExtractor:
                 "type": "code_block",
                 "source_url": url,
                 "source_title": title,
-                "snippet_id": snippet_id,  # Add the unique ID
             }
             snippets.append(snippet)
 
             # Create placeholder for inline replacement
-            placeholder = f"[CODE_SNIPPET: language={language}, size={len(code_content)}chars, snippet_id={snippet_id}]"
+            placeholder = f"[CODE_SNIPPET: size={len(code_content)}chars]"
             replacements.append((start_char, end_char, placeholder))
 
         # Extract and handle HTML code blocks
@@ -158,9 +154,6 @@ class CodeSnippetExtractor:
                 start_line = self._char_to_line(start_char, line_char_map)
                 end_line = self._char_to_line(end_char, line_char_map)
 
-                # Generate unique snippet ID for this instance
-                snippet_id = str(uuid.uuid4())
-
                 snippet = {
                     "content": code_content,
                     "language": "html",  # HTML-embedded code
@@ -171,12 +164,11 @@ class CodeSnippetExtractor:
                     "type": "html_code_block",
                     "source_url": url,
                     "source_title": title,
-                    "snippet_id": snippet_id,
                 }
                 snippets.append(snippet)
 
                 # Create placeholder for inline replacement
-                placeholder = f"[CODE_SNIPPET: language=html, size={len(code_content)}chars, snippet_id={snippet_id}]"
+                placeholder = f"[CODE_SNIPPET: size={len(code_content)}chars]"
                 replacements.append((start_char, end_char, placeholder))
 
         # Extract significant inline code (longer than 100 chars to reduce noise)
@@ -191,9 +183,6 @@ class CodeSnippetExtractor:
                 start_line = self._char_to_line(start_char, line_char_map)
                 end_line = start_line
 
-                # Generate unique snippet ID for this instance
-                snippet_id = str(uuid.uuid4())
-
                 snippet = {
                     "content": code_content,
                     "language": "text",  # Unknown language for inline code
@@ -204,12 +193,11 @@ class CodeSnippetExtractor:
                     "type": "inline_code",
                     "source_url": url,
                     "source_title": title,
-                    "snippet_id": snippet_id,
                 }
                 snippets.append(snippet)
 
                 # Create placeholder for inline replacement
-                placeholder = f"[CODE_SNIPPET: language=text, size={len(code_content)}chars, snippet_id={snippet_id}]"
+                placeholder = f"[CODE_SNIPPET: size={len(code_content)}chars]"
                 replacements.append((start_char, end_char, placeholder))
 
         # Apply all replacements in reverse order to maintain character positions
@@ -784,16 +772,16 @@ class DocumentProcessor:
         # We need to update those placeholders with proper summaries
 
         for snippet in code_snippet_data:
-            snippet_id = snippet.get("snippet_id")
-            if not snippet_id:
-                continue  # Skip if no snippet_id (shouldn't happen with new logic)
+            content = snippet.get('content', '')
+            if not content:
+                continue  # Skip if no content
 
             # Generate summary using the same logic as the storage layer
             summary = db_manager._generate_code_summary(snippet)
 
             # Find and replace the placeholder in cleaned_content
-            old_placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, snippet_id={snippet_id}]"
-            new_placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, summary=\"{summary}\", snippet_id={snippet_id}]"
+            old_placeholder = f"[CODE_SNIPPET: size={len(content)}chars]"
+            new_placeholder = f"[CODE_SNIPPET: size={len(content)}chars, summary=\"{summary}\"]"
 
             cleaned_content = cleaned_content.replace(old_placeholder, new_placeholder)
 

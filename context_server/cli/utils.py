@@ -270,28 +270,3 @@ def complete_context_name(ctx, param, incomplete):
     return [name for name in context_names if name.startswith(incomplete)]
 
 
-def get_active_job_ids_sync() -> list[str]:
-    """Get active job IDs synchronously."""
-    try:
-        import asyncio
-
-        async def get_job_ids():
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(get_api_url("jobs/active"))
-                    if response.status_code == 200:
-                        data = response.json()
-                        return [job["id"] for job in data.get("active_jobs", [])]
-                    return []
-            except Exception:
-                return []
-
-        return asyncio.run(get_job_ids())
-    except Exception:
-        return []
-
-
-def complete_job_id(ctx, param, incomplete):
-    """Complete active job IDs by fetching from server."""
-    job_ids = get_active_job_ids_sync()
-    return [job_id for job_id in job_ids if job_id.startswith(incomplete)]

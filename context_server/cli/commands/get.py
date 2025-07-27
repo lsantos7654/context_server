@@ -225,9 +225,10 @@ def _display_chunk_card(chunk):
     info_lines.append(f"[bold cyan]Document ID:[/bold cyan] {document_id}")
     info_lines.append(f"[bold cyan]Chunk Index:[/bold cyan] {chunk_index}")
     info_lines.append(f"[bold cyan]Tokens:[/bold cyan] {tokens}")
-    info_lines.append(
-        f"[bold cyan]Location:[/bold cyan] Lines {start_line}-{end_line} ({char_start}-{char_end})"
-    )
+    if char_start and char_end:
+        info_lines.append(
+            f"[bold cyan]Location:[/bold cyan] Characters {char_start}-{char_end}"
+        )
 
     if title:
         info_lines.append(f"[bold cyan]Document:[/bold cyan] {title}")
@@ -282,7 +283,6 @@ def _display_code_snippet_card(snippet):
     """Display a single code snippet as a rich card."""
     # Extract metadata
     snippet_id = snippet.get("id", "N/A")
-    language = snippet.get("language", "text")
     start_line = snippet.get("start_line", 0)
     end_line = snippet.get("end_line", 0)
     char_start = snippet.get("char_start", 0)
@@ -295,19 +295,14 @@ def _display_code_snippet_card(snippet):
     doc_url = snippet.get("document_url", "")
 
     # Calculate line count
-    line_count = (
-        max(1, end_line - start_line + 1)
-        if start_line and end_line
-        else len(content.split("\n"))
-    )
+    line_count = len(content.split("\n")) if content else 0
 
     # Create info section
     info_lines = []
     info_lines.append(f"[bold cyan]ID:[/bold cyan] {snippet_id}")
     info_lines.append(f"[bold cyan]Type:[/bold cyan] {snippet_type}")
-    info_lines.append(
-        f"[bold cyan]Location:[/bold cyan] Lines {start_line}-{end_line} ({char_start}-{char_end})"
-    )
+    info_lines.append(f"[bold cyan]Lines:[/bold cyan] {line_count}")
+    info_lines.append(f"[bold cyan]Size:[/bold cyan] {len(content)} characters")
 
     if doc_title:
         info_lines.append(f"[bold cyan]Document:[/bold cyan] {doc_title}")
@@ -320,15 +315,14 @@ def _display_code_snippet_card(snippet):
     code_content = None
     if content:
         try:
-            # Use syntax highlighting for known languages
-            if language == "text":
-                # Try to detect language from content
-                if "import " in content and ("def " in content or "class " in content):
-                    language = "python"
-                elif "function " in content or "const " in content or "let " in content:
-                    language = "javascript"
-                elif "#!/bin/bash" in content or "#!/bin/sh" in content:
-                    language = "bash"
+            # Try to detect language from content for syntax highlighting
+            language = "text"
+            if "import " in content and ("def " in content or "class " in content):
+                language = "python"
+            elif "function " in content or "const " in content or "let " in content:
+                language = "javascript"
+            elif "#!/bin/bash" in content or "#!/bin/sh" in content:
+                language = "bash"
 
             code_content = Syntax(content, language, theme="monokai", line_numbers=True)
         except Exception:

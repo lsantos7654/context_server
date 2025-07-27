@@ -131,7 +131,7 @@ def extract(
                         await wait_for_extraction(job_id)
                     else:
                         echo_info("Extraction running in background")
-                        echo_info(f"Check status with: ctx job status {job_id}")
+                        echo_info(f"Job ID: {job_id}")
 
                 elif response.status_code == 404:
                     echo_error(f"Context '{context_name}' not found")
@@ -243,7 +243,7 @@ async def wait_for_extraction(
             await asyncio.sleep(check_interval)
 
         echo_warning("Extraction timed out, but may still be running in the background")
-        echo_info(f"Check status with: ctx job status {job_id}")
+        echo_info(f"Job ID: {job_id}")
 
 
 async def handle_local_extraction(

@@ -27,6 +27,7 @@ class MarkdownCleaner:
             r'(?i)(?:^|\n)share this.*$',
             r'(?i)(?:^|\n)feedback\s*[:\-]?.*$',
             r'(?i)(?:^|\n)see also\s*[:\-]?\s*$',  # Empty see also sections
+            r'(?i)\n?copy\s*$',  # Copy button text
         ]
         
         # Patterns for cleaning up markdown artifacts

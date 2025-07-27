@@ -238,11 +238,9 @@ class DatabaseManager:
                 "summary": display_content,
                 "score": result.get("score"),
                 "url": result.get("url"),
-                "has_summary": bool(result.get("summary")),
                 "code_snippets_count": code_snippets_count,
                 "code_snippet_ids": code_snippet_ids,
                 "content_type": result.get("content_type", "chunk"),
-                "chunk_index": result.get("chunk_index"),
             }
             compact_results.append(compact_result)
         
@@ -271,17 +269,18 @@ class DatabaseManager:
             if len(display_content) > 500:
                 display_content = display_content[:500] + "..."
             
+            # Calculate line count from content
+            line_count = len(display_content.split('\n')) if display_content else 0
+            
             compact_result = {
                 "id": result.get("id"),
                 "document_id": result.get("document_id"),
                 "title": result.get("title"),
                 "content": display_content,
-                "language": result.get("language", "text"),
                 "snippet_type": result.get("snippet_type", "code_block"),
                 "score": result.get("score"),
                 "url": result.get("url"),
-                "start_line": result.get("start_line"),
-                "end_line": result.get("end_line"),
+                "line_count": line_count,
                 "content_type": "code_snippet",
             }
             compact_results.append(compact_result)

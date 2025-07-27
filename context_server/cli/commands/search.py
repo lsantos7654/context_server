@@ -542,10 +542,10 @@ def display_results_rich(
                 if len(snippet.get("preview", "")) > 60:
                     preview += "..."
 
-                line_info = (
-                    f"L{start_line}-{end_line}" if start_line and end_line else ""
-                )
-                title_text += f"\n[cyan]  {snippet_id}[/cyan] [yellow]{snippet_type}[/yellow] {line_info}"
+                # Show preview length instead of line numbers
+                preview_length = len(snippet.get("preview", ""))
+                size_info = f"({preview_length} chars)" if preview_length else ""
+                title_text += f"\n[cyan]  {snippet_id}[/cyan] [yellow]{snippet_type}[/yellow] {size_info}"
                 if preview:
                     title_text += f"\n[dim]    {preview}[/dim]"
 
@@ -694,15 +694,12 @@ def display_code_results_cards(results: list):
         if url:
             card_content.append(f"[dim blue]{url}[/dim blue]")
         
-        # Line information
-        start_line = result.get("start_line", "")
-        end_line = result.get("end_line", "")
-        if start_line and end_line:
-            card_content.append(f"[dim cyan]Lines: {start_line}-{end_line}[/dim cyan]")
-        
         # Code content with syntax highlighting
         content = result.get("content", "")
         if content:
+            # Show line count
+            line_count = result.get("line_count", len(content.split('\n')))
+            card_content.append(f"[dim cyan]Lines: {line_count}[/dim cyan]")
             card_content.append("")  # Empty line
             card_content.append("[bold white]Code:[/bold white]")
             
@@ -711,8 +708,15 @@ def display_code_results_cards(results: list):
                 content = content[:800] + "\n... (truncated)"
             
             try:
-                # Use syntax highlighting for the code - auto-detect language from content
-                language = result.get("language", "text")
+                # Try to detect language from content for syntax highlighting
+                language = "text"
+                if "import " in content and ("def " in content or "class " in content):
+                    language = "python"
+                elif "function " in content or "const " in content or "let " in content:
+                    language = "javascript"
+                elif "#!/bin/bash" in content or "#!/bin/sh" in content:
+                    language = "bash"
+                
                 syntax = Syntax(content, language, theme="monokai", line_numbers=True, word_wrap=True)
                 card_content.append("")  # Let Rich handle the syntax display separately
             except Exception:
@@ -757,13 +761,12 @@ def display_code_results_table(results: list):
         # Extract title (truncate if too long)
         title = result.get("title", "")[:28] + ("..." if len(result.get("title", "")) > 28 else "")
         
-        # Format line numbers
-        start_line = result.get("start_line", "")
-        end_line = result.get("end_line", "")
-        line_info = f"{start_line}-{end_line}" if start_line and end_line else "N/A"
+        # Format line count
+        content = result.get("content", "")
+        line_count = result.get("line_count", len(content.split('\n')) if content else 0)
+        line_info = f"{line_count}" if line_count else "N/A"
         
         # Create code preview (first 100 chars)
-        content = result.get("content", "")
         preview = content[:100] + ("..." if len(content) > 100 else "")
         
         table.add_row(score, snippet_type, title, line_info, preview)
@@ -775,7 +778,6 @@ def display_code_results_table(results: list):
     if results:
         first_result = results[0]
         content = first_result.get("content", "")
-        language = first_result.get("language", "text")
         
         console.print(f"[bold]Top Result Preview:[/bold]")
         console.print(f"[dim]Score: {first_result['score']:.3f}[/dim]")
@@ -785,6 +787,15 @@ def display_code_results_table(results: list):
             content = content[:1000] + "\n... (truncated)"
         
         try:
+            # Try to detect language from content for syntax highlighting
+            language = "text"
+            if "import " in content and ("def " in content or "class " in content):
+                language = "python"
+            elif "function " in content or "const " in content or "let " in content:
+                language = "javascript"
+            elif "#!/bin/bash" in content or "#!/bin/sh" in content:
+                language = "bash"
+            
             syntax = Syntax(content, language, theme="monokai", line_numbers=True)
             console.print(syntax)
         except Exception:
