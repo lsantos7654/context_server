@@ -260,8 +260,8 @@ class DocumentProcessor:
         self.embedding_service = embedding_service or EmbeddingService()
         self.code_embedding_service = code_embedding_service or VoyageEmbeddingService()
         self.summarization_service = summarization_service or SummarizationService()
-        self.text_chunker = TextChunker(chunk_size=1500, chunk_overlap=300, chunk_type="text")
-        self.code_chunker = TextChunker(chunk_size=1000, chunk_overlap=200, chunk_type="code")
+        self.text_chunker = TextChunker(chunk_size=2500, chunk_overlap=500, chunk_type="text")
+        self.code_chunker = TextChunker(chunk_size=1800, chunk_overlap=360, chunk_type="code")
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
 
