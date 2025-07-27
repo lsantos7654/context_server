@@ -76,17 +76,16 @@ class CodeSnippetExtractor:
             r"```(\w*)\n(.*?)\n```", re.DOTALL | re.MULTILINE
         )
         self.inline_code_pattern = re.compile(r"`([^`\n]+)`")
-        
+
         # Additional patterns for various code block formats
         self.html_code_pattern = re.compile(
             r"<(?:pre|code)[^>]*>(.*?)</(?:pre|code)>", re.DOTALL | re.IGNORECASE
         )
-        self.indented_code_pattern = re.compile(
-            r"^(?: {4}|\t)(.+)$", re.MULTILINE
-        )
+        self.indented_code_pattern = re.compile(r"^(?: {4}|\t)(.+)$", re.MULTILINE)
         # Pattern for common code indicators followed by blocks
         self.code_indicator_pattern = re.compile(
-            r"(?:Example|Code|Sample|Usage):\s*\n\n((?:(?:    |\t).*\n?)+)", re.MULTILINE
+            r"(?:Example|Code|Sample|Usage):\s*\n\n((?:(?:    |\t).*\n?)+)",
+            re.MULTILINE,
         )
 
     def extract_code_snippets(
@@ -99,6 +98,7 @@ class CodeSnippetExtractor:
             Tuple of (code_snippets_list, content_with_inline_placeholders)
         """
         import uuid
+
         snippets = []
         lines = content.splitlines()
 
@@ -116,11 +116,11 @@ class CodeSnippetExtractor:
         for match in self.markdown_code_pattern.finditer(content):
             language = match.group(1) or "text"
             code_content = match.group(2).strip()
-            
+
             # Skip very short code blocks (likely just noise)
             if len(code_content) < 20:
                 continue
-                
+
             start_char = match.start()
             end_char = match.end()
 
@@ -183,7 +183,9 @@ class CodeSnippetExtractor:
         for match in self.inline_code_pattern.finditer(content):
             code_content = match.group(1)
             # Filter out short inline code snippets that are just noise
-            if len(code_content) > 100 and '\n' not in code_content:  # Only substantial single-line inline code
+            if (
+                len(code_content) > 100 and "\n" not in code_content
+            ):  # Only substantial single-line inline code
                 start_char = match.start()
                 end_char = match.end()
                 start_line = self._char_to_line(start_char, line_char_map)
@@ -213,7 +215,9 @@ class CodeSnippetExtractor:
         # Apply all replacements in reverse order to maintain character positions
         cleaned_content = content
         for start_char, end_char, placeholder in reversed(sorted(replacements)):
-            cleaned_content = cleaned_content[:start_char] + placeholder + cleaned_content[end_char:]
+            cleaned_content = (
+                cleaned_content[:start_char] + placeholder + cleaned_content[end_char:]
+            )
 
         # Note: Skipping indented code blocks for now as they're harder to position accurately
         # They can be handled in a future enhancement if needed
@@ -235,33 +239,43 @@ class CodeSnippetExtractor:
     def _clean_whitespace_artifacts(self, content: str) -> str:
         """Clean up whitespace artifacts left by code block removal."""
         # Remove multiple consecutive empty lines
-        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
-        
+        content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
+
         # Remove trailing whitespace from lines
-        content = re.sub(r'[ \t]+$', '', content, flags=re.MULTILINE)
-        
+        content = re.sub(r"[ \t]+$", "", content, flags=re.MULTILINE)
+
         # Remove lines that are just whitespace
-        content = re.sub(r'^\s*$\n', '', content, flags=re.MULTILINE)
-        
+        content = re.sub(r"^\s*$\n", "", content, flags=re.MULTILINE)
+
         # Clean up markdown artifacts left by code removal
-        content = re.sub(r'^\s*```\s*$', '', content, flags=re.MULTILINE)  # Orphaned code fence
-        content = re.sub(r'^\s*\*\s*$', '', content, flags=re.MULTILINE)   # Orphaned bullet points
-        
+        content = re.sub(
+            r"^\s*```\s*$", "", content, flags=re.MULTILINE
+        )  # Orphaned code fence
+        content = re.sub(
+            r"^\s*\*\s*$", "", content, flags=re.MULTILINE
+        )  # Orphaned bullet points
+
         return content.strip()
 
 
 class DocumentProcessor:
     """Processes documents using existing extraction pipeline and creates embeddings."""
 
-    def __init__(self, 
-                 embedding_service: EmbeddingService | None = None, 
-                 code_embedding_service: VoyageEmbeddingService | None = None,
-                 summarization_service: SummarizationService | None = None):
+    def __init__(
+        self,
+        embedding_service: EmbeddingService | None = None,
+        code_embedding_service: VoyageEmbeddingService | None = None,
+        summarization_service: SummarizationService | None = None,
+    ):
         self.embedding_service = embedding_service or EmbeddingService()
         self.code_embedding_service = code_embedding_service or VoyageEmbeddingService()
         self.summarization_service = summarization_service or SummarizationService()
-        self.text_chunker = TextChunker(chunk_size=2500, chunk_overlap=500, chunk_type="text")
-        self.code_chunker = TextChunker(chunk_size=1800, chunk_overlap=360, chunk_type="code")
+        self.text_chunker = TextChunker(
+            chunk_size=2500, chunk_overlap=500, chunk_type="text"
+        )
+        self.code_chunker = TextChunker(
+            chunk_size=1800, chunk_overlap=360, chunk_type="code"
+        )
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
 
@@ -382,7 +396,9 @@ class DocumentProcessor:
                             ),
                             timeout=processing_timeout,
                         )
-                        documents.extend(processed_documents)  # Now extends with list of 3 documents
+                        documents.extend(
+                            processed_documents
+                        )  # Now extends with list of 3 documents
 
                         logger.info(
                             f"Successfully processed page {idx + 1}/{total_pages}: {page_title}"
@@ -539,14 +555,16 @@ class DocumentProcessor:
             code_snippets_content = ""
             if code_snippet_data:
                 # Combine all code snippets into a single document
-                code_snippets_content = "\n\n".join([
-                    f"```{snippet['language']}\n{snippet['content']}\n```"
-                    for snippet in code_snippet_data
-                ])
+                code_snippets_content = "\n\n".join(
+                    [
+                        f"```{snippet['language']}\n{snippet['content']}\n```"
+                        for snippet in code_snippet_data
+                    ]
+                )
 
             code_processed_chunks = []
             code_processed_snippets = []
-            
+
             if code_snippets_content:
                 # Chunk the code snippets document with code embeddings for chunks table
                 code_chunks = self.code_chunker.chunk_text(code_snippets_content)
@@ -555,8 +573,10 @@ class DocumentProcessor:
                 )
 
                 # Process individual code snippets with code embeddings for code_snippets table
-                code_processed_snippets = await self._process_code_snippets_with_embeddings(
-                    code_snippet_data, url, title
+                code_processed_snippets = (
+                    await self._process_code_snippets_with_embeddings(
+                        code_snippet_data, url, title
+                    )
                 )
 
             # Document 3: Cleaned markdown with code snippet placeholders
@@ -572,34 +592,40 @@ class DocumentProcessor:
             documents = []
 
             # 1. Original document
-            documents.append(ProcessedDocument(
-                url=url,
-                title=f"{title} (Original)",
-                content=content,
-                chunks=original_processed_chunks,
-                code_snippets=[],
-                metadata={**metadata, "document_type": "original"},
-            ))
+            documents.append(
+                ProcessedDocument(
+                    url=url,
+                    title=f"{title} (Original)",
+                    content=content,
+                    chunks=original_processed_chunks,
+                    code_snippets=[],
+                    metadata={**metadata, "document_type": "original"},
+                )
+            )
 
             # 2. Code snippets document
-            documents.append(ProcessedDocument(
-                url=url,
-                title=f"{title} (Code Snippets)",
-                content=code_snippets_content,
-                chunks=code_processed_chunks,  # Chunked code content with text embeddings
-                code_snippets=code_processed_snippets,  # Individual code snippets with code embeddings
-                metadata={**metadata, "document_type": "code_snippets"},
-            ))
+            documents.append(
+                ProcessedDocument(
+                    url=url,
+                    title=f"{title} (Code Snippets)",
+                    content=code_snippets_content,
+                    chunks=code_processed_chunks,  # Chunked code content with text embeddings
+                    code_snippets=code_processed_snippets,  # Individual code snippets with code embeddings
+                    metadata={**metadata, "document_type": "code_snippets"},
+                )
+            )
 
             # 3. Cleaned markdown document
-            documents.append(ProcessedDocument(
-                url=url,
-                title=f"{title} (Cleaned)",
-                content=cleaned_with_placeholders,
-                chunks=cleaned_processed_chunks,
-                code_snippets=[],
-                metadata={**metadata, "document_type": "cleaned_markdown"},
-            ))
+            documents.append(
+                ProcessedDocument(
+                    url=url,
+                    title=f"{title} (Cleaned)",
+                    content=cleaned_with_placeholders,
+                    chunks=cleaned_processed_chunks,
+                    code_snippets=[],
+                    metadata={**metadata, "document_type": "cleaned_markdown"},
+                )
+            )
 
             logger.info(f"Processed content into 3 documents for {title}")
             return documents
@@ -609,7 +635,12 @@ class DocumentProcessor:
             raise
 
     async def _process_chunks_with_embeddings(
-        self, chunks: list, url: str, title: str, embedding_service, is_code: bool = False
+        self,
+        chunks: list,
+        url: str,
+        title: str,
+        embedding_service,
+        is_code: bool = False,
     ) -> list[ProcessedChunk]:
         """Process chunks with embeddings and summaries."""
         processed_chunks = []
@@ -624,9 +655,7 @@ class DocumentProcessor:
                     [chunk.content for chunk in batch]
                 )
             except Exception as e:
-                logger.warning(
-                    f"Failed to generate embeddings (missing API key?): {e}"
-                )
+                logger.warning(f"Failed to generate embeddings (missing API key?): {e}")
                 # Create dummy embeddings for testing
                 embedding_dim = embedding_service.get_dimension()
                 embeddings = [[0.0] * embedding_dim for _ in batch]
@@ -636,13 +665,19 @@ class DocumentProcessor:
             summary_model = None
             if self.summarization_service.client:
                 try:
-                    chunk_data = [(f"chunk_{i+j}", chunk.content) for j, chunk in enumerate(batch)]
-                    summary_results = await self.summarization_service.summarize_chunks_batch(
-                        chunk_data, batch_size=5
+                    chunk_data = [
+                        (f"chunk_{i+j}", chunk.content) for j, chunk in enumerate(batch)
+                    ]
+                    summary_results = (
+                        await self.summarization_service.summarize_chunks_batch(
+                            chunk_data, batch_size=5
+                        )
                     )
                     summaries = [result[1] for result in summary_results]
                     summary_model = self.summarization_service.model
-                    logger.debug(f"Generated {len([s for s in summaries if s])} summaries for batch")
+                    logger.debug(
+                        f"Generated {len([s for s in summaries if s])} summaries for batch"
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to generate summaries: {e}")
                     summaries = [None] * len(batch)
@@ -700,9 +735,7 @@ class DocumentProcessor:
                     [snippet["content"] for snippet in batch]
                 )
             except Exception as e:
-                logger.warning(
-                    f"Failed to generate code embeddings: {e}"
-                )
+                logger.warning(f"Failed to generate code embeddings: {e}")
                 # Create dummy embeddings for testing
                 embedding_dim = self.code_embedding_service.get_dimension()
                 embeddings = [[0.0] * embedding_dim for _ in batch]
@@ -738,32 +771,32 @@ class DocumentProcessor:
         # If no code snippets, return cleaned content as-is
         if not code_snippet_data:
             return cleaned_content
-        
+
         # Import storage manager to use consistent summary generation
         from ..core.storage import DatabaseManager
-        
+
         # Create a temporary database manager instance for summary generation
         # This ensures we use the same logic as search results
         db_manager = DatabaseManager()
-        
+
         # Process each snippet to add enhanced summaries to placeholders
         # The cleaned_content already has inline placeholders from extract_code_snippets()
         # We need to update those placeholders with proper summaries
-        
+
         for snippet in code_snippet_data:
             snippet_id = snippet.get("snippet_id")
             if not snippet_id:
                 continue  # Skip if no snippet_id (shouldn't happen with new logic)
-            
+
             # Generate summary using the same logic as the storage layer
             summary = db_manager._generate_code_summary(snippet)
-            
+
             # Find and replace the placeholder in cleaned_content
             old_placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, snippet_id={snippet_id}]"
             new_placeholder = f"[CODE_SNIPPET: language={snippet.get('language', 'text')}, size={len(snippet.get('content', ''))}chars, summary=\"{summary}\", snippet_id={snippet_id}]"
-            
+
             cleaned_content = cleaned_content.replace(old_placeholder, new_placeholder)
-        
+
         return cleaned_content
 
     def _create_title_from_url(self, page_url: str, base_url: str) -> str:

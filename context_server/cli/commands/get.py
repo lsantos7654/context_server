@@ -33,7 +33,7 @@ def get():
 
     Examples:
         ctx get chunk my-docs chunk-id-123           # Get individual chunk
-        ctx get code my-docs snippet-id-456          # Get code snippet  
+        ctx get code my-docs snippet-id-456          # Get code snippet
         ctx get document my-docs doc-id-789          # Get full document
     """
     pass
@@ -78,7 +78,9 @@ def chunk(context_name, chunk_id, output_format):
                     _display_chunk_card(response)
             else:
                 if "404" in str(response):
-                    echo_error(f"Chunk '{chunk_id}' not found in context '{context_name}'")
+                    echo_error(
+                        f"Chunk '{chunk_id}' not found in context '{context_name}'"
+                    )
                 else:
                     echo_error(f"Failed to get chunk: {response}")
 
@@ -128,7 +130,9 @@ def code(context_name, snippet_id, output_format):
                     _display_code_snippet_card(response)
             else:
                 if "404" in str(response):
-                    echo_error(f"Code snippet '{snippet_id}' not found in context '{context_name}'")
+                    echo_error(
+                        f"Code snippet '{snippet_id}' not found in context '{context_name}'"
+                    )
                 else:
                     echo_error(f"Failed to get code snippet: {response}")
 
@@ -177,7 +181,9 @@ def document(context_name, document_id, output_format):
                     _display_document_card(response)
             else:
                 if "404" in str(response):
-                    echo_error(f"Document '{document_id}' not found in context '{context_name}'")
+                    echo_error(
+                        f"Document '{document_id}' not found in context '{context_name}'"
+                    )
                 else:
                     echo_error(f"Failed to get document: {response}")
 
@@ -198,34 +204,36 @@ def _display_chunk_card(chunk):
     content = chunk.get("content", "")
     summary = chunk.get("summary", "")
     summary_model = chunk.get("summary_model", "")
-    
+
     # Get document context
     title = chunk.get("title", "")
     url = chunk.get("url", "")
-    
+
     # Get line information
     start_line = chunk.get("start_line", 0)
     end_line = chunk.get("end_line", 0)
     char_start = chunk.get("char_start", 0)
     char_end = chunk.get("char_end", 0)
-    
+
     # Get metadata
     metadata = chunk.get("metadata", {})
     code_snippets = metadata.get("code_snippets", [])
-    
+
     # Create info section
     info_lines = []
     info_lines.append(f"[bold cyan]Chunk ID:[/bold cyan] {chunk_id}")
     info_lines.append(f"[bold cyan]Document ID:[/bold cyan] {document_id}")
     info_lines.append(f"[bold cyan]Chunk Index:[/bold cyan] {chunk_index}")
     info_lines.append(f"[bold cyan]Tokens:[/bold cyan] {tokens}")
-    info_lines.append(f"[bold cyan]Location:[/bold cyan] Lines {start_line}-{end_line} ({char_start}-{char_end})")
-    
+    info_lines.append(
+        f"[bold cyan]Location:[/bold cyan] Lines {start_line}-{end_line} ({char_start}-{char_end})"
+    )
+
     if title:
         info_lines.append(f"[bold cyan]Document:[/bold cyan] {title}")
     if url:
         info_lines.append(f"[bold cyan]URL:[/bold cyan] {url}")
-    
+
     # Summary
     if summary:
         summary_header = f"[bold cyan]Summary"
@@ -233,10 +241,12 @@ def _display_chunk_card(chunk):
             summary_header += f" ({summary_model})"
         summary_header += ":[/bold cyan]"
         info_lines.append(f"{summary_header} {summary}")
-    
+
     # Code snippets
     if code_snippets:
-        info_lines.append(f"[bold cyan]Code Snippets:[/bold cyan] {len(code_snippets)} found")
+        info_lines.append(
+            f"[bold cyan]Code Snippets:[/bold cyan] {len(code_snippets)} found"
+        )
         for i, snippet in enumerate(code_snippets[:3], 1):  # Show first 3
             snippet_id = snippet.get("id", "N/A")
             snippet_type = snippet.get("type", "unknown")
@@ -244,17 +254,17 @@ def _display_chunk_card(chunk):
         if len(code_snippets) > 3:
             remaining = len(code_snippets) - 3
             info_lines.append(f"  ... and {remaining} more")
-    
+
     info_section = "\n".join(info_lines)
-    
+
     # Content section
     content_section = ""
     if content:
         content_section = f"\n\n[bold white]Content:[/bold white]\n{content}"
-    
+
     # Combine sections
     panel_content = info_section + content_section
-    
+
     # Create panel
     header = f"Chunk • {len(content)} chars • {tokens} tokens"
     panel = Panel(
@@ -263,7 +273,7 @@ def _display_chunk_card(chunk):
         border_style="blue",
         padding=(1, 2),
     )
-    
+
     console.print(panel)
     console.print()  # Empty line
 
@@ -279,28 +289,33 @@ def _display_code_snippet_card(snippet):
     char_end = snippet.get("char_end", 0)
     content = snippet.get("content", "")
     snippet_type = snippet.get("type", "code_block")
-    
+
     # Get document context
     doc_title = snippet.get("document_title", "")
     doc_url = snippet.get("document_url", "")
-    
+
     # Calculate line count
-    line_count = max(1, end_line - start_line + 1) if start_line and end_line else len(content.split('\n'))
-    
+    line_count = (
+        max(1, end_line - start_line + 1)
+        if start_line and end_line
+        else len(content.split("\n"))
+    )
+
     # Create info section
     info_lines = []
     info_lines.append(f"[bold cyan]ID:[/bold cyan] {snippet_id}")
-    info_lines.append(f"[bold cyan]Language:[/bold cyan] {language}")
     info_lines.append(f"[bold cyan]Type:[/bold cyan] {snippet_type}")
-    info_lines.append(f"[bold cyan]Location:[/bold cyan] Lines {start_line}-{end_line} ({char_start}-{char_end})")
-    
+    info_lines.append(
+        f"[bold cyan]Location:[/bold cyan] Lines {start_line}-{end_line} ({char_start}-{char_end})"
+    )
+
     if doc_title:
         info_lines.append(f"[bold cyan]Document:[/bold cyan] {doc_title}")
     if doc_url:
         info_lines.append(f"[bold cyan]URL:[/bold cyan] {doc_url}")
-    
+
     info_section = "\n".join(info_lines)
-    
+
     # Code content with syntax highlighting
     code_content = None
     if content:
@@ -314,25 +329,28 @@ def _display_code_snippet_card(snippet):
                     language = "javascript"
                 elif "#!/bin/bash" in content or "#!/bin/sh" in content:
                     language = "bash"
-            
+
             code_content = Syntax(content, language, theme="monokai", line_numbers=True)
         except Exception:
             # Fallback to plain text if syntax highlighting fails
             code_content = content
-    
+
     # Combine info and code
     from rich.console import Group
-    panel_content = Group(info_section, "", code_content) if code_content else info_section
-    
+
+    panel_content = (
+        Group(info_section, "", code_content) if code_content else info_section
+    )
+
     # Create panel
-    header = f"Code Snippet • {language} • {line_count} lines"
+    header = f"Code Snippet • {line_count} lines"
     panel = Panel(
         panel_content,
         title=f"[bold green]{header}[/bold green]",
         border_style="green",
         padding=(1, 2),
     )
-    
+
     console.print(panel)
     console.print()  # Empty line
 
@@ -345,7 +363,7 @@ def _display_document_card(document):
     url = document.get("url", "")
     content = document.get("content", "")
     created_at = document.get("created_at", "")
-    
+
     # Create info section
     info_lines = []
     info_lines.append(f"[bold cyan]Document ID:[/bold cyan] {doc_id}")
@@ -355,18 +373,20 @@ def _display_document_card(document):
         info_lines.append(f"[bold cyan]URL:[/bold cyan] {url}")
     if created_at:
         info_lines.append(f"[bold cyan]Created:[/bold cyan] {created_at}")
-    
+
     info_lines.append(f"[bold cyan]Size:[/bold cyan] {len(content):,} characters")
-    
+
     info_section = "\n".join(info_lines)
-    
+
     # Content preview (first 1000 chars)
     content_preview = content[:1000] + ("..." if len(content) > 1000 else "")
-    content_section = f"\n\n[bold white]Content Preview:[/bold white]\n{content_preview}"
-    
+    content_section = (
+        f"\n\n[bold white]Content Preview:[/bold white]\n{content_preview}"
+    )
+
     # Combine sections
     panel_content = info_section + content_section
-    
+
     # Create panel
     header = f"Document • {len(content):,} chars"
     panel = Panel(
@@ -375,6 +395,6 @@ def _display_document_card(document):
         border_style="blue",
         padding=(1, 2),
     )
-    
+
     console.print(panel)
     console.print()  # Empty line
