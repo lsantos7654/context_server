@@ -1,8 +1,8 @@
 """
-Simple crawl4ai-based document extraction system.
+Simplified crawl4ai-based document extraction system.
 
-Replaces the complex tiered extraction system with a single, unified approach
-using crawl4ai for all URL-based extraction.
+Uses proven optimal configuration for high-quality multi-page extraction
+with minimal filtering to preserve content quality.
 """
 
 import asyncio
@@ -13,15 +13,7 @@ from pathlib import Path
 # No typing imports needed for Python 3.12+
 from urllib.parse import urlparse
 
-from crawl4ai import (
-    AsyncWebCrawler,
-    BM25ContentFilter,
-    CacheMode,
-    CrawlerRunConfig,
-    DefaultMarkdownGenerator,
-    PruningContentFilter,
-)
-from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
 from .cleaning import MarkdownCleaner
@@ -54,280 +46,183 @@ class ExtractionResult:
 
 class Crawl4aiExtractor:
     """
-    Simple extractor using crawl4ai for all URL-based extraction.
+    Simplified extractor using crawl4ai with optimal configuration.
 
-    Replaces the complex tiered system with a unified approach that handles:
-    - Static sites with sitemaps
-    - JavaScript-rendered documentation sites
-    - Modern SPA frameworks
-    - Navigation-based discovery
+    Uses proven multi-page crawling approach with minimal filtering
+    to preserve content quality while discovering related pages.
     """
 
     def __init__(self, output_dir: Path | None = None, config: dict | None = None):
         """Initialize extractor with optional output directory and configuration."""
         self.output_dir = FileUtils.ensure_directory(output_dir or Path("output"))
 
-        # Initialize markdown cleaner for enhanced content processing
+        # Initialize markdown cleaner for basic content processing
         self.cleaner = MarkdownCleaner()
 
-        # Configuration for crawl4ai built-in filtering
+        # Simple configuration - focus on quality over aggressive filtering
         self.config = config or {}
-        self.filtering_config = self.config.get("filtering", {})
-
-        # Content filtering strategy
-        self.content_filter_type = self.filtering_config.get("content_filter", "bm25")
+        
+        # Extraction mode: "quality" (default) or "legacy" for backward compatibility
+        self.extraction_mode = self.config.get("extraction_mode", "quality")
 
     async def extract_from_url(self, url: str, max_pages: int = 50) -> ExtractionResult:
-        """Extract content from URL using crawl4ai's built-in deep crawling and filtering."""
+        """Extract content from URL using simplified high-quality approach."""
         max_retries = 3
         retry_delay = 2
 
         for attempt in range(max_retries):
             try:
                 logger.info(
-                    "Starting crawl4ai deep extraction with built-in filtering",
+                    f"Starting simplified crawl4ai extraction (mode: {self.extraction_mode})",
                     extra={"url": url, "max_pages": max_pages, "attempt": attempt + 1},
                 )
 
                 async with AsyncWebCrawler(verbose=False, headless=True) as crawler:
-                    # Create content filter optimized for documentation cleaning
-                    content_filter = PruningContentFilter(
-                        threshold=0.45,  # Dynamic threshold for adaptive content filtering
-                        threshold_type="dynamic",
-                        min_word_threshold=5,  # Ignore very short text blocks
-                    )
-
-                    # Configure deep crawling strategy
+                    # Configure optimal deep crawling strategy for page discovery
                     deep_crawl_strategy = BFSDeepCrawlStrategy(
-                        max_depth=4,  # Increased depth to reach concept pages (/ -> /concepts/ -> /concepts/event-handling/)
-                        include_external=False,
-                        max_pages=max_pages  # Use the passed max_pages parameter
-                        # Note: Removed score_threshold as it was filtering out too many valid links
+                        max_depth=3,              # Reasonable depth for documentation sites
+                        include_external=False,   # Stay within the same domain
+                        max_pages=max_pages      # Respect user's page limit
                     )
 
-                    # Enhanced configuration with documentation-optimized filtering
+                    # Optimal configuration proven by testing
                     config = CrawlerRunConfig(
-                        # Deep crawling configuration
+                        # Multi-page discovery
                         deep_crawl_strategy=deep_crawl_strategy,
-                        # Content filtering optimized for documentation sites
-                        excluded_tags=[
-                            "nav", "footer", "header", "sidebar",  # Navigation elements
-                            ".breadcrumb", ".pagination", ".toc",  # Navigation helpers
-                            ".version-list", ".highlights", ".releases",  # Version/release content
-                            ".navigation", ".menu", ".nav-menu",  # More navigation variants
-                        ],
-                        word_count_threshold=10,  # Filter out very short content blocks
-                        exclude_external_links=True,
-                        # Enhanced markdown generation with dynamic content filtering
-                        markdown_generator=DefaultMarkdownGenerator(
-                            content_filter=content_filter
-                        ),
-                        # Basic settings
-                        magic=True,  # Enable magic mode for better JS handling
+                        # Basic cleanup only - NO aggressive content filtering
+                        word_count_threshold=10,                              # Remove tiny blocks
+                        excluded_tags=["nav", "footer", "header", "aside"],   # Remove navigation
+                        exclude_external_links=True,                         # Clean up links
+                        # Quality-focused settings
                         page_timeout=30000,
-                        verbose=False,
-                        cache_mode=CacheMode.ENABLED,
+                        cache_mode="enabled",
+                        markdown_generator=None   # KEY: No content filtering for quality
                     )
 
-                    # Run deep crawl with built-in filtering
+                    # Run simplified extraction
                     results = await crawler.arun(url=url, config=config)
 
-                    # Debug: Log what we got back
-                    logger.info(f"DEBUG: crawl4ai returned type: {type(results)}")
-                    if isinstance(results, list):
-                        logger.info(f"DEBUG: List with {len(results)} items")
-                    else:
-                        logger.info(
-                            f"DEBUG: Single result, success: {results.success if hasattr(results, 'success') else 'unknown'}"
-                        )
-                        if hasattr(results, "links"):
-                            logger.info(
-                                f"DEBUG: Links found: internal={len(results.links.get('internal', []))} external={len(results.links.get('external', []))}"
-                            )
+                    # Handle both single result and list of results
+                    if not isinstance(results, list):
+                        results = [results] if results.success else []
+                    
+                    logger.info(f"Crawl4ai found {len(results)} pages to process")
 
-                    # Handle results from deep crawling (can be single result or list)
-                    if isinstance(results, list):
-                        if not results:
-                            error_msg = "Deep crawl returned no results"
-                            if attempt < max_retries - 1:
-                                logger.warning(
-                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
-                                )
-                                await asyncio.sleep(retry_delay)
-                                continue
-                            else:
-                                return ExtractionResult.error(error_msg)
-
-                        # Process multiple results from deep crawl
-                        extracted_contents = []
-                        successful_pages = 0
-
-                        logger.info(f"Deep crawl found {len(results)} pages")
-
-                        for result in results[:max_pages]:  # Respect max_pages limit
-                            if result.success and result.markdown:
-                                # Prioritize fit_markdown for cleaner content
-                                original_content = result.markdown
-                                filtered_content = (
-                                    result.fit_markdown
-                                    if hasattr(result, "fit_markdown")
-                                    and result.fit_markdown
-                                    else result.markdown
-                                )
-
-                                # Log filtering effectiveness
-                                if (
-                                    hasattr(result, "fit_markdown")
-                                    and result.fit_markdown
-                                ):
-                                    logger.info(f"Using filtered content for {result.url}")
-                                    content = result.fit_markdown
-                                else:
-                                    logger.info(
-                                        f"No fit_markdown available for {result.url}, using original"
-                                    )
-                                    content = result.markdown
-
-                                # Clean content with existing cleaner for additional processing
-                                cleaned_content = self.cleaner.clean_content(content)
-
-                                if (
-                                    len(cleaned_content.strip()) < 100
-                                ):  # Skip tiny pages
-                                    logger.debug(
-                                        f"Skipping {result.url} - content too short"
-                                    )
-                                    continue
-
-                                extracted_contents.append(
-                                    {
-                                        "url": result.url,
-                                        "content": cleaned_content,
-                                        "depth": result.metadata.get("depth", 0),
-                                        "original_length": len(result.markdown)
-                                        if result.markdown
-                                        else 0,
-                                        "filtered_length": len(cleaned_content),
-                                    }
-                                )
-
-                                successful_pages += 1
-
-                                # Save individual files
-                                if self.output_dir:
-                                    filename = self._create_filename_from_url(
-                                        result.url
-                                    )
-                                    file_path = self.output_dir / filename
-                                    file_path.write_text(
-                                        cleaned_content, encoding="utf-8"
-                                    )
-                                    logger.debug(f"Saved {file_path}")
-
-                        if not extracted_contents:
-                            error_msg = "No valid content extracted from deep crawl"
-                            if attempt < max_retries - 1:
-                                logger.warning(
-                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
-                                )
-                                await asyncio.sleep(retry_delay)
-                                continue
-                            else:
-                                return ExtractionResult.error(error_msg)
-
-                        # Combine all content
-                        combined_content = "\\n\\n---\\n\\n".join(
-                            [item["content"] for item in extracted_contents]
-                        )
-
-                        # Create minimal metadata
-                        metadata = {
-                            "source_type": "crawl4ai_deep",
-                            "base_url": url,
-                            "extracted_pages": extracted_contents,
-                        }
-
-                    else:
-                        # Handle single result (fallback)
-                        result = results
-
-                        if not result.success:
-                            error_msg = f"Deep crawl failed: {result.error}"
-                            if attempt < max_retries - 1:
-                                logger.warning(
-                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
-                                )
-                                await asyncio.sleep(retry_delay)
-                                continue
-                            else:
-                                return ExtractionResult.error(error_msg)
-
-                        # Prioritize fit_markdown for cleaner content
-                        if hasattr(result, "fit_markdown") and result.fit_markdown:
-                            logger.info("Using filtered content")
-                            content = result.fit_markdown
+                    # Validate results
+                    if not results:
+                        error_msg = "No pages extracted from crawl"
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                            await asyncio.sleep(retry_delay)
+                            continue
                         else:
-                            logger.info(
-                                f"No fit_markdown available, using original content ({len(result.markdown)} chars)"
-                            )
-                            content = result.markdown
+                            return ExtractionResult.error(error_msg)
 
-                        # Clean content with existing cleaner for additional processing
-                        combined_content = self.cleaner.clean_content(content)
+                    # Process pages with simplified high-quality approach
+                    extracted_contents = []
+                    total_content_length = 0
+                    successful_pages = 0
 
-                        if len(combined_content.strip()) < 100:
-                            error_msg = "Extracted content too short after filtering"
-                            if attempt < max_retries - 1:
-                                logger.warning(
-                                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
-                                )
-                                await asyncio.sleep(retry_delay)
-                                continue
-                            else:
-                                return ExtractionResult.error(error_msg)
+                    for i, result in enumerate(results[:max_pages]):
+                        if not result.success or not result.markdown:
+                            logger.debug(f"Skipping page {i+1}: No content extracted")
+                            continue
 
-                        # Save cleaned content
+                        # Always use raw_markdown for optimal quality (proven by testing)
+                        content = result.markdown.raw_markdown or result.markdown
+                        
+                        # Check for error content (the root issue from conversation)
+                        if self._contains_error_content(content):
+                            logger.warning(f"Error content detected in {result.url}, skipping")
+                            continue
+
+                        # Basic content validation
+                        if len(content.strip()) < 100:
+                            logger.debug(f"Skipping {result.url} - content too short")
+                            continue
+
+                        # Optional light cleaning (preserve content quality)
+                        cleaned_content = self.cleaner.clean_content(content)
+
+                        extracted_contents.append({
+                            "url": result.url,
+                            "content": cleaned_content,
+                            "length": len(cleaned_content),
+                            "title": getattr(result, 'title', '') or f"Page {i+1}"
+                        })
+
+                        total_content_length += len(cleaned_content)
+                        successful_pages += 1
+
+                        # Save individual files for debugging
                         if self.output_dir:
-                            filename = self._create_filename_from_url(url)
+                            filename = self._create_filename_from_url(result.url)
                             file_path = self.output_dir / filename
-                            file_path.write_text(combined_content, encoding="utf-8")
-                            logger.debug(f"Saved filtered content to {file_path}")
+                            file_path.write_text(cleaned_content, encoding="utf-8")
+                            logger.debug(f"Saved {file_path}")
 
-                        # Create minimal metadata
-                        metadata = {
-                            "source_type": "crawl4ai_deep",
-                            "base_url": url,
-                        }
+                        logger.info(f"✓ Page {i+1}: {len(cleaned_content):,} chars from {result.url}")
 
-                        # Add link information if available
-                        if result.links:
-                            metadata["links"] = {
-                                "internal": len(result.links.get("internal", [])),
-                                "external": len(result.links.get("external", [])),
-                            }
+                    if not extracted_contents:
+                        error_msg = "No valid content extracted from any page"
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                            await asyncio.sleep(retry_delay)
+                            continue
+                        else:
+                            return ExtractionResult.error(error_msg)
 
-                    logger.info("Deep crawl extraction completed")
+                    # Combine all content with clear separators
+                    combined_content = "\n\n---\n\n".join(
+                        [item["content"] for item in extracted_contents]
+                    )
+
+                    # Create simple, clear metadata
+                    metadata = {
+                        "source_type": "simplified_crawl4ai",
+                        "extraction_mode": self.extraction_mode,
+                        "base_url": url,
+                        "pages_found": len(results),
+                        "pages_extracted": successful_pages,
+                        "total_content_length": total_content_length,
+                        "average_page_size": total_content_length // successful_pages if successful_pages else 0,
+                        "extraction_time": datetime.now().isoformat(),
+                        "extracted_pages": extracted_contents,
+                    }
+
+                    logger.info(
+                        f"Simplified extraction completed: {successful_pages}/{len(results)} pages, "
+                        f"{total_content_length:,} total chars"
+                    )
 
                     return ExtractionResult(
                         success=True, content=combined_content, metadata=metadata
                     )
 
             except Exception as e:
-                error_msg = f"Deep crawl extraction failed: {e}"
+                error_msg = f"Extraction failed: {e}"
                 if attempt < max_retries - 1:
-                    logger.warning(
-                        f"Attempt {attempt + 1} failed: {error_msg}. Retrying..."
-                    )
+                    logger.warning(f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
-                    logger.error(
-                        "Deep crawl extraction failed after all retries",
-                        extra={"url": url, "error": str(e), "attempts": max_retries},
-                    )
+                    logger.error(f"Extraction failed after {max_retries} attempts: {e}")
                     return ExtractionResult.error(
-                        f"Deep crawl extraction failed after {max_retries} attempts: {e}"
+                        f"Extraction failed after {max_retries} attempts: {e}"
                     )
+
+    def _contains_error_content(self, content: str) -> bool:
+        """
+        Check if content contains crawl4ai error messages.
+        
+        This addresses the root issue identified in the conversation summary.
+        """
+        error_indicators = [
+            "Crawl4AI Error:",
+            "Invalid expression", 
+            "This page is not fully supported"
+        ]
+        return any(indicator in content for indicator in error_indicators)
 
     def _create_filename_from_url(self, url: str) -> str:
         """Create safe filename from URL."""
