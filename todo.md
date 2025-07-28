@@ -67,8 +67,8 @@ for url in start_urls\n]\nresults = await asyncio.gather(*tasks)\nCopy',
 }
 
 ```
-- get rid of language since this always defaults to `text`.
-- `start_line` and `end_line` don't seem to properly populate. We should just have number of lines instead.
+- [X] get rid of language since this always defaults to `text`.
+- [X] `start_line` and `end_line` don't seem to properly populate. We should just have number of lines instead.
 
 
 ## json code response
@@ -108,8 +108,10 @@ for url in start_urls\n]\nresults = await asyncio.gather(*tasks)\nCopy',
     'content_type': 'code_snippet'
 }
 ```
-- get rid of summary and summary/summary_model here
-- `snippet_id` doesn't seem to do anything.\
+- [X] get rid of summary and summary/summary_model here
+- [X] chunk_index here also seems to be useless
+- [X] `\nCopy` seems to be inserted in every code snippet
+- [X] `snippet_id` doesn't seem to do anything.\
 ```
 ctx get code my-docs 4dc2b051-a2c0-4697-87d0-a7c36b29612f
 ✗ Code snippet '4dc2b051-a2c0-4697-87d0-a7c36b29612f' not found in context 'my-docs'
@@ -120,8 +122,6 @@ ctx get chunk my-docs 4dc2b051-a2c0-4697-87d0-a7c36b29612f
 ctx get document my-docs 4dc2b051-a2c0-4697-87d0-a7c36b29612f
 ✗ Document '4dc2b051-a2c0-4697-87d0-a7c36b29612f' not found in context 'my-docs'
 ```
-- chunk_index here also seems to be useless
-- `\nCopy` seems to be inserted in every code snippet
 
 ## mcp_json search response
 ctx search query "PruningContentFilter" --limit 1  my-docs --format mcp_json
@@ -158,9 +158,9 @@ also input raw HTML by prefixing it with `raw://` for crawling.",
     'chunk_index': None
 }
 ```
-- we should include a small preview of the code and the `Document` field for each code_snippet_ids
-- has_summary can be removed.
-- chunk_index here can be removed
+- [X] we should include a small preview of the code and the `Document` field for each code_snippet_ids
+- [X] has_summary can be removed.
+- [X] chunk_index here can be removed
 
 
 
@@ -254,8 +254,8 @@ also input raw HTML by prefixing it with `raw://` for crawling.",
     'content_type': 'chunk'
 }
 ```
-- seems like chunk_index is defined twice here
-- code_snippet still has language
+- [ ] seems like chunk_index is defined twice here
+- [ ] code_snippet still has language
 
 ## raw documents
 ctx get document my-docs 319324a2-9f3c-4857-99a0-08e47810f209 --format raw
@@ -266,5 +266,8 @@ threshold_type="fixed",
 min_word_threshold=10
 )
 ```
-- code_snippets still have language
+- [X] code_snippets still have language
+- [ ] code_snippet should include preview like first few lines
 
+
+still need to make the whole process async and faster

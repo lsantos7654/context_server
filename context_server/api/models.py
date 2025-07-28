@@ -128,10 +128,39 @@ class SearchResult(BaseModel):
     content_type: str = "chunk"
 
 
+class CodeSearchResult(BaseModel):
+    """Individual code search result (no summary/chunk_index fields)."""
+
+    id: str
+    document_id: str | None = None
+    title: str
+    content: str
+    snippet_type: str = "code_block"
+    score: float
+    line_count: int
+    metadata: dict
+    url: str | None = None
+    content_type: str = "code_snippet"
+    
+    class Config:
+        # Exclude fields that are None from the JSON output
+        exclude_none = True
+
+
 class SearchResponse(BaseModel):
     """Response model for search results."""
 
     results: list[SearchResult]
+    total: int
+    query: str
+    mode: str
+    execution_time_ms: int
+
+
+class CodeSearchResponse(BaseModel):
+    """Response model for code search results."""
+
+    results: list[CodeSearchResult]
     total: int
     query: str
     mode: str

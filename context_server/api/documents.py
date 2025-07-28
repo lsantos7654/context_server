@@ -208,7 +208,6 @@ async def _process_document_background(
                         # Generate summary for the code snippet
                         snippet_dict = {
                             "content": snippet.content,
-                            "language": snippet.language,
                             "metadata": snippet.metadata,
                         }
                         summary = db._generate_code_summary(snippet_dict)
@@ -218,7 +217,6 @@ async def _process_document_background(
                             document_id=doc_id,
                             context_id=context["id"],
                             content=snippet.content,
-                            language=snippet.language,
                             embedding=snippet.embedding,
                             metadata=snippet.metadata,
                             start_line=snippet.start_line,

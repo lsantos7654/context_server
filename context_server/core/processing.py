@@ -37,7 +37,6 @@ class CodeSnippet:
     """A code snippet extracted from content."""
 
     content: str
-    language: str
     embedding: list[float]
     metadata: dict
     start_line: int = None
@@ -114,8 +113,11 @@ class CodeSnippetExtractor:
 
         # Extract markdown code blocks (filter out very short ones)
         for match in self.markdown_code_pattern.finditer(content):
-            language = match.group(1) or "text"
             code_content = match.group(2).strip()
+            
+            # Clean copy button artifacts that crawl4ai sometimes extracts
+            code_content = re.sub(r'\nCopy\s*$', '', code_content).strip()
+            code_content = re.sub(r'Copy\s*$', '', code_content).strip()
 
             # Skip very short code blocks (likely just noise)
             if len(code_content) < 20:
@@ -130,7 +132,6 @@ class CodeSnippetExtractor:
 
             snippet = {
                 "content": code_content,
-                "language": language,
                 "start_line": start_line,
                 "end_line": end_line,
                 "char_start": start_char,
@@ -141,13 +142,18 @@ class CodeSnippetExtractor:
             }
             snippets.append(snippet)
 
-            # Create placeholder for inline replacement
-            placeholder = f"[CODE_SNIPPET: size={len(code_content)}chars]"
+            # Create placeholder for inline replacement (will be enhanced later with line count)
+            placeholder = f"[CODE_SNIPPET: chars={len(code_content)}]"
             replacements.append((start_char, end_char, placeholder))
 
         # Extract and handle HTML code blocks
         for match in self.html_code_pattern.finditer(content):
             code_content = match.group(1).strip()
+            
+            # Clean copy button artifacts that crawl4ai sometimes extracts
+            code_content = re.sub(r'\nCopy\s*$', '', code_content).strip()
+            code_content = re.sub(r'Copy\s*$', '', code_content).strip()
+            
             if len(code_content) > 20:  # Only substantial code blocks
                 start_char = match.start()
                 end_char = match.end()
@@ -156,7 +162,6 @@ class CodeSnippetExtractor:
 
                 snippet = {
                     "content": code_content,
-                    "language": "html",  # HTML-embedded code
                     "start_line": start_line,
                     "end_line": end_line,
                     "char_start": start_char,
@@ -167,13 +172,17 @@ class CodeSnippetExtractor:
                 }
                 snippets.append(snippet)
 
-                # Create placeholder for inline replacement
-                placeholder = f"[CODE_SNIPPET: size={len(code_content)}chars]"
+                # Create placeholder for inline replacement (will be enhanced later with line count)
+                placeholder = f"[CODE_SNIPPET: chars={len(code_content)}]"
                 replacements.append((start_char, end_char, placeholder))
 
         # Extract significant inline code (longer than 100 chars to reduce noise)
         for match in self.inline_code_pattern.finditer(content):
             code_content = match.group(1)
+            
+            # Clean copy button artifacts that crawl4ai sometimes extracts
+            code_content = re.sub(r'Copy\s*$', '', code_content).strip()
+            
             # Filter out short inline code snippets that are just noise
             if (
                 len(code_content) > 100 and "\n" not in code_content
@@ -185,7 +194,6 @@ class CodeSnippetExtractor:
 
                 snippet = {
                     "content": code_content,
-                    "language": "text",  # Unknown language for inline code
                     "start_line": start_line,
                     "end_line": end_line,
                     "char_start": start_char,
@@ -196,8 +204,8 @@ class CodeSnippetExtractor:
                 }
                 snippets.append(snippet)
 
-                # Create placeholder for inline replacement
-                placeholder = f"[CODE_SNIPPET: size={len(code_content)}chars]"
+                # Create placeholder for inline replacement (will be enhanced later with line count)
+                placeholder = f"[CODE_SNIPPET: chars={len(code_content)}]"
                 replacements.append((start_char, end_char, placeholder))
 
         # Apply all replacements in reverse order to maintain character positions
@@ -545,7 +553,7 @@ class DocumentProcessor:
                 # Combine all code snippets into a single document
                 code_snippets_content = "\n\n".join(
                     [
-                        f"```{snippet['language']}\n{snippet['content']}\n```"
+                        f"```\n{snippet['content']}\n```"
                         for snippet in code_snippet_data
                     ]
                 )
@@ -732,7 +740,6 @@ class DocumentProcessor:
             for snippet_data, embedding in zip(batch, embeddings):
                 processed_snippet = CodeSnippet(
                     content=snippet_data["content"],
-                    language=snippet_data["language"],
                     embedding=embedding,
                     metadata={
                         **snippet_data,
@@ -755,33 +762,52 @@ class DocumentProcessor:
     def _create_cleaned_markdown_with_placeholders(
         self, cleaned_content: str, code_snippet_data: list
     ) -> str:
-        """Create cleaned markdown with enhanced code snippet placeholders using storage layer summaries."""
+        """Create cleaned markdown with enhanced code snippet placeholders including ID and preview."""
         # If no code snippets, return cleaned content as-is
         if not code_snippet_data:
             return cleaned_content
 
-        # Import storage manager to use consistent summary generation
-        from ..core.storage import DatabaseManager
-
-        # Create a temporary database manager instance for summary generation
-        # This ensures we use the same logic as search results
-        db_manager = DatabaseManager()
-
-        # Process each snippet to add enhanced summaries to placeholders
+        # Process each snippet to add enhanced placeholders
         # The cleaned_content already has inline placeholders from extract_code_snippets()
-        # We need to update those placeholders with proper summaries
+        # We need to update those placeholders with ID, metadata, and preview
 
         for snippet in code_snippet_data:
             content = snippet.get('content', '')
             if not content:
                 continue  # Skip if no content
 
-            # Generate summary using the same logic as the storage layer
-            summary = db_manager._generate_code_summary(snippet)
-
+            # Get metadata for the placeholder
+            lines = content.split('\n')
+            line_count = len([line for line in lines if line.strip()])
+            snippet_type = snippet.get('type', 'code_block')
+            start_line = snippet.get('start_line', 0)
+            end_line = snippet.get('end_line', 0)
+            
+            # Generate a preview (first 5-8 lines of code, similar to MCP JSON format)
+            preview_lines = []
+            for line in lines[:8]:
+                if line.strip():  # Only include non-empty lines
+                    preview_lines.append(line.strip())
+                if len(preview_lines) >= 6:  # Show 5-6 meaningful lines for good context
+                    break
+            
+            # Join with newlines for better readability, but limit overall length
+            preview = "\n".join(preview_lines)
+            if len(preview) > 300:  # Truncate if too long
+                preview = preview[:297] + "..."
+            
+            # Generate a simple identifier based on line position
+            position_id = f"L{start_line}-{end_line}"
+            
             # Find and replace the placeholder in cleaned_content
-            old_placeholder = f"[CODE_SNIPPET: size={len(content)}chars]"
-            new_placeholder = f"[CODE_SNIPPET: size={len(content)}chars, summary=\"{summary}\"]"
+            old_placeholder = f"[CODE_SNIPPET: chars={len(content)}]"
+            
+            # Create enhanced placeholder with position, type, and preview
+            # Format as a more readable block since preview is multi-line
+            new_placeholder = (
+                f"[CODE_SNIPPET {position_id} | {snippet_type} | {line_count} lines]\n"
+                f"```\n{preview}\n```"
+            )
 
             cleaned_content = cleaned_content.replace(old_placeholder, new_placeholder)
 

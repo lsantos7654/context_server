@@ -214,7 +214,7 @@ class ContextServerTools:
                 # Import the DatabaseManager for transformation
                 from ..core.storage import DatabaseManager
                 db_manager = DatabaseManager()
-                compact_response = db_manager._transform_to_compact_format(
+                compact_response = await db_manager._transform_to_compact_format(
                     result.get("results", []),
                     query=query,
                     mode=mode,

@@ -198,7 +198,39 @@ class DatabaseManager:
             
         return f"{line_count}-line {code_type} snippet"
 
-    def _transform_to_compact_format(self, results: list[dict], query: str = "", mode: str = "hybrid", execution_time_ms: int = 0) -> dict:
+    async def _get_line_count(self, snippet_id: str) -> int:
+        """Get actual line count from code snippet content."""
+        try:
+            snippet = await self.get_code_snippet_by_id(snippet_id)
+            if not snippet or not snippet.get("content"):
+                return 0
+            
+            content = snippet["content"]
+            # Count non-empty lines
+            lines = content.split('\n')
+            return len([line for line in lines if line.strip()])
+        except Exception:
+            return 0
+    
+    async def _generate_code_preview(self, snippet_id: str, preview_lines: int = 8) -> str:
+        """Generate preview showing first N lines of code snippet."""
+        try:
+            snippet = await self.get_code_snippet_by_id(snippet_id)
+            if not snippet or not snippet.get("content"):
+                return ""
+            
+            content = snippet["content"]
+            lines = content.split('\n')
+            # Take first N lines
+            preview_lines_list = []
+            for line in lines[:preview_lines]:
+                preview_lines_list.append(line)
+            
+            return '\n'.join(preview_lines_list).strip()
+        except Exception:
+            return ""
+
+    async def _transform_to_compact_format(self, results: list[dict], query: str = "", mode: str = "hybrid", execution_time_ms: int = 0) -> dict:
         """Transform full search results to compact MCP format.
         
         This is the single source of truth for transforming search results 
@@ -224,10 +256,36 @@ class DatabaseManager:
             if code_snippets:
                 for snippet in code_snippets:
                     if isinstance(snippet, dict) and "id" in snippet:
+                        snippet_id = snippet["id"]
+                        
+                        # Use content directly from snippet data if available
+                        snippet_content = snippet.get("content", "")
+                        
+                        if snippet_content:
+                            # Calculate lines and chars from available content
+                            lines = snippet_content.split('\n')
+                            line_count = len([line for line in lines if line.strip()])
+                            char_count = len(snippet_content)
+                            
+                            # Generate preview: show first 8 lines of actual code
+                            if line_count <= 8:
+                                preview = snippet_content.strip()
+                            else:
+                                preview_lines = []
+                                for line in lines[:8]:
+                                    preview_lines.append(line)
+                                preview = '\n'.join(preview_lines).strip()
+                        else:
+                            # Fallback for when no content is available in metadata
+                            line_count = 0
+                            char_count = 0
+                            preview = snippet.get("preview", "")
+                        
                         snippet_obj = {
-                            "id": snippet["id"],
-                            "size": len(snippet.get("preview", snippet.get("content", ""))),
-                            "summary": self._generate_code_summary(snippet)
+                            "id": snippet_id,
+                            "lines": line_count,
+                            "chars": char_count,
+                            "preview": preview
                         }
                         code_snippet_ids.append(snippet_obj)
             
@@ -844,7 +902,6 @@ class DatabaseManager:
         document_id: str,
         context_id: str,
         content: str,
-        language: str,
         embedding: list[float],
         metadata: dict = None,
         start_line: int = None,
@@ -863,13 +920,12 @@ class DatabaseManager:
             snippet_id = await conn.fetchval(
                 """
                 INSERT INTO code_snippets (document_id, context_id, content, language, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type, summary, summary_model)
-                VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11, $12, $13)
+                VALUES ($1, $2, $3, 'text', $4::vector, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING id
             """,
                 uuid.UUID(document_id),
                 uuid.UUID(context_id),
                 content,
-                language,
                 embedding_str,
                 json.dumps(metadata or {}),
                 start_line,
@@ -906,7 +962,7 @@ class DatabaseManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.document_id, cs.id, cs.language, cs.snippet_type,
+                    cs.document_id, cs.id, cs.snippet_type,
                     cs.start_line, cs.end_line, cs.content
                 FROM code_snippets cs
                 WHERE cs.document_id = ANY($1::uuid[]) AND cs.context_id = $2
@@ -959,7 +1015,7 @@ class DatabaseManager:
             # Overlap occurs when: snippet_start <= chunk_end AND snippet_end >= chunk_start
             rows = await conn.fetch(
                 """
-                SELECT id, content, language, snippet_type, start_line, end_line
+                SELECT id, content, snippet_type, start_line, end_line
                 FROM code_snippets
                 WHERE document_id = $1
                     AND context_id = $2
@@ -989,8 +1045,8 @@ class DatabaseManager:
                 
                 result.append({
                     "id": str(row["id"]),
+                    "content": content,  # Include actual content for transform method
                     "type": row["snippet_type"],
-                    "language": row["language"],
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
                     "preview": preview,
@@ -1354,7 +1410,7 @@ class DatabaseManager:
         async with self.pool.acquire() as conn:
             query = """
                 SELECT
-                    cs.id, cs.content, cs.language, cs.metadata,
+                    cs.id, cs.content, cs.metadata,
                     cs.start_line, cs.end_line, cs.char_start, cs.char_end,
                     cs.snippet_type, cs.created_at
                 FROM code_snippets cs
@@ -1406,7 +1462,7 @@ class DatabaseManager:
         async with self.pool.acquire() as conn:
             query = """
                 SELECT
-                    cs.id, cs.content, cs.language, cs.metadata,
+                    cs.id, cs.content, cs.metadata,
                     cs.start_line, cs.end_line, cs.char_start, cs.char_end,
                     cs.snippet_type, cs.created_at, cs.document_id,
                     d.title as document_title, d.url as document_url

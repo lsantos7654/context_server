@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..core.embeddings import EmbeddingService, VoyageEmbeddingService
 from ..core.storage import DatabaseManager
 from .error_handlers import handle_search_errors
-from .models import SearchRequest, SearchResponse
+from .models import SearchRequest, SearchResponse, CodeSearchResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -117,10 +117,6 @@ async def search_context(
             "url": result.get("url"),
             "content_type": result.get("content_type", "chunk"),
         }
-        
-        # Add chunk_index only for text chunks, not code snippets
-        if result.get("content_type") == "chunk":
-            formatted_result["chunk_index"] = result.get("chunk_index")
         
         # Extract useful metadata to top level for easier access
         formatted_result.update({
@@ -269,25 +265,40 @@ async def search_code_snippets(
     formatted_results = []
     for result in results:
         metadata = result.get("metadata", {})
+        
+        # Clean metadata to remove deprecated fields
+        clean_metadata = {}
+        for key, value in metadata.items():
+            # Skip deprecated fields that were used for chunks but not code snippets
+            if key not in ["language", "start_line", "end_line", "char_start", "char_end", "type", "chunk_index"]:
+                clean_metadata[key] = value
+        
         formatted_result = {
             "id": result["id"],
             "document_id": result.get("document_id"),
             "title": result["title"],
             "content": result["content"],
-            "language": result.get("language", "text"),
             "snippet_type": result.get("snippet_type", "code_block"),
             "score": result["score"],
-            "metadata": metadata,
+            "line_count": result.get("line_count", len(result["content"].split('\n')) if result["content"] else 0),
+            "metadata": clean_metadata,
             "url": result.get("url"),
             "content_type": "code_snippet",
-            # Extract useful metadata to top level for easier access
-            "page_url": metadata.get("page_url", result.get("url")),
-            "source_type": metadata.get("source_type"),
-            "base_url": metadata.get("base_url"),
-            "source_title": metadata.get("source_title"),
-            "start_line": result.get("start_line"),
-            "end_line": result.get("end_line"),
         }
+        
+        # Only add optional fields if they have values
+        page_url = metadata.get("page_url", result.get("url"))
+        if page_url and page_url != result.get("url"):
+            formatted_result["page_url"] = page_url
+            
+        if metadata.get("source_type"):
+            formatted_result["source_type"] = metadata.get("source_type")
+            
+        if metadata.get("base_url"):
+            formatted_result["base_url"] = metadata.get("base_url")
+            
+        if metadata.get("source_title"):
+            formatted_result["source_title"] = metadata.get("source_title")
         formatted_results.append(formatted_result)
 
     execution_time_ms = int((time.time() - start_time) * 1000)
@@ -298,7 +309,7 @@ async def search_code_snippets(
         f"time={execution_time_ms}ms"
     )
 
-    return SearchResponse(
+    return CodeSearchResponse(
         results=formatted_results,
         total=len(formatted_results),
         query=search_request.query,
