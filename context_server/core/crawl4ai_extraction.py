@@ -32,11 +32,13 @@ class ExtractionResult:
         content: str = "",
         metadata: dict | None = None,
         error: str | None = None,
+        extracted_pages: list | None = None,
     ):
         self.success = success
         self.content = content
         self.metadata = metadata or {}
         self.error = error
+        self.extracted_pages = extracted_pages or []
 
     @classmethod
     def error(cls, message: str) -> "ExtractionResult":
@@ -177,7 +179,7 @@ class Crawl4aiExtractor:
                         [item["content"] for item in extracted_contents]
                     )
 
-                    # Create simple, clear metadata
+                    # Create simple, clear metadata without large content arrays
                     metadata = {
                         "source_type": "simplified_crawl4ai",
                         "extraction_mode": self.extraction_mode,
@@ -187,7 +189,7 @@ class Crawl4aiExtractor:
                         "total_content_length": total_content_length,
                         "average_page_size": total_content_length // successful_pages if successful_pages else 0,
                         "extraction_time": datetime.now().isoformat(),
-                        "extracted_pages": extracted_contents,
+                        "page_urls": [page["url"] for page in extracted_contents],
                     }
 
                     logger.info(
@@ -196,7 +198,10 @@ class Crawl4aiExtractor:
                     )
 
                     return ExtractionResult(
-                        success=True, content=combined_content, metadata=metadata
+                        success=True, 
+                        content=combined_content, 
+                        metadata=metadata,
+                        extracted_pages=extracted_contents
                     )
 
             except Exception as e:

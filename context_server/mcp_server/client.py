@@ -34,14 +34,22 @@ class ContextServerClient:
         self.config = config
         self.base_url = config.context_server_url.rstrip("/")
 
-    async def post(self, endpoint: str, data: Optional[dict] = None) -> dict[str, Any]:
+    async def post(
+        self, 
+        endpoint: str, 
+        data: Optional[dict] = None, 
+        params: Optional[dict] = None
+    ) -> dict[str, Any]:
         """Make a POST request to the Context Server API."""
         url = f"{self.base_url}{endpoint}"
 
         try:
             async with httpx.AsyncClient(timeout=self.config.request_timeout) as client:
                 response = await client.post(
-                    url, json=data, headers={"Content-Type": "application/json"}
+                    url, 
+                    json=data, 
+                    params=params,
+                    headers={"Content-Type": "application/json"}
                 )
                 return self._handle_response(response)
 

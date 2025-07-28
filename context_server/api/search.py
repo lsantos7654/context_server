@@ -33,11 +33,12 @@ def get_code_embedding_service(request: Request) -> VoyageEmbeddingService:
     return request.app.state.code_embedding_service
 
 
-@router.post("/contexts/{context_name}/search", response_model=SearchResponse)
+@router.post("/contexts/{context_name}/search")
 @handle_search_errors("search documents")
 async def search_context(
     context_name: str,
     search_request: SearchRequest,
+    format: str = "standard",  # "standard" or "compact"
     db: DatabaseManager = Depends(get_db_manager),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
 ):
@@ -136,6 +137,17 @@ async def search_context(
         f"time={execution_time_ms}ms"
     )
 
+    # Return compact format if requested
+    if format == "compact":
+        compact_response = await db._transform_to_compact_format(
+            formatted_results,
+            query=search_request.query,
+            mode=search_request.mode.value,
+            execution_time_ms=execution_time_ms
+        )
+        return compact_response
+    
+    # Return standard format
     return SearchResponse(
         results=formatted_results,
         total=len(formatted_results),
@@ -200,6 +212,7 @@ def _merge_search_results(
 async def search_code_snippets(
     context_name: str,
     search_request: SearchRequest,
+    format: str = "standard",  # "standard" or "compact"
     db: DatabaseManager = Depends(get_db_manager),
     code_embedding_service: VoyageEmbeddingService = Depends(get_code_embedding_service),
 ):
@@ -309,6 +322,16 @@ async def search_code_snippets(
         f"time={execution_time_ms}ms"
     )
 
+    # Return compact format if requested
+    if format == "compact":
+        compact_response = db._transform_code_to_compact_format(
+            formatted_results,
+            query=search_request.query,
+            execution_time_ms=execution_time_ms
+        )
+        return compact_response
+    
+    # Return standard format
     return CodeSearchResponse(
         results=formatted_results,
         total=len(formatted_results),

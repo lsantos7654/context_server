@@ -352,14 +352,14 @@ class DocumentProcessor:
                     0.2,
                     metadata={
                         "phase": "content_extracted",
-                        "pages_found": len(result.metadata.get("extracted_pages", [])),
+                        "pages_found": len(result.extracted_pages if hasattr(result, 'extracted_pages') else []),
                     },
                 )
 
             # Process and store documents individually for fault tolerance
             documents = []
             failed_pages = []
-            extracted_pages = result.metadata.get("extracted_pages", [])
+            extracted_pages = result.extracted_pages if hasattr(result, 'extracted_pages') else []
             total_pages = len(extracted_pages) if extracted_pages else 1
 
             if extracted_pages:

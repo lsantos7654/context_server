@@ -112,6 +112,13 @@ def register_commands():
     except ImportError as e:
         echo_error(f"Failed to load get commands: {e}")
 
+    try:
+        from .commands.job import job
+
+        cli.add_command(job)
+    except ImportError as e:
+        echo_error(f"Failed to load job commands: {e}")
+
 
 
 # Register commands when module is imported

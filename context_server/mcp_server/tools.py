@@ -37,6 +37,10 @@ class ContextServerTools:
             ContextServerError: If context creation fails or name already exists
         """
         try:
+            # Ensure we use the correct default if embedding_model is not provided
+            if not embedding_model:
+                embedding_model = "text-embedding-3-large"
+                
             data = {
                 "name": name,
                 "description": description,
@@ -176,6 +180,171 @@ class ContextServerTools:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
+    async def extract_local_directory(
+        self, 
+        context_name: str, 
+        directory_path: str,
+        include_patterns: list[str] = None,
+        exclude_patterns: list[str] = None,
+        max_files: int = 100
+    ) -> dict[str, Any]:
+        """Extract and index content from a local directory.
+
+        Args:
+            context_name: Name of context to store the content
+            directory_path: Path to local directory to scan
+            include_patterns: File patterns to include (e.g., ['*.md', '*.py'])
+            exclude_patterns: File patterns to exclude (e.g., ['*.pyc', '__pycache__'])
+            max_files: Maximum number of files to process (safety limit)
+
+        Returns:
+            Dictionary with extraction summary including processed files count
+
+        Raises:
+            ContextServerError: If context not found or directory processing fails
+        """
+        try:
+            import fnmatch
+            from pathlib import Path
+            
+            source_path = Path(directory_path)
+            if not source_path.exists():
+                raise ContextServerError(f"Directory does not exist: {directory_path}")
+            
+            if not source_path.is_dir():
+                raise ContextServerError(f"Path is not a directory: {directory_path}")
+            
+            # Set default patterns if none provided
+            if not include_patterns:
+                include_patterns = [
+                    "*.md", "*.txt", "*.rst", "*.py", "*.js", "*.ts", 
+                    "*.html", "*.json", "*.yaml", "*.yml"
+                ]
+            
+            if not exclude_patterns:
+                exclude_patterns = [
+                    "*.pyc", "__pycache__", ".git", ".venv", "node_modules",
+                    "*.log", ".DS_Store", "*.tmp", "dist", "build", ".env"
+                ]
+            
+            # Collect files to process
+            files_to_process = []
+            
+            for file_path in source_path.rglob("*"):
+                if file_path.is_file():
+                    # Check exclude patterns first
+                    excluded = False
+                    for pattern in exclude_patterns:
+                        if (fnmatch.fnmatch(file_path.name, pattern) or 
+                            fnmatch.fnmatch(str(file_path.relative_to(source_path)), pattern)):
+                            excluded = True
+                            break
+                    
+                    if excluded:
+                        continue
+                    
+                    # Check include patterns
+                    included = False
+                    for pattern in include_patterns:
+                        if fnmatch.fnmatch(file_path.name, pattern):
+                            included = True
+                            break
+                    
+                    if included:
+                        files_to_process.append(file_path)
+                        
+                        # Safety limit to prevent processing too many files
+                        if len(files_to_process) >= max_files:
+                            logger.warning(f"Reached max files limit ({max_files}), stopping scan")
+                            break
+            
+            if not files_to_process:
+                return {
+                    "success": True,
+                    "message": "No files found matching the criteria",
+                    "processed_files": 0,
+                    "failed_files": 0,
+                    "files": []
+                }
+            
+            logger.info(f"Found {len(files_to_process)} files to process in {directory_path}")
+            
+            # Process files one by one through the API
+            processed_files = 0
+            failed_files = 0
+            file_results = []
+            
+            for file_path in files_to_process:
+                try:
+                    # Read file content
+                    try:
+                        content = file_path.read_text(encoding="utf-8")
+                    except UnicodeDecodeError:
+                        try:
+                            content = file_path.read_text(encoding="latin-1")
+                        except:
+                            logger.warning(f"Skipping binary file: {file_path}")
+                            failed_files += 1
+                            file_results.append({
+                                "file": str(file_path),
+                                "status": "skipped",
+                                "error": "Binary file"
+                            })
+                            continue
+                    
+                    # Send to API for processing
+                    data = {
+                        "source_type": "file",
+                        "source": str(file_path),
+                        "options": {
+                            "filename": file_path.name,
+                            "relative_path": str(file_path.relative_to(source_path)),
+                            "directory_extraction": True
+                        }
+                    }
+                    
+                    result = await self.client.post(
+                        f"/api/contexts/{context_name}/documents", data
+                    )
+                    
+                    processed_files += 1
+                    file_results.append({
+                        "file": str(file_path.relative_to(source_path)),
+                        "status": "processed",
+                        "job_id": result.get("job_id")
+                    })
+                    
+                    logger.debug(f"Processed file {processed_files}/{len(files_to_process)}: {file_path.name}")
+                    
+                except Exception as e:
+                    failed_files += 1
+                    file_results.append({
+                        "file": str(file_path.relative_to(source_path)),
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    logger.error(f"Failed to process {file_path}: {e}")
+            
+            logger.info(
+                f"Directory extraction completed: {processed_files} processed, {failed_files} failed"
+            )
+            
+            return {
+                "success": True,
+                "message": f"Processed {processed_files} files from directory",
+                "processed_files": processed_files,
+                "failed_files": failed_files,
+                "total_files": len(files_to_process),
+                "directory_path": directory_path,
+                "files": file_results
+            }
+            
+        except ContextServerError:
+            raise
+        except Exception as e:
+            logger.error(f"Directory extraction failed: {e}")
+            raise ContextServerError(f"Directory extraction failed: {str(e)}")
+
     # Search and Retrieval Tools
 
     async def search_context(
@@ -197,36 +366,16 @@ class ContextServerTools:
         """
         try:
             data = {"query": query, "mode": mode, "limit": limit}
+            params = {"format": "compact"}
 
             result = await self.client.post(
-                f"/api/contexts/{context_name}/search", data
+                f"/api/contexts/{context_name}/search", data, params=params
             )
-            
-            # Use the shared compact transformation (this should be done by the API)
-            # For now, we'll call the compact API endpoint directly
-            compact_data = {**data, "format": "compact"}
-            compact_result = await self.client.post(
-                f"/api/contexts/{context_name}/search", compact_data
-            )
-            
-            # If the API doesn't support compact format yet, fall back to manual transformation
-            if "note" not in compact_result:
-                # Import the DatabaseManager for transformation
-                from ..core.storage import DatabaseManager
-                db_manager = DatabaseManager()
-                compact_response = await db_manager._transform_to_compact_format(
-                    result.get("results", []),
-                    query=query,
-                    mode=mode,
-                    execution_time_ms=result.get("execution_time_ms", 0)
-                )
-            else:
-                compact_response = compact_result
             
             logger.info(
-                f"MCP search completed: {len(compact_response.get('results', []))} compact results for '{query}' in {context_name}"
+                f"MCP search completed: {len(result.get('results', []))} compact results for '{query}' in {context_name}"
             )
-            return compact_response
+            return result
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -238,7 +387,7 @@ class ContextServerTools:
         context_name: str, 
         doc_id: str, 
         page_number: int = 1, 
-        page_size: int = 25000
+        page_size: int = 20000
     ) -> dict[str, Any]:
         """Get raw content of a specific document with pagination support.
 
@@ -246,7 +395,7 @@ class ContextServerTools:
             context_name: Name of context containing the document
             doc_id: ID of the document to retrieve
             page_number: Page number to retrieve (1-based)
-            page_size: Number of characters per page (default: 25000 for Claude's limit)
+            page_size: Number of characters per page (default: 20000 for Claude's limit)
 
         Returns:
             Dictionary with document content and pagination metadata
@@ -269,8 +418,16 @@ class ContextServerTools:
             content_length = len(result.get("content", ""))
             total_pages = max(1, (result.get("full_content_length", content_length) + page_size - 1) // page_size)
             
+            # Only include essential fields to reduce response size
+            # Exclude metadata which can contain large extracted page content
             paginated_result = {
-                **result,
+                "id": result.get("id"),
+                "title": result.get("title"),
+                "url": result.get("url"),
+                "content": result.get("content", ""),
+                "document_type": result.get("document_type"),
+                "created_at": result.get("created_at"),
+                "full_content_length": result.get("full_content_length", content_length),
                 "pagination": {
                     "page_number": page_number,
                     "page_size": page_size,
@@ -278,7 +435,8 @@ class ContextServerTools:
                     "current_page_length": content_length,
                     "has_next_page": page_number < total_pages,
                     "has_previous_page": page_number > 1,
-                }
+                },
+                "note": "Metadata excluded to reduce response size. Full metadata available via direct API call."
             }
             
             logger.info(f"Retrieved document page {page_number}/{total_pages}: {doc_id} from {context_name}")
@@ -359,6 +517,38 @@ class ContextServerTools:
                     )
             raise
 
+    async def get_chunk(
+        self, context_name: str, chunk_id: str
+    ) -> dict[str, Any]:
+        """Get a specific chunk by ID with full content and metadata.
+
+        Args:
+            context_name: Name of context containing the chunk
+            chunk_id: ID of the chunk to retrieve
+
+        Returns:
+            Dictionary with chunk content and metadata
+
+        Raises:
+            ContextServerError: If context or chunk not found
+        """
+        try:
+            result = await self.client.get(
+                f"/api/contexts/{context_name}/chunks/{chunk_id}"
+            )
+            logger.info(f"Retrieved chunk: {chunk_id} from {context_name}")
+            return result
+
+        except ContextServerError as e:
+            if e.status_code == 404:
+                if "Context" in str(e):
+                    raise ContextServerError(f"Context '{context_name}' not found")
+                else:
+                    raise ContextServerError(
+                        f"Chunk '{chunk_id}' not found in context '{context_name}'"
+                    )
+            raise
+
     async def search_code(
         self, context_name: str, query: str, language: str = None, limit: int = 10
     ) -> dict[str, Any]:
@@ -382,37 +572,23 @@ class ContextServerTools:
                 "mode": "hybrid",  # Use hybrid search for best results
                 "limit": limit
             }
+            params = {"format": "compact"}
 
             result = await self.client.post(
-                f"/api/contexts/{context_name}/search/code", data
+                f"/api/contexts/{context_name}/search/code", data, params=params
             )
             
-            # Use the shared compact transformation for code search
-            from ..core.storage import DatabaseManager
-            db_manager = DatabaseManager()
-            
-            # Filter by language if specified before transformation
-            filtered_results = result.get("results", [])
+            # Filter by language if specified (note: language field was removed from results)
+            # This filtering is now mostly obsolete since language was removed from the data
             if language:
-                filtered_results = [
-                    r for r in filtered_results 
-                    if r.get("language", "").lower() == language.lower()
-                ]
-            
-            compact_response = db_manager._transform_code_to_compact_format(
-                filtered_results,
-                query=query,
-                execution_time_ms=result.get("execution_time_ms", 0)
-            )
-            
-            # Add language filter info
-            if language:
-                compact_response["language_filter"] = language
+                # Add language filter info to response for user information
+                result["language_filter"] = language
+                result["note"] = f"Language filter '{language}' applied (results may not be language-specific)"
             
             logger.info(
-                f"Code search completed: {len(compact_response.get('results', []))} results for '{query}' in {context_name}"
+                f"Code search completed: {len(result.get('results', []))} results for '{query}' in {context_name}"
             )
-            return compact_response
+            return result
 
         except ContextServerError as e:
             if e.status_code == 404:

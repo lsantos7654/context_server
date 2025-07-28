@@ -129,6 +129,39 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["context_name", "file_path"],
             },
         ),
+        types.Tool(
+            name="extract_local_directory",
+            description="Extract and index content from a local directory with file filtering. Scans directory for supported files and processes them into the context.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "context_name": {
+                        "type": "string",
+                        "description": "Name of context to store the content",
+                    },
+                    "directory_path": {
+                        "type": "string",
+                        "description": "Path to local directory to scan and extract",
+                    },
+                    "include_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "File patterns to include (e.g., ['*.md', '*.py']). Defaults to common text files.",
+                    },
+                    "exclude_patterns": {
+                        "type": "array", 
+                        "items": {"type": "string"},
+                        "description": "File patterns to exclude (e.g., ['*.pyc', '__pycache__']). Defaults to common binary/temp files.",
+                    },
+                    "max_files": {
+                        "type": "integer",
+                        "description": "Maximum number of files to process (safety limit). Default: 100",
+                        "default": 100,
+                    },
+                },
+                "required": ["context_name", "directory_path"],
+            },
+        ),
         # Search and Retrieval Tools
         types.Tool(
             name="search_context",
@@ -188,24 +221,6 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="get_code_snippets",
-            description="Get all code snippets from a specific document. This returns executable code examples with line numbers and metadata.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "context_name": {
-                        "type": "string",
-                        "description": "Name of context containing the document",
-                    },
-                    "doc_id": {
-                        "type": "string",
-                        "description": "ID of the document (from search results)",
-                    },
-                },
-                "required": ["context_name", "doc_id"],
-            },
-        ),
-        types.Tool(
             name="get_code_snippet",
             description="Get a specific code snippet by ID. This returns ready-to-use code with language and metadata information.",
             inputSchema={
@@ -221,6 +236,24 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["context_name", "snippet_id"],
+            },
+        ),
+        types.Tool(
+            name="get_chunk",
+            description="Get a specific chunk by ID with full content and metadata. Use this when search_context returns chunk IDs and you need the complete chunk content.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "context_name": {
+                        "type": "string",
+                        "description": "Name of context containing the chunk",
+                    },
+                    "chunk_id": {
+                        "type": "string",
+                        "description": "ID of the chunk to retrieve (from search results)",
+                    },
+                },
+                "required": ["context_name", "chunk_id"],
             },
         ),
         types.Tool(
@@ -308,50 +341,9 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": [],
             },
         ),
-        # Utility Tools
-        types.Tool(
-            name="list_documents",
-            description="List documents in a context with pagination. Use this to see what content is available.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "context_name": {
-                        "type": "string",
-                        "description": "Name of context to list documents from",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of documents to return",
-                        "default": 50,
-                    },
-                    "offset": {
-                        "type": "integer",
-                        "description": "Number of documents to skip (for pagination)",
-                        "default": 0,
-                    },
-                },
-                "required": ["context_name"],
-            },
-        ),
-        types.Tool(
-            name="delete_documents",
-            description="Delete specific documents from a context. Use this to clean up outdated or incorrect content.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "context_name": {
-                        "type": "string",
-                        "description": "Name of context to delete documents from",
-                    },
-                    "document_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of document IDs to delete",
-                    },
-                },
-                "required": ["context_name", "document_ids"],
-            },
-        ),
+        # Note: Utility tools like list_documents, get_code_snippets, and delete_documents 
+        # have been removed to focus on the optimal search-first workflow:
+        # search_context/search_code → get_document/get_code_snippet → get_chunk
     ]
 
 
@@ -383,14 +375,16 @@ async def handle_call_tool(
             result = await tools.extract_url(**arguments)
         elif name == "extract_file":
             result = await tools.extract_file(**arguments)
+        elif name == "extract_local_directory":
+            result = await tools.extract_local_directory(**arguments)
         elif name == "search_context":
             result = await tools.search_context(**arguments)
         elif name == "get_document":
             result = await tools.get_document(**arguments)
-        elif name == "get_code_snippets":
-            result = await tools.get_code_snippets(**arguments)
         elif name == "get_code_snippet":
             result = await tools.get_code_snippet(**arguments)
+        elif name == "get_chunk":
+            result = await tools.get_chunk(**arguments)
         elif name == "search_code":
             result = await tools.search_code(**arguments)
         elif name == "get_job_status":
@@ -401,10 +395,6 @@ async def handle_call_tool(
             result = await tools.cleanup_completed_jobs(**arguments)
         elif name == "get_active_jobs":
             result = await tools.get_active_jobs(**arguments)
-        elif name == "list_documents":
-            result = await tools.list_documents(**arguments)
-        elif name == "delete_documents":
-            result = await tools.delete_documents(**arguments)
         else:
             return [
                 types.TextContent(type="text", text=f"Error: Unknown tool '{name}'")

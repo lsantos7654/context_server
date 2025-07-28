@@ -9,6 +9,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from ..claude_md_template import (
+    append_to_claude_md,
+    create_claude_md,
+    get_claude_md_template,
+    should_create_claude_md,
+)
 from ..config import get_config
 from ..help_formatter import rich_help_option
 from ..utils import check_api_health, echo_error, echo_info, echo_success, echo_warning
@@ -115,6 +121,49 @@ def init(overwrite):
         echo_info("Make sure Claude Code CLI is installed and in your PATH")
         return
 
+    # Create or enhance CLAUDE.md with intelligent documentation strategy
+    echo_info("Setting up intelligent documentation strategy...")
+    try:
+        if should_create_claude_md(str(current_dir)):
+            # No CLAUDE.md exists, run claude /init first
+            echo_info("No CLAUDE.md found, running claude /init first...")
+            try:
+                init_result = subprocess.run(
+                    ["claude", "/init", "-p", "--dangerously-skip-permissions"],
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir,
+                )
+                if init_result.returncode == 0:
+                    echo_success("Claude /init completed successfully")
+                    # Now append our documentation strategy template
+                    if append_to_claude_md(str(current_dir), get_claude_md_template()):
+                        echo_success("Enhanced CLAUDE.md with documentation strategy")
+                    else:
+                        echo_warning("Failed to enhance CLAUDE.md with documentation strategy")
+                else:
+                    echo_warning(f"Claude /init returned non-zero exit code: {init_result.stderr}")
+                    # Continue anyway and create our own CLAUDE.md
+                    if not create_claude_md(str(current_dir)):
+                        echo_warning("Failed to create CLAUDE.md file")
+                    else:
+                        echo_success("Created CLAUDE.md with documentation strategy")
+            except Exception as e:
+                echo_warning(f"Failed to run claude /init: {e}")
+                # Fallback: create our own CLAUDE.md
+                if create_claude_md(str(current_dir)):
+                    echo_success("Created CLAUDE.md with documentation strategy")
+                else:
+                    echo_warning("Failed to create CLAUDE.md file")
+        else:
+            # CLAUDE.md exists, append our strategy
+            if append_to_claude_md(str(current_dir), get_claude_md_template()):
+                echo_success("Enhanced existing CLAUDE.md with documentation strategy")
+            else:
+                echo_warning("Failed to enhance CLAUDE.md file")
+    except Exception as e:
+        echo_warning(f"Error setting up CLAUDE.md: {e}")
+
     # Show next steps
     echo_success("Setup complete!")
     echo_info("Next steps:")
@@ -127,7 +176,12 @@ def init(overwrite):
     echo_info("  • extract_url - Extract docs from websites")
     echo_info("  • search_context - Search with vector/fulltext")
     echo_info("  • get_document - Retrieve full document content")
-    echo_info("  • And 8 more tools for context management...")
+    echo_info("  • get_chunk - Retrieve specific chunks")
+    echo_info("  • get_code_snippet - Get individual code examples")
+    echo_info("  • search_code - Search code with specialized embeddings")
+    echo_info("  • And more tools for job management...")
+    echo_info("")
+    echo_success("CLAUDE.md created/enhanced with intelligent documentation strategy!")
 
 
 @setup.command()
