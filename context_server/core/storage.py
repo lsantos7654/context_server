@@ -93,8 +93,6 @@ class DatabaseManager:
 
         # Chunk-level information (only include non-null values)
         chunk_info = {}
-        if raw_metadata.get("chunk_index") is not None:
-            chunk_info["index"] = raw_metadata.get("chunk_index")
         if raw_metadata.get("total_links_in_chunk"):
             chunk_info["links_count"] = raw_metadata.get("total_links_in_chunk")
         chunk_links = raw_metadata.get("chunk_links", {})
@@ -1041,7 +1039,12 @@ class DatabaseManager:
                 if line_count <= 8:
                     preview = content
                 else:
-                    preview = self._generate_heuristic_code_summary(content, lines)
+                    # Show first 8 lines of actual code instead of heuristic summary
+                    preview_lines = []
+                    for line in lines[:8]:
+                        if line.strip():  # Only include non-empty lines
+                            preview_lines.append(line)
+                    preview = '\n'.join(preview_lines[:8]).strip()
                 
                 result.append({
                     "id": str(row["id"]),
@@ -1141,7 +1144,6 @@ class DatabaseManager:
                             "total_code_snippets": len(chunk_code_snippets),
                         }
                     ),
-                    "chunk_index": row["chunk_index"],
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
@@ -1216,7 +1218,6 @@ class DatabaseManager:
                             "total_code_snippets": len(chunk_code_snippets),
                         }
                     ),
-                    "chunk_index": row["chunk_index"],
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
@@ -1436,7 +1437,12 @@ class DatabaseManager:
                 if line_count <= 8:
                     preview = content
                 else:
-                    preview = self._generate_heuristic_code_summary(content, lines)
+                    # Show first 8 lines of actual code instead of heuristic summary
+                    preview_lines = []
+                    for line in lines[:8]:
+                        if line.strip():  # Only include non-empty lines
+                            preview_lines.append(line)
+                    preview = '\n'.join(preview_lines[:8]).strip()
                 
                 result.append({
                     "id": str(row["id"]),
@@ -1728,7 +1734,6 @@ class DatabaseManager:
                         "total_code_snippets": len(chunk_code_snippets),
                     }
                 ),
-                "chunk_index": row["chunk_index"],
                 "start_line": row.get("start_line"),
                 "end_line": row.get("end_line"),
                 "char_start": row.get("char_start"),

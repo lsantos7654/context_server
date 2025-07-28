@@ -124,7 +124,6 @@ class SearchResult(BaseModel):
     score: float
     metadata: dict
     url: str | None = None
-    chunk_index: int | None = None
     content_type: str = "chunk"
 
 
