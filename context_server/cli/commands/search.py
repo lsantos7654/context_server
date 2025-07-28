@@ -679,11 +679,15 @@ def display_code_results_cards(results: list):
         # Create card header
         score = result['score']
         snippet_type = result.get("snippet_type", "code_block")
+        snippet_id = result.get("id", "N/A")
         
         header = f"Code Result {i} • Score: {score:.3f} • Type: {snippet_type}"
         
         # Create card content
         card_content = []
+        
+        # Snippet ID - prominently displayed
+        card_content.append(f"[bold green]ID: {snippet_id}[/bold green]")
         
         # Title and URL
         title = result.get("title", "")
@@ -697,8 +701,8 @@ def display_code_results_cards(results: list):
         # Code content with syntax highlighting
         content = result.get("content", "")
         if content:
-            # Show line count
-            line_count = result.get("line_count", len(content.split('\n')))
+            # Calculate and show line count (clean calculation)
+            line_count = len(content.split('\n')) if content else 0
             card_content.append(f"[dim cyan]Lines: {line_count}[/dim cyan]")
             card_content.append("")  # Empty line
             card_content.append("[bold white]Code:[/bold white]")
@@ -717,8 +721,11 @@ def display_code_results_cards(results: list):
                 elif "#!/bin/bash" in content or "#!/bin/sh" in content:
                     language = "bash"
                 
+                # Create syntax-highlighted content
                 syntax = Syntax(content, language, theme="monokai", line_numbers=True, word_wrap=True)
-                card_content.append("")  # Let Rich handle the syntax display separately
+                
+                # Add the syntax object to the panel content
+                card_content.append("")  # Empty line before code
             except Exception:
                 # Fallback to plain text if syntax highlighting fails
                 card_content.append(f"[dim]{content}[/dim]")
@@ -726,20 +733,24 @@ def display_code_results_cards(results: list):
         else:
             syntax = None
         
-        # Create panel
+        # Create panel with the text content
         panel_text = "\n".join(card_content)
+        
+        # If we have syntax highlighting, create a panel that includes both text and syntax
+        if syntax is not None:
+            # Create a group with text content and syntax
+            from rich.console import Group
+            panel_content = Group(panel_text, syntax)
+        else:
+            panel_content = panel_text
+        
         panel = Panel(
-            panel_text,
+            panel_content,
             title=header,
             border_style="green",
             padding=(1, 2),
         )
         console.print(panel)
-        
-        # Display syntax-highlighted code separately if available
-        if syntax is not None:
-            console.print(syntax)
-        
         console.print()  # Empty line between cards
 
 

@@ -1184,10 +1184,9 @@ class DatabaseManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, cs.language, cs.snippet_type, d.title, d.url, 
+                    cs.id, cs.content, cs.snippet_type, d.title, d.url, 
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata, 
-                    d.id as document_id, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
-                    cs.summary, cs.summary_model,
+                    d.id as document_id,
                     1 - (cs.embedding <=> $2::halfvec) as similarity
                 FROM code_snippets cs
                 JOIN documents d ON cs.document_id = d.id
@@ -1207,13 +1206,11 @@ class DatabaseManager:
                     "id": str(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
-                    "language": row["language"],
                     "snippet_type": row["snippet_type"],
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
-                    "summary": row["summary"],
-                    "summary_model": row["summary_model"],
+                    "line_count": len(row["content"].split('\n')) if row["content"] else 0,
                     "metadata": self._filter_metadata_for_search(
                         {
                             **(
@@ -1229,10 +1226,6 @@ class DatabaseManager:
                             "document_id": str(row["document_id"]),
                         }
                     ),
-                    "start_line": row.get("start_line"),
-                    "end_line": row.get("end_line"),
-                    "char_start": row.get("char_start"),
-                    "char_end": row.get("char_end"),
                 }
                 for row in rows
             ]
@@ -1245,10 +1238,9 @@ class DatabaseManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, cs.language, cs.snippet_type, d.title, d.url,
+                    cs.id, cs.content, cs.snippet_type, d.title, d.url,
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata,
-                    d.id as document_id, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
-                    cs.summary, cs.summary_model,
+                    d.id as document_id,
                     ts_rank(to_tsvector('english', cs.content), plainto_tsquery('english', $2)) as score
                 FROM code_snippets cs
                 JOIN documents d ON cs.document_id = d.id
@@ -1267,13 +1259,11 @@ class DatabaseManager:
                     "id": str(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
-                    "language": row["language"],
                     "snippet_type": row["snippet_type"],
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),
-                    "summary": row["summary"],
-                    "summary_model": row["summary_model"],
+                    "line_count": len(row["content"].split('\n')) if row["content"] else 0,
                     "metadata": self._filter_metadata_for_search(
                         {
                             **(
@@ -1289,10 +1279,6 @@ class DatabaseManager:
                             "document_id": str(row["document_id"]),
                         }
                     ),
-                    "start_line": row.get("start_line"),
-                    "end_line": row.get("end_line"),
-                    "char_start": row.get("char_start"),
-                    "char_end": row.get("char_end"),
                 }
                 for row in rows
             ]
