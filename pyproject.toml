@@ -5,8 +5,46 @@ build-backend = "hatchling.build"
 [project]
 name = "context-server"
 version = "0.1.0"
-description = "Local, containerized documentation RAG system with MCP integration"
+description = "Modern, intelligent documentation RAG system with FastAPI backend, PostgreSQL storage, and semantic search capabilities"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Context Server Contributors"},
+]
+maintainers = [
+    {name = "Context Server Contributors"},
+]
 requires-python = ">=3.12"
+keywords = [
+    "rag",
+    "documentation",
+    "semantic-search",
+    "vector-database",
+    "fastapi",
+    "postgresql",
+    "mcp",
+    "claude",
+    "ai",
+    "embeddings",
+    "crawling"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Database :: Database Engines/Servers",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+]
+
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
