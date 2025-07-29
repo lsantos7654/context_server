@@ -13,7 +13,7 @@ Context Server transforms how you work with documentation by providing intellige
 - 🔍 **Intelligent Document Processing** - Three-document pipeline with original content, code snippets, and cleaned text
 - 🧠 **Dual Embedding Strategy** - OpenAI text-embedding-3-large for documents + Voyage AI voyage-code-3 for code
 - ⚡ **High-Performance Search** - Hybrid semantic search with sub-second response times
-- 🤖 **Claude MCP Integration** - Native Model Context Protocol support for seamless AI workflows  
+- 🤖 **Claude MCP Integration** - Native Model Context Protocol support for seamless AI workflows
 - 🌐 **Web Crawling** - Intelligent crawl4ai-powered extraction from documentation sites
 - 📊 **Real-time Processing** - Async job system with progress tracking and status monitoring
 - 🐳 **Container-Ready** - Full Docker setup with PostgreSQL + pgvector
@@ -96,7 +96,7 @@ ctx context delete old-context
 ctx extract https://doc.rust-lang.org/ rust-docs --max-pages 50
 ctx extract ./my-project/ local-docs --source-type local
 
-# Search operations  
+# Search operations
 ctx search query "error handling patterns" rust-docs --limit 5
 ctx search code "impl Error" rust-docs --language rust
 ```
@@ -136,7 +136,7 @@ Context Server provides native MCP (Model Context Protocol) support for seamless
 ### Available MCP Tools
 
 - `create_context(name, description, embedding_model)` - Create new documentation context
-- `extract_url(context_name, url, max_pages)` - Extract from websites  
+- `extract_url(context_name, url, max_pages)` - Extract from websites
 - `search_context(context_name, query, mode, limit)` - Semantic search
 - `search_code(context_name, query, language, limit)` - Code-specific search
 - `get_document(context_name, doc_id, page_number)` - Paginated document retrieval
@@ -145,14 +145,17 @@ Context Server provides native MCP (Model Context Protocol) support for seamless
 ### Setup with Claude
 
 1. **Start the services:**
+
    ```bash
    ctx server up
    ```
 
 2. **Initialize MCP integration:**
+
    ```bash
    ctx setup init
    ```
+
    This automatically configures Claude to use Context Server MCP tools and creates a `claude.md` file with usage instructions and examples.
 
 3. **Use in Claude conversations:**
@@ -199,22 +202,25 @@ ctx extract https://docs.example.com/ my-docs \
 ## 📊 Performance & Specifications
 
 ### Processing Performance
+
 - **Extraction Speed**: ~30 pages/minute (varies by site complexity)
 - **Search Latency**: < 1 second for most queries
 - **Concurrent Users**: Supports 100+ simultaneous searches
 - **Storage Efficiency**: ~50KB per page of documentation
 
 ### Technical Specifications
+
 - **Text Chunking**: LangChain RecursiveCharacterTextSplitter (1000 chars, 200 overlap)
-- **Code Chunking**: Optimized for code blocks (700 chars, 150 overlap)  
+- **Code Chunking**: Optimized for code blocks (700 chars, 150 overlap)
 - **Document Embeddings**: OpenAI text-embedding-3-large (3072 dimensions)
 - **Code Embeddings**: Voyage AI voyage-code-3 (2048 dimensions)
 - **Vector Storage**: PostgreSQL with pgvector halfvec optimization
 - **Search Modes**: Hybrid (semantic + keyword), vector-only, full-text
 
 ### Scale Testing Results
+
 - **✅ 10,000+ documents**: Tested with large documentation sets
-- **✅ 100MB+ content**: Handles enterprise documentation volumes  
+- **✅ 100MB+ content**: Handles enterprise documentation volumes
 - **✅ 50+ concurrent users**: Production-grade performance
 - **✅ Sub-second search**: Even with 100k+ chunks
 
@@ -245,7 +251,7 @@ make format
 ```
 context_server/
 ├── cli/                    # Command-line interface
-├── api/                    # FastAPI REST endpoints  
+├── api/                    # FastAPI REST endpoints
 ├── core/                   # Core business logic
 │   ├── chunking.py        # LangChain text splitting
 │   ├── embeddings.py      # OpenAI + Voyage AI services
@@ -279,21 +285,25 @@ We welcome contributions! Here's how to get started:
 ### REST Endpoints
 
 **Contexts**
+
 - `GET /api/contexts` - List all contexts
 - `POST /api/contexts` - Create new context
 - `GET /api/contexts/{name}` - Get context details
 - `DELETE /api/contexts/{name}` - Delete context
 
-**Documents** 
+**Documents**
+
 - `POST /api/contexts/{name}/documents` - Extract document
 - `GET /api/contexts/{name}/documents` - List documents
 - `GET /api/contexts/{name}/documents/{id}` - Get document (paginated)
 
 **Search**
+
 - `GET /api/contexts/{name}/search` - Search documents
 - `GET /api/contexts/{name}/search/code` - Search code snippets
 
 **Jobs**
+
 - `GET /api/jobs/{id}/status` - Check processing status
 - `POST /api/jobs/{id}/cancel` - Cancel job
 
@@ -304,6 +314,7 @@ Full API documentation available at `http://localhost:8000/docs` when server is 
 ### Common Issues
 
 **Command not found: `ctx`**
+
 ```bash
 # Ensure uv tools are in PATH
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -311,6 +322,7 @@ source ~/.bashrc
 ```
 
 **Docker services won't start**
+
 ```bash
 # Check Docker is running
 docker --version
@@ -321,6 +333,7 @@ ctx server down && ctx server up
 ```
 
 **Search returns no results**
+
 ```bash
 # Verify context has documents
 ctx context list
@@ -331,6 +344,7 @@ ctx server logs
 ```
 
 **API key issues**
+
 ```bash
 # Verify environment variables
 echo $OPENAI_API_KEY | head -c 10
@@ -349,17 +363,3 @@ ls -la .env
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **OpenAI** for text-embedding-3-large
-- **Voyage AI** for voyage-code-3 code embeddings  
-- **crawl4ai** for intelligent web scraping
-- **FastAPI** for the robust API framework
-- **PostgreSQL + pgvector** for vector storage
-
----
-
-**Ready to transform how you work with documentation?** [Get started now](#-quick-start) or [view the full documentation](docs/).
-
-*Made with ❤️ by the Context Server team*
