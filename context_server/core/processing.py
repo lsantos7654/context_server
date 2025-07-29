@@ -262,6 +262,8 @@ class DocumentProcessor:
         embedding_service: EmbeddingService | None = None,
         code_embedding_service: VoyageEmbeddingService | None = None,
         summarization_service: SummarizationService | None = None,
+        max_concurrent_embeddings: int = 3,
+        max_concurrent_summaries: int = 2,
     ):
         self.embedding_service = embedding_service or EmbeddingService()
         self.code_embedding_service = code_embedding_service or VoyageEmbeddingService()
@@ -274,6 +276,12 @@ class DocumentProcessor:
         )
         self.extractor = Crawl4aiExtractor()
         self.code_extractor = CodeSnippetExtractor()
+        
+        # Concurrency controls to prevent overwhelming APIs
+        self.embedding_semaphore = asyncio.Semaphore(max_concurrent_embeddings)
+        self.summary_semaphore = asyncio.Semaphore(max_concurrent_summaries)
+        
+        logger.info(f"DocumentProcessor initialized with {max_concurrent_embeddings} max concurrent embeddings, {max_concurrent_summaries} max concurrent summaries")
 
     def _extract_links_from_chunk(self, chunk_content: str) -> dict:
         """Extract links from chunk content and return link metadata."""
@@ -541,14 +549,12 @@ class DocumentProcessor:
                 cleaned_content,
             ) = self.code_extractor.extract_code_snippets(content, url, title)
 
-            # Document 1: Original markdown (raw content)
+            # Prepare chunked content for all three documents
             original_chunks = self.text_chunker.chunk_text(content)
-            original_processed_chunks = await self._process_chunks_with_embeddings(
-                original_chunks, url, title, self.embedding_service, is_code=False
-            )
-
+            
             # Document 2: Code snippets only
             code_snippets_content = ""
+            code_chunks = []
             if code_snippet_data:
                 # Combine all code snippets into a single document
                 code_snippets_content = "\n\n".join(
@@ -557,32 +563,70 @@ class DocumentProcessor:
                         for snippet in code_snippet_data
                     ]
                 )
-
-            code_processed_chunks = []
-            code_processed_snippets = []
-
-            if code_snippets_content:
                 # Chunk the code snippets document with code embeddings for chunks table
                 code_chunks = self.code_chunker.chunk_text(code_snippets_content)
-                code_processed_chunks = await self._process_chunks_with_embeddings(
-                    code_chunks, url, title, self.code_embedding_service, is_code=True
-                )
-
-                # Process individual code snippets with code embeddings for code_snippets table
-                code_processed_snippets = (
-                    await self._process_code_snippets_with_embeddings(
-                        code_snippet_data, url, title
-                    )
-                )
 
             # Document 3: Cleaned markdown with code snippet placeholders
             cleaned_with_placeholders = self._create_cleaned_markdown_with_placeholders(
                 cleaned_content, code_snippet_data
             )
             cleaned_chunks = self.text_chunker.chunk_text(cleaned_with_placeholders)
-            cleaned_processed_chunks = await self._process_chunks_with_embeddings(
-                cleaned_chunks, url, title, self.embedding_service, is_code=False
+
+            # PARALLEL PROCESSING: Run all embedding operations concurrently
+            # This parallelizes the 4 most expensive operations that were previously sequential
+            embedding_tasks = []
+            
+            # Task 1: Original document chunks with text embeddings
+            embedding_tasks.append(
+                self._process_chunks_with_embeddings(
+                    original_chunks, url, title, self.embedding_service, is_code=False
+                )
             )
+            
+            # Task 2: Code document chunks with code embeddings (only if we have code)
+            if code_chunks:
+                embedding_tasks.append(
+                    self._process_chunks_with_embeddings(
+                        code_chunks, url, title, self.code_embedding_service, is_code=True
+                    )
+                )
+            else:
+                embedding_tasks.append(asyncio.sleep(0))  # Placeholder for no-op
+            
+            # Task 3: Individual code snippets with code embeddings (only if we have code)  
+            if code_snippet_data:
+                embedding_tasks.append(
+                    self._process_code_snippets_with_embeddings(
+                        code_snippet_data, url, title
+                    )
+                )
+            else:
+                embedding_tasks.append(asyncio.sleep(0))  # Placeholder for no-op
+            
+            # Task 4: Cleaned document chunks with text embeddings
+            embedding_tasks.append(
+                self._process_chunks_with_embeddings(
+                    cleaned_chunks, url, title, self.embedding_service, is_code=False
+                )
+            )
+
+            # Execute all embedding operations in parallel
+            logger.info(f"Starting parallel processing of {len([t for t in embedding_tasks if not isinstance(t, asyncio.Task) or not t.done()])} embedding tasks for {title}")
+            
+            results = await asyncio.gather(*embedding_tasks, return_exceptions=True)
+            
+            # Extract results and handle any exceptions
+            original_processed_chunks = results[0] if not isinstance(results[0], Exception) else []
+            code_processed_chunks = results[1] if not isinstance(results[1], Exception) and code_chunks else []
+            code_processed_snippets = results[2] if not isinstance(results[2], Exception) and code_snippet_data else []
+            cleaned_processed_chunks = results[3] if not isinstance(results[3], Exception) else []
+            
+            # Log any exceptions that occurred during parallel processing
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    task_names = ["original_chunks", "code_chunks", "code_snippets", "cleaned_chunks"]
+                    logger.error(f"Error in parallel task {task_names[i]}: {result}")
+                    # Continue processing with empty results for failed tasks
 
             # Create three ProcessedDocument objects
             documents = []
@@ -638,51 +682,62 @@ class DocumentProcessor:
         embedding_service,
         is_code: bool = False,
     ) -> list[ProcessedChunk]:
-        """Process chunks with embeddings and summaries."""
+        """Process chunks with embeddings and summaries using parallel processing."""
         processed_chunks = []
         batch_size = 10
 
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i : i + batch_size]
 
-            # Get embeddings for the batch
-            try:
-                embeddings = await embedding_service.embed_batch(
-                    [chunk.content for chunk in batch]
-                )
-            except Exception as e:
-                logger.warning(f"Failed to generate embeddings (missing API key?): {e}")
-                # Create dummy embeddings for testing
-                embedding_dim = embedding_service.get_dimension()
-                embeddings = [[0.0] * embedding_dim for _ in batch]
-
-            # Generate summaries for the batch
-            summaries = []
-            summary_model = None
-            if self.summarization_service.client:
-                try:
-                    chunk_data = [
-                        (f"chunk_{i+j}", chunk.content) for j, chunk in enumerate(batch)
-                    ]
-                    summary_results = (
-                        await self.summarization_service.summarize_chunks_batch(
-                            chunk_data, batch_size=5
+            # PARALLEL PROCESSING: Run embeddings and summarization concurrently with rate limiting
+            async def get_embeddings():
+                async with self.embedding_semaphore:  # Rate limit concurrent embedding calls
+                    try:
+                        return await embedding_service.embed_batch(
+                            [chunk.content for chunk in batch]
                         )
-                    )
-                    summaries = [result[1] for result in summary_results]
-                    summary_model = self.summarization_service.model
-                    logger.debug(
-                        f"Generated {len([s for s in summaries if s])} summaries for batch"
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to generate summaries: {e}")
-                    summaries = [None] * len(batch)
-            else:
-                logger.debug("Summarization service not available, using fallback")
-                summaries = [
-                    self.summarization_service.get_fallback_summary(chunk.content)
-                    for chunk in batch
-                ]
+                    except Exception as e:
+                        logger.warning(f"Failed to generate embeddings (missing API key?): {e}")
+                        # Create dummy embeddings for testing
+                        embedding_dim = embedding_service.get_dimension()
+                        return [[0.0] * embedding_dim for _ in batch]
+
+            async def get_summaries():
+                async with self.summary_semaphore:  # Rate limit concurrent summary calls
+                    summaries = []
+                    summary_model = None
+                    if self.summarization_service.client:
+                        try:
+                            chunk_data = [
+                                (f"chunk_{i+j}", chunk.content) for j, chunk in enumerate(batch)
+                            ]
+                            summary_results = (
+                                await self.summarization_service.summarize_chunks_batch(
+                                    chunk_data, batch_size=5
+                                )
+                            )
+                            summaries = [result[1] for result in summary_results]
+                            summary_model = self.summarization_service.model
+                            logger.debug(
+                                f"Generated {len([s for s in summaries if s])} summaries for batch"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to generate summaries: {e}")
+                            summaries = [None] * len(batch)
+                    else:
+                        logger.debug("Summarization service not available, using fallback")
+                        summaries = [
+                            self.summarization_service.get_fallback_summary(chunk.content)
+                            for chunk in batch
+                        ]
+                    return summaries, summary_model
+
+            # Execute embeddings and summarization in parallel
+            embeddings, (summaries, summary_model) = await asyncio.gather(
+                get_embeddings(),
+                get_summaries(),
+                return_exceptions=False  # Let exceptions bubble up for proper error handling
+            )
 
             # Create processed chunks
             for chunk, embedding, summary in zip(batch, embeddings, summaries):
@@ -718,23 +773,24 @@ class DocumentProcessor:
     async def _process_code_snippets_with_embeddings(
         self, code_snippet_data: list, url: str, title: str
     ) -> list[CodeSnippet]:
-        """Process code snippets with embeddings."""
+        """Process code snippets with embeddings using rate limiting."""
         processed_code_snippets = []
         batch_size = 10
 
         for i in range(0, len(code_snippet_data), batch_size):
             batch = code_snippet_data[i : i + batch_size]
 
-            # Get embeddings for the batch using code embedding service
-            try:
-                embeddings = await self.code_embedding_service.embed_batch(
-                    [snippet["content"] for snippet in batch]
-                )
-            except Exception as e:
-                logger.warning(f"Failed to generate code embeddings: {e}")
-                # Create dummy embeddings for testing
-                embedding_dim = self.code_embedding_service.get_dimension()
-                embeddings = [[0.0] * embedding_dim for _ in batch]
+            # Get embeddings for the batch using code embedding service with rate limiting
+            async with self.embedding_semaphore:  # Rate limit concurrent embedding calls
+                try:
+                    embeddings = await self.code_embedding_service.embed_batch(
+                        [snippet["content"] for snippet in batch]
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to generate code embeddings: {e}")
+                    # Create dummy embeddings for testing
+                    embedding_dim = self.code_embedding_service.get_dimension()
+                    embeddings = [[0.0] * embedding_dim for _ in batch]
 
             # Create processed code snippets
             for snippet_data, embedding in zip(batch, embeddings):

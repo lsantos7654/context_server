@@ -79,7 +79,7 @@ quality-check: format lint test ## Run full quality check (format, lint, test)
 # Docker Operations
 up: ## Start Context Server (PostgreSQL + API)
 	@echo "$(GREEN)Starting Context Server...$(NC)"
-	@docker-compose up -d
+	@docker-compose up -d --build
 	@echo "$(GREEN)Server started!$(NC)"
 	@echo "API available at: http://localhost:8000"
 	@echo "API docs at: http://localhost:8000/docs"

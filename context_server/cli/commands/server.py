@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
-from ..config import get_api_base_url, get_api_url
+from ..config import get_api_base_url, get_api_url, get_compose_file_path, ensure_project_setup
 from ..help_formatter import rich_help_option
 from ..utils import (
     check_api_health,
@@ -58,7 +58,7 @@ def server():
 def up():
     """Start the Context Server services.
 
-    Starts PostgreSQL database and FastAPI server containers.
+    Starts PostgreSQL database and FastAPI server containers with fresh builds.
     Once running, Claude can connect via MCP if configured.
     """
     if not check_docker_running():
@@ -68,13 +68,16 @@ def up():
     echo_info("Starting Context Server services...")
 
     try:
-        # Start PostgreSQL container
-        echo_info(f"Starting {POSTGRES_CONTAINER}...")
-        run_command(["docker", "start", POSTGRES_CONTAINER])
+        # Auto-detect and ensure project is configured
+        ensure_project_setup()
         
-        # Start API container
-        echo_info(f"Starting {API_CONTAINER}...")
-        run_command(["docker", "start", API_CONTAINER])
+        # Get the docker-compose.yml file path
+        compose_file = get_compose_file_path()
+        echo_info(f"Using docker-compose file: {compose_file}")
+        
+        # Use docker-compose with explicit file path to start services with build
+        echo_info("Building and starting services with docker-compose...")
+        run_command(["docker-compose", "--file", str(compose_file), "up", "-d", "--build"])
 
         echo_success("Context Server started!")
         echo_info(f"API available at: {get_api_base_url()}")
@@ -89,9 +92,11 @@ def up():
         else:
             echo_warning("Services may not be fully ready yet")
 
+    except FileNotFoundError as e:
+        echo_error(str(e))
+        echo_info("Make sure you're in the Context Server project directory or configure the path.")
     except Exception as e:
         echo_error(f"Failed to start services: {e}")
-        echo_info("Hint: Make sure containers exist. Run 'docker-compose up' once to create them.")
 
 
 @server.command()
@@ -104,15 +109,28 @@ def down():
     echo_info("Stopping Context Server services...")
 
     try:
-        # Stop API container
-        echo_info(f"Stopping {API_CONTAINER}...")
-        run_command(["docker", "stop", API_CONTAINER])
+        # Get the docker-compose.yml file path
+        compose_file = get_compose_file_path()
         
-        # Stop PostgreSQL container
-        echo_info(f"Stopping {POSTGRES_CONTAINER}...")
-        run_command(["docker", "stop", POSTGRES_CONTAINER])
+        # Use docker-compose with explicit file path to stop services
+        echo_info("Stopping services with docker-compose...")
+        run_command(["docker-compose", "--file", str(compose_file), "down"])
 
         echo_success("Context Server stopped!")
+    except FileNotFoundError as e:
+        echo_warning(str(e))
+        echo_info("Falling back to direct container commands...")
+        try:
+            # Fallback to direct container commands
+            echo_info(f"Stopping {API_CONTAINER}...")
+            run_command(["docker", "stop", API_CONTAINER])
+            
+            echo_info(f"Stopping {POSTGRES_CONTAINER}...")
+            run_command(["docker", "stop", POSTGRES_CONTAINER])
+            
+            echo_success("Context Server stopped!")
+        except Exception as fallback_e:
+            echo_error(f"Failed to stop services: {fallback_e}")
     except Exception as e:
         echo_error(f"Failed to stop services: {e}")
 
@@ -122,18 +140,25 @@ def down():
 def restart():
     """Restart the Context Server services.
 
-    Stops and then starts all services.
+    Stops and then starts all services with fresh builds.
     """
     echo_info("Restarting Context Server...")
 
     try:
-        # Restart API container
-        echo_info(f"Restarting {API_CONTAINER}...")
-        run_command(["docker", "restart", API_CONTAINER])
+        # Auto-detect and ensure project is configured
+        ensure_project_setup()
         
-        # Restart PostgreSQL container
-        echo_info(f"Restarting {POSTGRES_CONTAINER}...")
-        run_command(["docker", "restart", POSTGRES_CONTAINER])
+        # Get the docker-compose.yml file path
+        compose_file = get_compose_file_path()
+        echo_info(f"Using docker-compose file: {compose_file}")
+        
+        # Stop services first
+        echo_info("Stopping services...")
+        run_command(["docker-compose", "--file", str(compose_file), "down"])
+        
+        # Start services with build
+        echo_info("Building and starting services...")
+        run_command(["docker-compose", "--file", str(compose_file), "up", "-d", "--build"])
 
         echo_success("Context Server restarted!")
         
@@ -144,6 +169,9 @@ def restart():
         else:
             echo_warning("Services may not be fully ready yet")
 
+    except FileNotFoundError as e:
+        echo_error(str(e))
+        echo_info("Make sure you're in the Context Server project directory or configure the path.")
     except Exception as e:
         echo_error(f"Failed to restart services: {e}")
 
