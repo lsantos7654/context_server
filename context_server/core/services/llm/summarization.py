@@ -17,14 +17,14 @@ class SummarizationService:
         self,
         model: str = "gpt-4o-mini",
         api_key: str | None = None,
-        target_length: int = 150,
+        target_length: int = 600,  # Larger summaries for 2500 char chunks (3-4x smaller ratio)
     ):
         """Initialize the summarization service.
         
         Args:
             model: OpenAI model to use for summarization
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
-            target_length: Target summary length in characters (150 for 3-5 sentences)
+            target_length: Target summary length in characters (600 for detailed summaries)
         """
         self.model = model
         self.target_length = target_length
@@ -87,7 +87,7 @@ Summary:"""
                     messages=[
                         {"role": "user", "content": prompt}
                     ],
-                    max_tokens=100,  # Limit output size for summaries
+                    max_tokens=200,  # Allow for comprehensive 150-word summaries
                     temperature=0.3,  # Lower temperature for more consistent summaries
                 ),
                 timeout=timeout,

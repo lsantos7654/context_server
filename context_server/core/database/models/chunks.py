@@ -1,14 +1,15 @@
-"""Chunk CRUD operations - placeholder for full implementation."""
+"""Chunk CRUD operations."""
 
 import json
 import uuid
+from ..utils import convert_embedding_to_postgres, parse_metadata, format_uuid, parse_uuid
 
 
 class ChunkManager:
     """Manages chunk-related database operations."""
     
     def __init__(self):
-        self.pool = None  # Will be injected by DatabaseManager
+        self.pool = None
     
     async def create_chunk(
         self,
@@ -30,7 +31,7 @@ class ChunkManager:
         """Create a new chunk with embedding and line tracking."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
-            embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+            embedding_str = convert_embedding_to_postgres(embedding)
 
             # Choose the appropriate embedding column
             if is_code:
@@ -141,8 +142,8 @@ class ChunkManager:
                 return None
 
             return {
-                "id": str(row["id"]),
-                "document_id": str(row["document_id"]),
+                "id": format_uuid(row["id"]),
+                "document_id": format_uuid(row["document_id"]),
                 "content": row["content"],
                 "summary": row["summary"],
                 "summary_model": row["summary_model"],
@@ -155,8 +156,8 @@ class ChunkManager:
                 "char_start": row["char_start"],
                 "char_end": row["char_end"],
                 "created_at": row["created_at"],
-                "metadata": json.loads(row["chunk_metadata"]) if row["chunk_metadata"] else {},
-                "doc_metadata": json.loads(row["doc_metadata"]) if row["doc_metadata"] else {},
+                "metadata": parse_metadata(row["chunk_metadata"]),
+                "doc_metadata": parse_metadata(row["doc_metadata"]),
                 "parent_page_size": row["parent_page_size"],
                 "parent_total_chunks": row["parent_total_chunks"],
             }

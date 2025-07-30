@@ -442,9 +442,9 @@ def display_results_table(results: list, show_content: bool = True):
         row = [score, str(doc_id), title, url]
 
         if show_content:
-            # Show summary if available
+            # Show summary if available (no truncation for AI-generated summaries)
             summary = result.get("summary", "")
-            summary_display = summary[:120] + ("..." if len(summary) > 120 else "") if summary else ""
+            summary_display = summary if summary else ""
             
             # Show truncated content
             content = result["content"][:150] + (

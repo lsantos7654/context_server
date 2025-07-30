@@ -50,7 +50,6 @@ class CodeSnippetExtractor:
         
         # Extract markdown code blocks
         for match in self.markdown_code_pattern.finditer(text):
-            language = match.group(1).strip() or "text"
             code_content = match.group(2).strip()
             
             if self._is_valid_code_snippet(code_content):
@@ -58,7 +57,6 @@ class CodeSnippetExtractor:
                 
                 snippet_info = {
                     "id": snippet_id,
-                    "language": language,
                     "content": code_content,
                     "type": "code_block",
                     "start_pos": match.start(),
@@ -83,7 +81,6 @@ class CodeSnippetExtractor:
                 
                 snippet_info = {
                     "id": snippet_id,
-                    "language": "text",
                     "content": code_content,
                     "type": "inline_code",
                     "start_pos": match.start(),
@@ -118,40 +115,45 @@ class CodeSnippetExtractor:
 
     def _create_code_placeholder(self, snippet_info: dict) -> str:
         """Create a structured placeholder for a code snippet."""
-        # Generate a brief summary of the code content
+        # Generate a preview of the first 4-5 lines of code
         content = snippet_info["content"]
-        summary = self._generate_code_summary(content)
+        preview = self._generate_code_preview(content)
         
         placeholder = (
             f"[CODE_SNIPPET: "
-            f"language={snippet_info['language']}, "
             f"size={snippet_info['char_count']}_chars, "
-            f"summary=\"{summary}\", "
+            f"preview=\"{preview}\", "
             f"snippet_id={snippet_info['id']}]"
         )
         
         return placeholder
 
-    def _generate_code_summary(self, code: str) -> str:
-        """Generate a brief summary of code content."""
+    def _generate_code_preview(self, code: str) -> str:
+        """Generate a preview of the first 4-5 lines of code."""
         lines = code.split('\n')
-        first_meaningful_line = next(
-            (line.strip() for line in lines if line.strip() and not line.strip().startswith('//')), 
-            ""
-        )
         
-        if 'def ' in first_meaningful_line:
-            return "Function definition"
-        elif 'class ' in first_meaningful_line:
-            return "Class definition"
-        elif any(keyword in first_meaningful_line for keyword in ['import', 'from ', 'require']):
-            return "Import statements"
-        elif any(keyword in first_meaningful_line for keyword in ['const ', 'let ', 'var ']):
-            return "Variable declaration"
-        elif '{' in code and '}' in code:
-            return "Code block with logic"
-        else:
-            return "Code snippet"
+        # Get first 4-5 meaningful lines (skip empty lines and comments)
+        meaningful_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#') and not stripped.startswith('//'):
+                meaningful_lines.append(line.rstrip())
+                if len(meaningful_lines) >= 4:
+                    break
+        
+        # If we don't have enough meaningful lines, take first few lines regardless
+        if len(meaningful_lines) < 2:
+            meaningful_lines = [line.rstrip() for line in lines[:4] if line.strip()]
+        
+        # Join with space and truncate to reasonable length for placeholder
+        preview = ' '.join(meaningful_lines)
+        if len(preview) > 80:
+            preview = preview[:77] + "..."
+        
+        # Escape quotes in preview to avoid breaking the placeholder format
+        preview = preview.replace('"', '\\"')
+        
+        return preview
 
 
 class DocumentProcessor:
@@ -169,7 +171,11 @@ class DocumentProcessor:
         self.summarization_service = summarization_service or SummarizationService()
         
         self.extractor = Crawl4aiExtractor()
-        self.text_chunker = TextChunker()
+        self.text_chunker = TextChunker(
+            chunk_size=2500,    # Larger chunks for better context (was 1000)
+            chunk_overlap=500,  # 20% overlap for context continuity (was 200)
+            chunk_type="text"
+        )
         self.code_extractor = CodeSnippetExtractor()
 
     async def process_url(self, url: str, options: dict | None = None, job_id: str | None = None, db=None) -> ProcessingResult:
@@ -283,7 +289,6 @@ class DocumentProcessor:
                             content=snippet_info["content"],
                             embedding=embedding,
                             metadata={
-                                "language": snippet_info["language"],
                                 "snippet_type": snippet_info["type"],
                                 "char_count": snippet_info["char_count"],
                                 "line_count": snippet_info["line_count"],
@@ -350,6 +355,7 @@ class DocumentProcessor:
             url=url,
             title=title,
             content=content,  # Keep original content
+            cleaned_content=cleaned_content,  # Content with code placeholders
             chunks=processed_chunks,
             code_snippets=code_snippets,
             metadata={

@@ -6,7 +6,6 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
-# Cache service removed in simplification
 from context_server.core.pipeline import DocumentProcessor
 from context_server.core.database import DatabaseManager
 from context_server.api.error_handlers import handle_document_errors
@@ -20,9 +19,6 @@ router = APIRouter()
 def get_db_manager(request: Request) -> DatabaseManager:
     """Dependency to get database manager."""
     return request.app.state.db_manager
-
-
-# Cache service removed in simplification
 
 
 def get_processor(request: Request) -> DocumentProcessor:
@@ -170,7 +166,8 @@ async def _process_document_background(
                     )
                     return
                 try:
-                    # Store document with timeout protection
+                    # Store both original and cleaned document versions
+                    # 1. Store original document
                     doc_id = await asyncio.wait_for(
                         db.create_document(
                             context_id=context["id"],
@@ -179,15 +176,30 @@ async def _process_document_background(
                             content=doc.content,
                             metadata=doc.metadata,
                             source_type=document_data.source_type.value,
+                            document_type="original",
+                        ),
+                        timeout=30.0,  # 30 second timeout per document
+                    )
+                    
+                    # 2. Store cleaned document (used for embeddings/search)
+                    cleaned_doc_id = await asyncio.wait_for(
+                        db.create_document(
+                            context_id=context["id"],
+                            url=doc.url,
+                            title=f"{doc.title} (Cleaned)",
+                            content=doc.cleaned_content,
+                            metadata={**doc.metadata, "document_type": "cleaned_markdown"},
+                            source_type=document_data.source_type.value,
+                            document_type="cleaned_markdown",
                         ),
                         timeout=30.0,  # 30 second timeout per document
                     )
 
-                    # Store chunks with embeddings and line tracking
+                    # Store chunks with embeddings and line tracking (link to cleaned document)
                     chunk_count = len(doc.chunks)
                     for i, chunk in enumerate(doc.chunks):
                         await db.create_chunk(
-                            document_id=doc_id,
+                            document_id=cleaned_doc_id,  # Link chunks to cleaned document
                             context_id=context["id"],
                             content=chunk.content,
                             embedding=chunk.embedding,
@@ -215,7 +227,7 @@ async def _process_document_background(
                         summary_model = "heuristic"  # Since we're using the heuristic method
                         
                         await db.create_code_snippet(
-                            document_id=doc_id,
+                            document_id=cleaned_doc_id,  # Link code snippets to cleaned document
                             context_id=context["id"],
                             content=snippet.content,
                             embedding=snippet.embedding,
@@ -364,6 +376,7 @@ async def get_document_raw(
     doc_id: str, 
     page_number: int = 1,
     page_size: int = 25000,
+    document_type: str = "original",  # "original" or "cleaned_markdown"
     db: DatabaseManager = Depends(get_db_manager)
 ):
     """Get raw document content with pagination support for Claude's 25k token limit."""
@@ -374,7 +387,7 @@ async def get_document_raw(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Get document
-        document = await db.get_document_by_id(context["id"], doc_id)
+        document = await db.get_document_by_id(context["id"], doc_id, document_type)
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 

@@ -39,11 +39,12 @@ class SchemaManager:
                     url TEXT,
                     title TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    document_type VARCHAR(20) DEFAULT 'original',  -- 'original', 'cleaned_markdown'
                     metadata JSONB DEFAULT '{}',
                     indexed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     chunk_count INTEGER DEFAULT 0,
                     source_type VARCHAR(20) NOT NULL,
-                    UNIQUE(context_id, url)
+                    UNIQUE(context_id, url, document_type)
                 )
             """
             )
@@ -81,7 +82,6 @@ class SchemaManager:
                     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                     context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
-                    language VARCHAR(50) NOT NULL DEFAULT 'text',
                     embedding halfvec(2048),  -- voyage-code-3 dimension
                     metadata JSONB DEFAULT '{}',
                     start_line INTEGER,
@@ -115,19 +115,6 @@ class SchemaManager:
             """
             )
 
-            # Add line tracking columns to existing tables (if they don't exist)
-            await conn.execute(
-                """
-                DO $$ BEGIN
-                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS start_line INTEGER;
-                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS end_line INTEGER;
-                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS char_start INTEGER;
-                    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS char_end INTEGER;
-                EXCEPTION
-                    WHEN duplicate_column THEN NULL;
-                END $$;
-                """
-            )
 
             # Create indexes for performance
             await conn.execute(
@@ -152,9 +139,6 @@ class SchemaManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_code_snippets_context_id ON code_snippets(context_id)"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_code_snippets_language ON code_snippets(language)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_lines ON chunks(document_id, start_line, end_line)"
@@ -183,6 +167,32 @@ class SchemaManager:
                 "CREATE INDEX IF NOT EXISTS idx_documents_content_fts ON documents USING gin(to_tsvector('english', content))"
             )
 
+            # Ensure document_type column exists for existing databases
+            await conn.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_type VARCHAR(20) DEFAULT 'original';
+                EXCEPTION
+                    WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            
+            # Ensure the unique constraint includes document_type
+            await conn.execute("""
+                DO $$ BEGIN
+                    -- Drop old constraint if it exists
+                    ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_context_id_url_key;
+                    -- Only add new constraint if it doesn't exist
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.table_constraints 
+                        WHERE constraint_name = 'documents_context_id_url_document_type_key'
+                        AND table_name = 'documents'
+                    ) THEN
+                        ALTER TABLE documents ADD CONSTRAINT documents_context_id_url_document_type_key 
+                            UNIQUE(context_id, url, document_type);
+                    END IF;
+                END $$;
+            """)
+            
             logger.info("Database schema created successfully")
 
 

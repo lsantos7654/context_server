@@ -123,9 +123,9 @@ class DatabaseManager:
     # Document Operations - Delegate to DocumentManager
     # ===================
     
-    async def create_document(self, context_id: str, url: str, title: str, content: str, metadata: dict, source_type: str) -> str:
+    async def create_document(self, context_id: str, url: str, title: str, content: str, metadata: dict, source_type: str, document_type: str = "original") -> str:
         """Create a new document."""
-        return await self.documents.create_document(context_id, url, title, content, metadata, source_type)
+        return await self.documents.create_document(context_id, url, title, content, metadata, source_type, document_type)
     
     async def get_documents(self, context_id: str, offset: int = 0, limit: int = 50) -> dict:
         """Get documents in a context."""
@@ -135,9 +135,9 @@ class DatabaseManager:
         """Delete documents from a context."""
         return await self.documents.delete_documents(context_id, document_ids)
     
-    async def get_document_by_id(self, context_id: str, document_id: str) -> dict | None:
+    async def get_document_by_id(self, context_id: str, document_id: str, document_type: str = "original") -> dict | None:
         """Get document content by ID."""
-        return await self.documents.get_document_by_id(context_id, document_id)
+        return await self.documents.get_document_by_id(context_id, document_id, document_type)
     
     async def get_document_content_by_id(self, document_id: str) -> dict | None:
         """Get document content by ID only (for expansion service)."""

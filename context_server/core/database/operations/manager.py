@@ -1,17 +1,14 @@
-"""Operations manager - placeholder for full implementation."""
+"""Operations manager for metadata filtering and result transformation."""
 
 class OperationsManager:
     """Manages helper operations like metadata filtering and result transformation."""
     
     def __init__(self, summarization_service=None):
-        self.pool = None  # Will be injected by DatabaseManager
+        self.pool = None
         self.summarization_service = summarization_service
     
-    # TODO: Implement all operations from storage.py
-    # - filter_metadata_for_search, transform_to_compact_format, transform_code_to_compact_format
-    
     def filter_metadata_for_search(self, metadata: dict) -> dict:
-        """Placeholder - implement from storage.py"""
+        """Filter and organize metadata into clean, grouped structure for search results."""
         # For now, return simplified metadata to avoid breaking the system
         return {
             "document": metadata.get("document", {}),

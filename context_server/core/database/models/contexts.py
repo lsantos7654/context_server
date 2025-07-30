@@ -4,6 +4,7 @@ import json
 import uuid
 import logging
 from datetime import datetime
+from ..utils import convert_embedding_to_postgres, parse_metadata, format_uuid, parse_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ class ContextManager:
     """Manages context-related database operations."""
     
     def __init__(self):
-        self.pool = None  # Will be injected by DatabaseManager
+        self.pool = None
     
     async def create_context(self, name: str, description: str = "", embedding_model: str = "text-embedding-3-large") -> dict:
         """Create a new context."""
@@ -29,7 +30,7 @@ class ContextManager:
             )
 
             return {
-                "id": str(row["id"]),
+                "id": format_uuid(row["id"]),
                 "name": row["name"],
                 "description": row["description"],
                 "embedding_model": row["embedding_model"],
@@ -55,13 +56,13 @@ class ContextManager:
 
             return [
                 {
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "name": row["name"],
                     "description": row["description"],
                     "embedding_model": row["embedding_model"],
                     "created_at": row["created_at"],
                     "document_count": row["document_count"],
-                    "size_mb": 0.0,  # TODO: Calculate actual size
+                    "size_mb": 0.0,
                     "last_updated": row["updated_at"],
                 }
                 for row in rows
@@ -82,7 +83,7 @@ class ContextManager:
                 return None
 
             return {
-                "id": str(row["id"]),
+                "id": format_uuid(row["id"]),
                 "name": row["name"],
                 "description": row["description"],
                 "embedding_model": row["embedding_model"],
@@ -137,11 +138,11 @@ class ContextManager:
             documents = []
             for row in document_rows:
                 documents.append({
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "url": row["url"],
                     "title": row["title"],
                     "content": row["content"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "metadata": parse_metadata(row["metadata"]),
                     "source_type": row["source_type"],
                     "indexed_at": row["indexed_at"].isoformat() if row["indexed_at"] else None,
                     "chunk_count": row["chunk_count"]
@@ -175,7 +176,7 @@ class ContextManager:
                     code_embedding = list(row["code_embedding"])
                 
                 chunks.append({
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "summary": row["summary"],
@@ -183,7 +184,7 @@ class ContextManager:
                     "text_embedding": text_embedding,
                     "code_embedding": code_embedding,
                     "chunk_index": row["chunk_index"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "metadata": parse_metadata(row["metadata"]),
                     "tokens": row["tokens"],
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
@@ -213,12 +214,12 @@ class ContextManager:
                     embedding = list(row["embedding"])
                 
                 code_snippets.append({
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "language": row["language"],
                     "embedding": embedding,
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "metadata": parse_metadata(row["metadata"]),
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
                     "char_start": row["char_start"],
@@ -308,10 +309,10 @@ class ContextManager:
                     code_embedding_str = None
                     
                     if chunk_data.get("text_embedding"):
-                        text_embedding_str = "[" + ",".join(map(str, chunk_data["text_embedding"])) + "]"
+                        text_embedding_str = convert_embedding_to_postgres(chunk_data["text_embedding"])
                         
                     if chunk_data.get("code_embedding"):
-                        code_embedding_str = "[" + ",".join(map(str, chunk_data["code_embedding"])) + "]"
+                        code_embedding_str = convert_embedding_to_postgres(chunk_data["code_embedding"])
                     
                     await conn.execute(
                         """
@@ -345,19 +346,18 @@ class ContextManager:
                     # Convert embedding back to PostgreSQL format
                     embedding_str = None
                     if snippet_data.get("embedding"):
-                        embedding_str = "[" + ",".join(map(str, snippet_data["embedding"])) + "]"
+                        embedding_str = convert_embedding_to_postgres(snippet_data["embedding"])
                     
                     await conn.execute(
                         """
-                        INSERT INTO code_snippets (document_id, context_id, content, language, embedding,
+                        INSERT INTO code_snippets (document_id, context_id, content, embedding,
                                                  metadata, start_line, end_line, char_start, char_end,
                                                  snippet_type, summary, summary_model)
-                        VALUES ($1, $2, $3, $4, $5::halfvec, $6, $7, $8, $9, $10, $11, $12, $13)
+                        VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11, $12)
                         """,
                         uuid.UUID(new_doc_id),
                         context_id,
                         snippet_data["content"],
-                        snippet_data.get("language", "text"),
                         embedding_str,
                         json.dumps(snippet_data["metadata"]),
                         snippet_data.get("start_line"),

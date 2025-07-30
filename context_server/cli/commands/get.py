@@ -168,8 +168,15 @@ def document(context_name, document_id, output_format):
     async def get_document():
         try:
             client = APIClient()
+            
+            # Determine document type based on format
+            if output_format == "raw":
+                document_type = "original"  # Raw format shows original content
+            else:
+                document_type = "cleaned_markdown"  # Card and JSON show cleaned content
+            
             success, response = await client.get(
-                f"contexts/{context_name}/documents/{document_id}/raw"
+                f"contexts/{context_name}/documents/{document_id}/raw?document_type={document_type}"
             )
 
             if success:
@@ -177,8 +184,8 @@ def document(context_name, document_id, output_format):
                     console.print(json.dumps(response, indent=2))
                 elif output_format == "raw":
                     console.print(response.get("content", ""))
-                else:  # card format
-                    _display_document_card(response)
+                else:  # card format - show full cleaned content without truncation
+                    _display_document_card(response, show_full_content=True)
             else:
                 if "404" in str(response):
                     echo_error(
@@ -349,7 +356,7 @@ def _display_code_snippet_card(snippet):
     console.print()  # Empty line
 
 
-def _display_document_card(document):
+def _display_document_card(document, show_full_content=False):
     """Display a document as a rich card."""
     # Extract metadata
     doc_id = document.get("id", "N/A")
@@ -372,10 +379,16 @@ def _display_document_card(document):
 
     info_section = "\n".join(info_lines)
 
-    # Content preview (first 1000 chars)
-    content_preview = content[:1000] + ("..." if len(content) > 1000 else "")
+    # Content display (full content or preview based on parameter)
+    if show_full_content:
+        content_display = content
+        content_label = "Full Content"
+    else:
+        content_display = content[:1000] + ("..." if len(content) > 1000 else "")
+        content_label = "Content Preview"
+    
     content_section = (
-        f"\n\n[bold white]Content Preview:[/bold white]\n{content_preview}"
+        f"\n\n[bold white]{content_label}:[/bold white]\n{content_display}"
     )
 
     # Combine sections

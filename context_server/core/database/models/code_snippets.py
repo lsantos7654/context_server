@@ -1,14 +1,15 @@
-"""Code snippet CRUD operations - placeholder for full implementation."""
+"""Code snippet CRUD operations."""
 
 import json
 import uuid
+from ..utils import convert_embedding_to_postgres, parse_metadata, format_uuid, parse_uuid
 
 
 class CodeSnippetManager:
     """Manages code snippet-related database operations."""
     
     def __init__(self):
-        self.pool = None  # Will be injected by DatabaseManager
+        self.pool = None
     
     async def create_code_snippet(
         self,
@@ -28,12 +29,12 @@ class CodeSnippetManager:
         """Create a new code snippet with embedding and line tracking."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
-            embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+            embedding_str = convert_embedding_to_postgres(embedding)
 
             snippet_id = await conn.fetchval(
                 """
-                INSERT INTO code_snippets (document_id, context_id, content, language, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type, summary, summary_model)
-                VALUES ($1, $2, $3, 'text', $4::halfvec, $5, $6, $7, $8, $9, $10, $11, $12)
+                INSERT INTO code_snippets (document_id, context_id, content, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type, summary, summary_model)
+                VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING id
             """,
                 uuid.UUID(document_id),
@@ -91,7 +92,7 @@ class CodeSnippetManager:
                     preview = '\n'.join(preview_lines).strip()
                 
                 result.append({
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "content": row["content"],
                     "preview": preview,
                     "type": row["snippet_type"],
@@ -99,7 +100,7 @@ class CodeSnippetManager:
                     "end_line": row["end_line"],
                     "char_start": row["char_start"],
                     "char_end": row["char_end"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "metadata": parse_metadata(row["metadata"]),
                     "created_at": row["created_at"],
                     "line_count": line_count,
                 })
@@ -133,15 +134,15 @@ class CodeSnippetManager:
                 return None
 
             return {
-                "id": str(row["id"]),
-                "document_id": str(row["document_id"]),
+                "id": format_uuid(row["id"]),
+                "document_id": format_uuid(row["document_id"]),
                 "content": row["content"],
                 "type": row["snippet_type"],
                 "start_line": row["start_line"],
                 "end_line": row["end_line"], 
                 "char_start": row["char_start"],
                 "char_end": row["char_end"],
-                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                "metadata": parse_metadata(row["metadata"]),
                 "created_at": row["created_at"],
                 "document_title": row["document_title"],
                 "document_url": row["document_url"],

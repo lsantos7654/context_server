@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from typing import Any
+from ..utils import parse_metadata, format_uuid, parse_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ class JobManager:
     """Manages job-related database operations."""
     
     def __init__(self):
-        self.pool = None  # Will be injected by DatabaseManager
+        self.pool = None
     
     async def create_job(
         self,
@@ -107,7 +108,7 @@ class JobManager:
                 "completed_at": row["completed_at"].isoformat()
                 if row["completed_at"]
                 else None,
-                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                "metadata": parse_metadata(row["metadata"]),
                 "error_message": row["error_message"],
                 "result_data": json.loads(row["result_data"])
                 if row["result_data"]
@@ -173,7 +174,7 @@ class JobManager:
                     "updated_at": row["updated_at"].isoformat()
                     if row["updated_at"]
                     else None,
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "metadata": parse_metadata(row["metadata"]),
                 }
                 for row in rows
             ]

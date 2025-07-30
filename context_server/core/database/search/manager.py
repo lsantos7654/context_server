@@ -1,14 +1,15 @@
-"""Search operations manager - placeholder for full implementation."""
+"""Search operations manager."""
 
 import json
 import uuid
+from ..utils import parse_metadata, format_uuid, parse_uuid
 
 
 class SearchManager:
     """Manages all search-related database operations."""
     
     def __init__(self, summarization_service=None):
-        self.pool = None  # Will be injected by DatabaseManager
+        self.pool = None
         self.summarization_service = summarization_service
     
     async def vector_search(
@@ -61,7 +62,7 @@ class SearchManager:
             chunk_results = []
             for row in rows:
                 chunk_results.append({
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "summary": row["summary"],
@@ -69,7 +70,7 @@ class SearchManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
-                    "metadata": json.loads(row["chunk_metadata"]) if row["chunk_metadata"] else {},
+                    "metadata": parse_metadata(row["chunk_metadata"]),
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
@@ -108,7 +109,7 @@ class SearchManager:
             chunk_results = []
             for row in rows:
                 chunk_results.append({
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "summary": row["summary"],
@@ -116,7 +117,7 @@ class SearchManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),
-                    "metadata": json.loads(row["chunk_metadata"]) if row["chunk_metadata"] else {},
+                    "metadata": parse_metadata(row["chunk_metadata"]),
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
@@ -159,7 +160,7 @@ class SearchManager:
 
             return [
                 {
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "snippet_type": row["snippet_type"],
@@ -167,7 +168,7 @@ class SearchManager:
                     "url": row["url"],
                     "score": float(row["similarity"]),
                     "line_count": len(row["content"].split('\n')) if row["content"] else 0,
-                    "metadata": json.loads(row["snippet_metadata"]) if row["snippet_metadata"] else {},
+                    "metadata": parse_metadata(row["snippet_metadata"]),
                 }
                 for row in rows
             ]
@@ -198,7 +199,7 @@ class SearchManager:
 
             return [
                 {
-                    "id": str(row["id"]),
+                    "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
                     "snippet_type": row["snippet_type"],
@@ -206,7 +207,7 @@ class SearchManager:
                     "url": row["url"],
                     "score": float(row["score"]),
                     "line_count": len(row["content"].split('\n')) if row["content"] else 0,
-                    "metadata": json.loads(row["snippet_metadata"]) if row["snippet_metadata"] else {},
+                    "metadata": parse_metadata(row["snippet_metadata"]),
                 }
                 for row in rows
             ]

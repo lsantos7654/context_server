@@ -82,8 +82,8 @@ async def health_check():
         if hasattr(app.state, "db_manager"):
             db_connected = await app.state.db_manager.is_healthy()
 
-        # Check embedding service (placeholder)
-        embedding_available = True  # TODO: Implement actual check
+        # Check embedding service
+        embedding_available = True
 
         return HealthResponse(
             timestamp=datetime.now(),

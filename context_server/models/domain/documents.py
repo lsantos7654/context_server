@@ -1,38 +1,55 @@
 """Document-related domain models."""
 
-from pydantic import BaseModel, Field
+from dataclasses import dataclass, field
 
 from context_server.models.domain.chunks import ProcessedChunk
 from context_server.models.domain.snippets import CodeSnippet
 
 
-class ProcessedDocument(BaseModel):
+@dataclass
+class ProcessedDocument:
     """A processed document with chunks and code snippets."""
+    
+    url: str
+    title: str
+    content: str  # Original content
+    cleaned_content: str  # Content with code snippet placeholders
+    chunks: list[ProcessedChunk] = field(default_factory=list)
+    code_snippets: list[CodeSnippet] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
 
-    url: str = Field(..., description="Source URL of the document")
-    title: str = Field(..., description="Document title")
-    content: str = Field(..., description="Full document content")
-    chunks: list[ProcessedChunk] = Field(default_factory=list, description="Text chunks")
-    code_snippets: list[CodeSnippet] = Field(default_factory=list, description="Code snippets")
-    metadata: dict = Field(default_factory=dict, description="Document metadata")
 
-
-class ProcessingResult(BaseModel):
+@dataclass
+class ProcessingResult:
     """Result of document processing operation."""
+    
+    success: bool
+    documents: list[ProcessedDocument] = field(default_factory=list)
+    error: str | None = None
 
-    documents: list[ProcessedDocument] = Field(default_factory=list, description="Processed documents")
-    success: bool = Field(..., description="Whether processing was successful")
-    error: str | None = Field(None, description="Error message if processing failed")
 
-
-class DocumentStats(BaseModel):
+@dataclass
+class DocumentStats:
     """Statistics about document processing."""
+    
+    total_documents: int
+    total_chunks: int
+    total_code_snippets: int
+    total_tokens: int
+    processing_time_seconds: float
 
-    total_documents: int = Field(..., ge=0, description="Total number of documents processed")
-    total_chunks: int = Field(..., ge=0, description="Total number of text chunks created")
-    total_code_snippets: int = Field(..., ge=0, description="Total number of code snippets extracted")
-    total_tokens: int = Field(..., ge=0, description="Total number of tokens processed")
-    processing_time_seconds: float = Field(..., ge=0, description="Total processing time in seconds")
+    def __post_init__(self):
+        """Validate fields after initialization."""
+        if self.total_documents < 0:
+            raise ValueError("total_documents must be non-negative")
+        if self.total_chunks < 0:
+            raise ValueError("total_chunks must be non-negative")
+        if self.total_code_snippets < 0:
+            raise ValueError("total_code_snippets must be non-negative")
+        if self.total_tokens < 0:
+            raise ValueError("total_tokens must be non-negative")
+        if self.processing_time_seconds < 0:
+            raise ValueError("processing_time_seconds must be non-negative")
 
 
 __all__ = ["ProcessedDocument", "ProcessingResult", "DocumentStats"]

@@ -349,8 +349,6 @@ async def get_search_suggestions(
     db: DatabaseManager = Depends(get_db_manager),
 ):
     """Get search query suggestions based on context content."""
-    # TODO: Implement search suggestions
-    # Could use document titles, common terms, etc.
     raise HTTPException(
         status_code=501, detail="Search suggestions not yet implemented"
     )

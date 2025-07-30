@@ -1,9 +1,10 @@
 """Server configuration models."""
 
-from pydantic import BaseModel
+from dataclasses import dataclass
 
 
-class ServerConfig(BaseModel):
+@dataclass
+class ServerConfig:
     """Server configuration."""
 
     host: str = "localhost"
