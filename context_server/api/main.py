@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .models import HealthResponse
+from context_server.models.api.system import HealthResponse
 
 # Import routers after app creation to avoid circular imports
 # from .contexts import router as contexts_router
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Context Server API")
 
     # Import here to avoid issues
-    from ..core.storage import DatabaseManager
+    from ..core.database import DatabaseManager
 
     # Initialize database
     db_manager = DatabaseManager()

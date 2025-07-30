@@ -5,10 +5,10 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.embeddings import EmbeddingService, VoyageEmbeddingService
-from ..core.storage import DatabaseManager
-from .error_handlers import handle_search_errors
-from .models import SearchRequest, SearchResponse, CodeSearchResponse
+from context_server.core.services.embeddings import EmbeddingService, VoyageEmbeddingService
+from context_server.core.database import DatabaseManager
+from context_server.api.error_handlers import handle_search_errors
+from context_server.models.api.search import SearchRequest, SearchResponse, CodeSearchResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

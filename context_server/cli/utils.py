@@ -10,7 +10,7 @@ import httpx
 from rich.console import Console
 from rich.table import Table
 
-from .config import get_api_url, get_config
+from context_server.cli.config import get_api_url, get_config
 
 console = Console()
 

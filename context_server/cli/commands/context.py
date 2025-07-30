@@ -8,9 +8,9 @@ import httpx
 from rich.console import Console
 from rich.table import Table
 
-from ..config import get_api_url
-from ..help_formatter import rich_help_option
-from ..utils import (
+from context_server.cli.config import get_api_url
+from context_server.cli.help_formatter import rich_help_option
+from context_server.cli.utils import (
     APIClient,
     complete_context_name,
     confirm_action,

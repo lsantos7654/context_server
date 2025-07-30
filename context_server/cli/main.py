@@ -3,9 +3,9 @@
 import click
 from rich.console import Console
 
-from .config import get_config, set_config
-from .help_formatter import rich_help_option
-from .utils import check_api_health, echo_error, echo_info
+from context_server.cli.config import get_config, set_config
+from context_server.cli.help_formatter import rich_help_option
+from context_server.cli.utils import check_api_health, echo_error, echo_info
 
 console = Console()
 

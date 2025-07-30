@@ -18,15 +18,19 @@ RUN pip install uv
 # Set work directory
 WORKDIR /app
 
-# Copy application code
-COPY . .
+# Copy dependency files first (for better caching)
+COPY pyproject.toml ./
+COPY README.md ./
 
-# Install Python dependencies
+# Install Python dependencies (this layer will be cached if deps don't change)
 RUN uv pip install --system -e "."
 
-# Install Playwright browsers for crawl4ai
+# Install Playwright browsers for crawl4ai (before copying app code for better caching)
 RUN playwright install chromium
 RUN playwright install-deps
+
+# Copy application code (after dependencies and browsers are installed)
+COPY . .
 
 # Create logs directory
 RUN mkdir -p logs

@@ -5,9 +5,10 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
-from ..core.storage import DatabaseManager
-from .error_handlers import handle_context_errors
-from .models import ContextCreate, ContextMerge, ContextResponse
+from context_server.core.database import DatabaseManager
+from context_server.api.error_handlers import handle_context_errors
+from context_server.models.api.contexts import ContextCreate, ContextMerge, ContextResponse
+from context_server.models.api.export import ContextExport, ContextImportRequest, ContextImportResponse, ContextMergeResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -80,27 +81,78 @@ async def delete_context(
     return Response(status_code=204)
 
 
-@router.post("/merge", status_code=201)
+@router.post("/merge", response_model=ContextMergeResponse, status_code=201)
+@handle_context_errors("merge")
 async def merge_contexts(
     merge_data: ContextMerge, db: DatabaseManager = Depends(get_db_manager)
 ):
-    """Merge multiple contexts into a target context."""
-    # TODO: Implement context merging
-    # This is a complex operation that needs careful planning
-    raise HTTPException(status_code=501, detail="Context merging not yet implemented")
+    """Merge multiple contexts into a target context.
+    
+    Supports two merge modes:
+    - union: Combine all documents from source contexts
+    - intersection: Only keep documents that exist in ALL source contexts
+    """
+    try:
+        result = await db.merge_contexts(
+            source_contexts=merge_data.source_contexts,
+            target_context=merge_data.target_context,
+            mode=merge_data.mode.value
+        )
+        
+        logger.info(f"Merged contexts: {merge_data.source_contexts} -> {merge_data.target_context} ({merge_data.mode})")
+        return ContextMergeResponse(**result)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Context merge failed: {e}")
+        raise HTTPException(status_code=500, detail="Context merge failed")
 
 
-@router.get("/{context_name}/export")
+@router.get("/{context_name}/export", response_model=ContextExport)
+@handle_context_errors("export")
 async def export_context(
     context_name: str, db: DatabaseManager = Depends(get_db_manager)
 ):
-    """Export context data."""
-    # TODO: Implement context export using pg_dump
-    raise HTTPException(status_code=501, detail="Context export not yet implemented")
+    """Export complete context data for backup/migration.
+    
+    Returns all context data including documents, chunks, code snippets,
+    and embeddings in a structured JSON format.
+    """
+    try:
+        export_data = await db.export_context(context_name)
+        
+        logger.info(f"Exported context: {context_name}")
+        return ContextExport(**export_data)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Context export failed: {e}")
+        raise HTTPException(status_code=500, detail="Context export failed")
 
 
-@router.post("/import")
-async def import_context(db: DatabaseManager = Depends(get_db_manager)):
-    """Import context data."""
-    # TODO: Implement context import from pg_dump
-    raise HTTPException(status_code=501, detail="Context import not yet implemented")
+@router.post("/import", response_model=ContextImportResponse, status_code=201)
+@handle_context_errors("import")
+async def import_context(
+    import_request: ContextImportRequest, db: DatabaseManager = Depends(get_db_manager)
+):
+    """Import context data from export.
+    
+    Supports importing complete context data with transaction safety.
+    Can optionally overwrite existing contexts with the same name.
+    """
+    try:
+        result = await db.import_context({
+            "context_data": import_request.context_data.dict(),
+            "overwrite_existing": import_request.overwrite_existing
+        })
+        
+        logger.info(f"Imported context: {result['context_name']}")
+        return ContextImportResponse(**result)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Context import failed: {e}")
+        raise HTTPException(status_code=500, detail="Context import failed")

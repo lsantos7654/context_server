@@ -128,7 +128,7 @@ def query(
 
             if output_format == "mcp_json":
                 # Use the shared transformation method from DatabaseManager
-                from ...core.storage import DatabaseManager
+                from ...core.database import DatabaseManager
                 db_manager = DatabaseManager()
                 compact_response = await db_manager._transform_to_compact_format(
                     results,
@@ -211,7 +211,7 @@ def code(query, context_name, limit, output_format):
             # Display code results
             if output_format == "mcp_json":
                 # Use the shared transformation method from DatabaseManager
-                from ...core.storage import DatabaseManager
+                from ...core.database import DatabaseManager
                 db_manager = DatabaseManager()
                 compact_response = db_manager._transform_code_to_compact_format(
                     results,
