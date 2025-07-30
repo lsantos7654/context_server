@@ -18,8 +18,8 @@ RUN pip install uv
 # Set work directory
 WORKDIR /app
 
-# Copy dependency files
-COPY pyproject.toml ./
+# Copy application code
+COPY . .
 
 # Install Python dependencies
 RUN uv pip install --system -e "."
@@ -27,9 +27,6 @@ RUN uv pip install --system -e "."
 # Install Playwright browsers for crawl4ai
 RUN playwright install chromium
 RUN playwright install-deps
-
-# Copy application code
-COPY . .
 
 # Create logs directory
 RUN mkdir -p logs

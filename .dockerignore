@@ -61,7 +61,5 @@ logs/
 *.sqlite3
 
 # Documentation
-README.md
-CONTEXT_SERVER_VISION.md
 CLAUDE.md
 todo.md
