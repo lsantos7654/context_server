@@ -250,10 +250,20 @@ async def _process_document_background(
                             if (chunk_start <= snippet_end and chunk_end >= snippet_start):
                                 chunk_code_snippet_ids.append(snippet_with_uuid["uuid"])
                         
+                        # Fix: Replace temp_snippet placeholders with real UUIDs in chunk content
+                        chunk_content = chunk.content
+                        for j, snippet_with_uuid in enumerate(code_snippets_with_uuids):
+                            temp_id = f"temp_snippet_{j}"
+                            real_uuid = snippet_with_uuid["uuid"]
+                            chunk_content = chunk_content.replace(
+                                f"snippet_id={temp_id}",
+                                f"snippet_id={real_uuid}"
+                            )
+                        
                         await db.create_chunk(
                             document_id=doc_id,  # Link chunks to main document
                             context_id=context["id"],
-                            content=chunk.content,
+                            content=chunk_content,
                             embedding=chunk.embedding,
                             chunk_index=i,
                             code_snippet_ids=chunk_code_snippet_ids,

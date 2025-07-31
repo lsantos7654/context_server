@@ -127,10 +127,10 @@ def query(
             console.print()  # Empty line
 
             if output_format == "mcp_json":
-                # Use the shared transformation method from DatabaseManager
-                from ...core.database import DatabaseManager
-                db_manager = DatabaseManager()
-                compact_response = await db_manager._transform_to_compact_format(
+                # Use the centralized transformation service
+                from ...core.services.transformation import get_transformation_service
+                transformation_service = get_transformation_service()
+                compact_response = transformation_service.transform_to_compact_format(
                     results,
                     query=query,
                     mode=mode,
@@ -210,10 +210,10 @@ def code(query, context_name, limit, output_format):
 
             # Display code results
             if output_format == "mcp_json":
-                # Use the shared transformation method from DatabaseManager
-                from ...core.database import DatabaseManager
-                db_manager = DatabaseManager()
-                compact_response = db_manager._transform_code_to_compact_format(
+                # Use the centralized transformation service
+                from ...core.services.transformation import get_transformation_service
+                transformation_service = get_transformation_service()
+                compact_response = transformation_service.transform_code_to_compact_format(
                     results,
                     query=query,
                     execution_time_ms=execution_time
@@ -364,10 +364,6 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
         # Generate detailed code snippet info like MCP format
         code_snippet_details = []
         if code_snippets:
-            # Import the transformation logic
-            from ...core.database import DatabaseManager
-            db_manager = DatabaseManager()
-            
             for snippet in code_snippets:
                 if isinstance(snippet, dict) and "id" in snippet:
                     # Use stored preview from database instead of generating at runtime
@@ -539,9 +535,6 @@ def display_results_rich(
 
             for snippet in snippets_to_show:
                 snippet_id = snippet.get("id", "")
-                snippet_type = snippet.get("type", "unknown")
-                start_line = snippet.get("start_line", "")
-                end_line = snippet.get("end_line", "")
                 preview = snippet.get("preview", "")[:60]
                 if len(snippet.get("preview", "")) > 60:
                     preview += "..."
@@ -549,7 +542,7 @@ def display_results_rich(
                 # Show preview length instead of line numbers
                 preview_length = len(snippet.get("preview", ""))
                 size_info = f"({preview_length} chars)" if preview_length else ""
-                title_text += f"\n[cyan]  {snippet_id}[/cyan] [yellow]{snippet_type}[/yellow] {size_info}"
+                title_text += f"\n[cyan]  {snippet_id}[/cyan] {size_info}"
                 if preview:
                     title_text += f"\n[dim]    {preview}[/dim]"
 
@@ -682,10 +675,9 @@ def display_code_results_cards(results: list):
     for i, result in enumerate(results, 1):
         # Create card header
         score = result['score']
-        snippet_type = result.get("snippet_type", "code_block")
         snippet_id = result.get("id", "N/A")
         
-        header = f"Code Result {i} • Score: {score:.3f} • Type: {snippet_type}"
+        header = f"Code Result {i} • Score: {score:.3f}"
         
         # Create card content
         card_content = []
@@ -764,14 +756,14 @@ def display_code_results_table(results: list):
     
     table = Table(title="Code Search Results")
     table.add_column("Score", style="bold green", width=8)
-    table.add_column("Type", style="yellow", width=12)
+    table.add_column("ID", style="yellow", width=15)
     table.add_column("Title", style="bold", width=30)
     table.add_column("Lines", style="blue", width=10)
     table.add_column("Preview", style="dim", width=50)
 
     for result in results:
         score = f"{result['score']:.3f}"
-        snippet_type = result.get("snippet_type", "code_block")
+        snippet_id = result.get("id", "N/A")[:12] + "..." if len(result.get("id", "")) > 12 else result.get("id", "N/A")
         
         # Extract title (truncate if too long)
         title = result.get("title", "")[:28] + ("..." if len(result.get("title", "")) > 28 else "")
@@ -784,7 +776,7 @@ def display_code_results_table(results: list):
         # Create code preview (first 100 chars)
         preview = content[:100] + ("..." if len(content) > 100 else "")
         
-        table.add_row(score, snippet_type, title, line_info, preview)
+        table.add_row(score, snippet_id, title, line_info, preview)
 
     console.print(table)
     console.print()

@@ -69,7 +69,7 @@ class SearchManager:
                     # Fetch code snippet details for these IDs
                     snippet_rows = await conn.fetch(
                         """
-                        SELECT id, content, snippet_type, preview
+                        SELECT id, content, preview
                         FROM code_snippets 
                         WHERE id = ANY($1::uuid[])
                         """,
@@ -80,7 +80,6 @@ class SearchManager:
                         code_snippets_data.append({
                             "id": format_uuid(snippet_row["id"]),
                             "content": snippet_row["content"],
-                            "snippet_type": snippet_row["snippet_type"],
                             "preview": snippet_row.get("preview", ""),
                         })
                 
@@ -143,7 +142,7 @@ class SearchManager:
                     # Fetch code snippet details for these IDs
                     snippet_rows = await conn.fetch(
                         """
-                        SELECT id, content, snippet_type, preview
+                        SELECT id, content, preview
                         FROM code_snippets 
                         WHERE id = ANY($1::uuid[])
                         """,
@@ -154,7 +153,6 @@ class SearchManager:
                         code_snippets_data.append({
                             "id": format_uuid(snippet_row["id"]),
                             "content": snippet_row["content"],
-                            "snippet_type": snippet_row["snippet_type"],
                             "preview": snippet_row.get("preview", ""),
                         })
                 
@@ -195,7 +193,7 @@ class SearchManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, cs.snippet_type, d.url, 
+                    cs.id, cs.content, d.url, 
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata, 
                     d.id as document_id,
                     1 - (cs.embedding <=> $2::halfvec) as similarity
@@ -233,7 +231,7 @@ class SearchManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, cs.snippet_type, d.url,
+                    cs.id, cs.content, d.url,
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata,
                     d.id as document_id,
                     ts_rank(to_tsvector('english', cs.content), plainto_tsquery('english', $2)) as score

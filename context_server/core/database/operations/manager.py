@@ -1,5 +1,7 @@
 """Operations manager for metadata filtering and result transformation."""
 
+from ...services.transformation import get_transformation_service
+
 class OperationsManager:
     """Manages helper operations like metadata filtering and result transformation."""
     
@@ -19,111 +21,22 @@ class OperationsManager:
     async def transform_to_compact_format(self, results: list[dict], query: str = "", mode: str = "hybrid", execution_time_ms: int = 0) -> dict:
         """Transform full search results to compact MCP format.
         
-        This is the single source of truth for transforming search results 
-        to the compact format used by both CLI and MCP server.
+        This method now delegates to the centralized transformation service.
         """
-        compact_results = []
-        
-        for result in results:
-            # Use summary if available, otherwise truncate content
-            display_content = result.get("summary", "")
-            if not display_content:
-                content = result.get("content", "")
-                display_content = content[:150] + "..." if len(content) > 150 else content
-            # No truncation for summaries - they're already AI-generated and meaningful
-            
-            # Get code snippets count and IDs from metadata
-            metadata = result.get("metadata", {})
-            code_snippets = metadata.get("code_snippets", [])
-            code_snippets_count = len(code_snippets) if code_snippets else 0
-            
-            # Extract code snippet metadata for direct access
-            code_snippet_ids = []
-            if code_snippets:
-                for snippet in code_snippets:
-                    if isinstance(snippet, dict) and "id" in snippet:
-                        snippet_id = snippet["id"]
-                        
-                        # Use stored preview from database instead of generating at runtime
-                        snippet_content = snippet.get("content", "")
-                        preview = snippet.get("preview", "")
-                        
-                        # Calculate basic stats
-                        if snippet_content:
-                            lines = snippet_content.split('\n')
-                            line_count = len([line for line in lines if line.strip()])
-                            char_count = len(snippet_content)
-                        else:
-                            line_count = 0
-                            char_count = 0
-                        
-                        snippet_obj = {
-                            "id": snippet_id,
-                            "lines": line_count,
-                            "chars": char_count,
-                            "preview": preview
-                        }
-                        code_snippet_ids.append(snippet_obj)
-            
-            compact_result = {
-                "id": result.get("id"),
-                "document_id": result.get("document_id"),
-                "title": result.get("title"),
-                "summary": display_content,
-                "score": result.get("score"),
-                "url": result.get("url"),
-                "code_snippets_count": code_snippets_count,
-                "code_snippet_ids": code_snippet_ids,
-                "content_type": result.get("content_type", "chunk"),
-            }
-            compact_results.append(compact_result)
-        
-        return {
-            "results": compact_results,
-            "total": len(compact_results),
-            "query": query,
-            "mode": mode,
-            "execution_time_ms": execution_time_ms,
-            "note": "Content summarized for quick scanning. Use get_document for full content."
-        }
+        transformation_service = get_transformation_service(self.summarization_service)
+        return transformation_service.transform_to_compact_format(
+            results, query, mode, execution_time_ms
+        )
     
     def transform_code_to_compact_format(self, results: list[dict], query: str = "", execution_time_ms: int = 0) -> dict:
         """Transform code search results to compact MCP format.
         
-        This is the single source of truth for transforming code search results
-        to the compact format used by both CLI and MCP server.
+        This method now delegates to the centralized transformation service.
         """
-        compact_results = []
-        
-        for result in results:
-            # Use content directly since code snippets are already concise
-            display_content = result.get("content", "")
-            
-            # Truncate very long code snippets
-            if len(display_content) > 500:
-                display_content = display_content[:500] + "..."
-            
-            # Calculate line count from content
-            line_count = len(display_content.split('\n')) if display_content else 0
-            
-            compact_result = {
-                "id": result.get("id"),
-                "document_id": result.get("document_id"),
-                "content": display_content,
-                "score": result.get("score"),
-                "url": result.get("url"),
-                "line_count": line_count,
-            }
-            compact_results.append(compact_result)
-        
-        return {
-            "results": compact_results,
-            "total": len(compact_results),
-            "query": query,
-            "mode": "hybrid",
-            "execution_time_ms": execution_time_ms,
-            "note": "Code search using voyage-code-3 embeddings for enhanced code understanding."
-        }
+        transformation_service = get_transformation_service(self.summarization_service)
+        return transformation_service.transform_code_to_compact_format(
+            results, query, execution_time_ms
+        )
 
 
 __all__ = ["OperationsManager"]

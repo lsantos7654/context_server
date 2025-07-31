@@ -6,6 +6,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from context_server.core.services.embeddings import EmbeddingService, VoyageEmbeddingService
+from context_server.core.services.transformation import get_transformation_service
 from context_server.core.database import DatabaseManager
 from context_server.api.error_handlers import handle_search_errors
 from context_server.models.api.search import SearchRequest, SearchResponse, CodeSearchResponse
@@ -102,31 +103,26 @@ async def search_context(
             detail=f"Unsupported search mode: {search_request.mode}",
         )
 
-    # Format results with enhanced metadata
-    formatted_results = []
+    # Use centralized transformation service for consistent result formatting
+    transformation_service = get_transformation_service()
+    
+    # Standardize results first
+    standardized_results = []
     for result in results:
-        metadata = result.get("metadata", {})
-        formatted_result = {
-            "id": result["id"],
-            "document_id": result.get("document_id"),
-            "title": result["title"],
-            "content": result["content"],
-            "summary": result.get("summary"),
-            "summary_model": result.get("summary_model"),
-            "score": result["score"],
-            "metadata": metadata,
-            "url": result.get("url"),
-        }
+        standardized_result = transformation_service.standardize_search_result_fields(result)
         
         # Extract useful metadata to top level for easier access
-        formatted_result.update({
+        metadata = result.get("metadata", {})
+        standardized_result.update({
             "page_url": metadata.get("page_url", result.get("url")),
             "source_type": metadata.get("source_type"),
             "base_url": metadata.get("base_url"),
             "is_individual_page": metadata.get("is_individual_page", False),
             "source_title": metadata.get("source_title"),
         })
-        formatted_results.append(formatted_result)
+        standardized_results.append(standardized_result)
+    
+    formatted_results = standardized_results
 
     execution_time_ms = int((time.time() - start_time) * 1000)
 
@@ -138,7 +134,7 @@ async def search_context(
 
     # Return compact format if requested
     if format == "compact":
-        compact_response = await db._transform_to_compact_format(
+        compact_response = transformation_service.transform_to_compact_format(
             formatted_results,
             query=search_request.query,
             mode=search_request.mode.value,
@@ -273,42 +269,34 @@ async def search_code_snippets(
             detail=f"Unsupported search mode: {search_request.mode}",
         )
 
-    # Format code search results with enhanced metadata
-    formatted_results = []
+    # Use centralized transformation service for consistent code result formatting
+    transformation_service = get_transformation_service()
+    
+    # Standardize code search results first
+    standardized_results = []
     for result in results:
+        standardized_result = transformation_service.standardize_code_search_result_fields(result)
+        
+        # Extract useful metadata to top level for easier access
         metadata = result.get("metadata", {})
-        
-        # Clean metadata to remove deprecated fields
-        clean_metadata = {}
-        for key, value in metadata.items():
-            # Skip deprecated fields that were used for chunks but not code snippets
-            if key not in ["language", "start_line", "end_line", "char_start", "char_end", "type", "chunk_index"]:
-                clean_metadata[key] = value
-        
-        formatted_result = {
-            "id": result["id"],
-            "document_id": result.get("document_id"),
-            "content": result["content"],
-            "score": result["score"],
-            "line_count": result.get("line_count", len(result["content"].split('\n')) if result["content"] else 0),
-            "metadata": clean_metadata,
-            "url": result.get("url"),
-        }
         
         # Only add optional fields if they have values
         page_url = metadata.get("page_url", result.get("url"))
         if page_url and page_url != result.get("url"):
-            formatted_result["page_url"] = page_url
+            standardized_result["page_url"] = page_url
             
         if metadata.get("source_type"):
-            formatted_result["source_type"] = metadata.get("source_type")
+            standardized_result["source_type"] = metadata.get("source_type")
             
         if metadata.get("base_url"):
-            formatted_result["base_url"] = metadata.get("base_url")
+            standardized_result["base_url"] = metadata.get("base_url")
             
         if metadata.get("source_title"):
-            formatted_result["source_title"] = metadata.get("source_title")
-        formatted_results.append(formatted_result)
+            standardized_result["source_title"] = metadata.get("source_title")
+        
+        standardized_results.append(standardized_result)
+    
+    formatted_results = standardized_results
 
     execution_time_ms = int((time.time() - start_time) * 1000)
 
@@ -320,7 +308,7 @@ async def search_code_snippets(
 
     # Return compact format if requested
     if format == "compact":
-        compact_response = db._transform_code_to_compact_format(
+        compact_response = transformation_service.transform_code_to_compact_format(
             formatted_results,
             query=search_request.query,
             execution_time_ms=execution_time_ms

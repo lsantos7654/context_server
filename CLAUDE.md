@@ -4,132 +4,147 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Context Server is a modern CLI-based documentation RAG system with FastAPI backend, PostgreSQL + pgvector storage, and semantic search capabilities. It provides MCP (Model Context Protocol) tools for Claude integration and implements a three-document processing pipeline with dual embedding models.
+Context Server is a modern documentation RAG system with FastAPI backend, PostgreSQL + pgvector storage, and semantic search capabilities. Built specifically for Claude integration via MCP (Model Context Protocol).
+
+**Core Architecture**: Three-document pipeline processing:
+1. **Original Document**: Raw parsed markdown content
+2. **Code Snippets**: Extracted code blocks with voyage-code-3 embeddings  
+3. **Cleaned Text**: Text with code snippet placeholders for improved search
+
+**Dual Embedding Strategy**: 
+- OpenAI text-embedding-3-large for documents
+- Voyage AI voyage-code-3 for code snippets
+
+## Essential Commands
+
+### Development Environment
+```bash
+# Install with uv package manager  
+uv sync --extra dev
+
+# Start services (PostgreSQL + API)
+make up
+
+# Development server (with reload)
+make restart
+
+# Environment setup 
+make init
+
+# Clean caches
+make clean
+```
+
+### Testing & Quality
+```bash
+# Run tests with coverage
+make test
+
+# Format code (black + isort)
+make format
+
+# Run linting (flake8, mypy, bandit)
+make lint
+
+# Full quality check
+make quality-check
+
+# Watch mode for development
+make test-watch
+```
+
+### Docker Operations
+```bash
+# Check server status
+make status
+
+# View API logs  
+make logs
+
+# Database shell
+make db-shell
+
+# Reset database (destroys all data)
+make db-reset
+```
+
+### CLI Usage (ctx command)
+```bash
+# Context management
+ctx context create my-docs --description "Documentation context"
+ctx context list
+ctx context delete old-context
+
+# Document extraction
+ctx extract https://docs.python.org/ my-docs --max-pages 50
+ctx extract ./my-project/ local-docs --source-type local
+
+# Search operations  
+ctx search query "async functions" my-docs --limit 5
+ctx search code "impl Error" my-docs --language rust
+```
 
 ## Key Architecture Components
 
-### Three-Document Processing Pipeline
-The system processes sources into three distinct document types:
-1. **Original**: Raw parsed markdown content
-2. **Code Snippets**: Extracted code blocks with voyage-code-3 embeddings  
-3. **Cleaned Markdown**: Text with code snippet placeholders for improved search
+### Core Pipeline (`context_server/core/pipeline.py`)
+- **DocumentProcessor**: Main orchestrator of three-document processing
+- **CodeSnippetExtractor**: Extracts and processes code blocks
+- Text chunking with LangChain RecursiveCharacterTextSplitter
+- Concurrent embedding generation and summarization
 
-### Dual Embedding Strategy
-- **Documents**: OpenAI text-embedding-3-large (3072 dims)
-- **Code**: Voyage AI voyage-code-3 (2048 dims)
-- **Storage**: PostgreSQL with pgvector halfvec support
+### MCP Integration (`context_server/mcp_server/`)
+- **tools.py**: Complete MCP tool implementations for Claude
+- **client.py**: HTTP client for Context Server API
+- Native Model Context Protocol support for seamless AI workflows
 
-### Core Services
-- **Chunking**: LangChain RecursiveCharacterTextSplitter (context_server/core/chunking.py)
-- **Processing**: Three-document pipeline (context_server/core/processing.py)
-- **Embeddings**: Dual service implementation (context_server/core/embeddings.py)
-- **MCP Tools**: Claude integration layer (context_server/mcp_server/tools.py)
+### Database Layer (`context_server/core/database/`)
+- PostgreSQL with pgvector extension
+- Async SQLAlchemy models
+- Hybrid search (semantic + keyword) capabilities
+- Optimized chunking and embedding storage
 
-## Development Commands
+### API Layer (`context_server/api/`)
+- FastAPI application with async support
+- RESTful endpoints for contexts, documents, search
+- Job system for async processing with progress tracking
+- Error handling and validation
 
-### Environment Setup
-```bash
-# Create and activate virtual environment
-make init
-source .venv/bin/activate
-
-# Alternative manual setup
-python -m venv .venv
-source .venv/bin/activate
-uv pip install -e ".[dev,test]"
-```
-
-### Docker Services
-```bash
-make up            # Start PostgreSQL + API server
-make down          # Stop services
-make restart       # Restart services
-make logs          # View API logs
-make status        # Check server health
-```
-
-### Testing and Quality
-```bash
-make test          # Run tests with coverage
-make test-watch    # Run tests in watch mode
-make format        # Format with black and isort
-make lint          # Run flake8, mypy, bandit
-make quality-check # Run format, lint, and test
-```
-
-### CLI Usage
-```bash
-ctx --help                                    # Show all commands
-ctx server up                                # Start services
-ctx context create my-docs                   # Create context
-ctx docs extract https://docs.rust-lang.org rust-docs  # Extract docs
-ctx search query "async functions" my-docs   # Search context
-```
-
-## Project Structure
-
-```
-context_server/
-├── cli/           # CLI commands and interface (Click-based)
-├── api/           # FastAPI REST endpoints
-├── core/          # Core business logic
-│   ├── chunking.py          # LangChain text splitting
-│   ├── embeddings.py        # OpenAI + Voyage AI services  
-│   ├── processing.py        # Three-document pipeline
-│   ├── storage.py           # PostgreSQL + pgvector
-│   └── crawl4ai_extraction.py  # Web scraping
-├── mcp_server/    # MCP protocol implementation
-└── tests/         # Test suite with pytest
-```
-
-## Important Implementation Details
-
-### ⚠️ CRITICAL: NO DATABASE MIGRATIONS
-**NEVER add database migrations to schema.py or anywhere else.** Migrations cause complex issues with existing data and deployment. Always use fresh database instances for schema changes. The schema.py file should only contain clean table creation statements with `CREATE TABLE IF NOT EXISTS`.
+## Important Development Notes
 
 ### Database Schema
-Uses PostgreSQL with pgvector halfvec support for efficient vector storage. Key tables:
-- `contexts`: Context metadata with embedding model configuration
-- `documents`: Three document types (original, code_snippets, cleaned_markdown)  
-- `chunks`: Text chunks with halfvec(3072) embeddings
-- `code_snippets`: Code blocks with halfvec(2048) embeddings
+- Uses pgvector with halfvec optimization for performance
+- Three main tables: documents, chunks, code_snippets  
+- UUID-based relationships between documents and code snippets
+- Embedding vectors stored as halfvec for memory efficiency
 
-### Code Snippet Placeholders
-In cleaned markdown documents, code blocks are replaced with structured metadata:
-```markdown
-[CODE_SNIPPET: language=python, size=245_chars, summary="Function description", snippet_id=uuid-here]
-```
+### Text Processing
+- **Text chunks**: 4000 chars, 800 overlap (20% for context continuity)
+- **Code chunks**: 700 chars, 150 overlap (optimized for code blocks)
+- Code snippet placeholders link chunks to code for enhanced search
 
-### MCP Integration
-Provides comprehensive MCP tools for Claude including:
-- Context management (create, list, delete)
-- Document extraction (URL and file-based)
-- Dual search (document and code search)
-- Paginated document retrieval (handles Claude's 25k token limit)
+### API Configuration
+- Server runs on localhost:8000 by default
+- API docs available at /docs and /redoc
+- Database URL: postgresql://context_user:context_password@localhost:5432/context_server
 
-## Testing Strategy
-
-The project uses pytest with async support and multiple test categories:
-- `pytest -m unit` - Unit tests
-- `pytest -m integration` - Integration tests  
-- `pytest -m slow` - Slow/comprehensive tests
-- `pytest --cov=context_server --cov-report=html` - Coverage reports
-
-## Environment Variables
-
+### Environment Variables
 Required in `.env` file:
-- `OPENAI_API_KEY` - For text-embedding-3-large
-- `VOYAGE_API_KEY` - For voyage-code-3 code embeddings
-- `DATABASE_URL` - PostgreSQL connection string
+- `OPENAI_API_KEY`: For text embeddings and summarization
+- `VOYAGE_API_KEY`: For code embeddings (voyage-code-3)
+- `DATABASE_URL`: PostgreSQL connection string (optional, defaults to Docker setup)
 
-## Current Enhancement Phase
+### Testing
+- Uses pytest with async support
+- Test markers: unit, integration, slow
+- Coverage reports generated in htmlcov/
+- Factory-boy for test data generation
 
-The project is actively enhancing the core architecture with:
-- Modern chunking strategies using LangChain
-- Three-document processing pipeline
-- Advanced embedding models with dual strategies
-- MCP document pagination for large documents
-- Enhanced search with separate code endpoints
+### Code Quality
+- Black formatter (88 char line length)
+- isort for import sorting  
+- mypy for type checking (not strict, allows untyped defs)
+- bandit for security scanning
+- pre-commit hooks configured
 
 ## Intelligent Documentation Gap Detection & Extraction
 
