@@ -30,7 +30,7 @@ class SchemaManager:
             """
             )
 
-            # Create documents table
+            # Create documents table (stores cleaned content for chunks/embeddings)
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS documents (
@@ -38,13 +38,23 @@ class SchemaManager:
                     context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
                     url TEXT,
                     title TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    document_type VARCHAR(20) DEFAULT 'original',  -- 'original', 'cleaned_markdown'
+                    content TEXT NOT NULL,  -- Cleaned content with CODE_SNIPPET placeholders
                     metadata JSONB DEFAULT '{}',
                     indexed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     chunk_count INTEGER DEFAULT 0,
                     source_type VARCHAR(20) NOT NULL,
-                    UNIQUE(context_id, url, document_type)
+                    UNIQUE(context_id, url)
+                )
+            """
+            )
+
+            # Create raw_documents table (stores original unprocessed content)
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS raw_documents (
+                    document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+                    raw_content TEXT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
             """
             )
@@ -60,8 +70,8 @@ class SchemaManager:
                     summary TEXT,  -- LLM-generated summary for compact responses
                     summary_model VARCHAR(50),  -- Model used to generate summary
                     text_embedding halfvec(3072),  -- text-embedding-3-large dimension
-                    code_embedding halfvec(2048),  -- voyage-code-3 dimension
                     chunk_index INTEGER NOT NULL,
+                    code_snippet_ids UUID[],  -- Direct array of related code snippet UUIDs
                     metadata JSONB DEFAULT '{}',
                     tokens INTEGER,
                     start_line INTEGER,
@@ -89,8 +99,7 @@ class SchemaManager:
                     char_start INTEGER,
                     char_end INTEGER,
                     snippet_type VARCHAR(20) DEFAULT 'code_block',  -- 'code_block' or 'inline_code'
-                    summary TEXT,
-                    summary_model VARCHAR(50),
+                    preview TEXT,  -- Meaningful code preview for display
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
             """
@@ -119,9 +128,6 @@ class SchemaManager:
             # Create indexes for performance
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_text_embedding ON chunks USING ivfflat (text_embedding halfvec_cosine_ops)"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_chunks_code_embedding ON chunks USING ivfflat (code_embedding halfvec_cosine_ops)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_context_id ON chunks(context_id)"
@@ -167,31 +173,6 @@ class SchemaManager:
                 "CREATE INDEX IF NOT EXISTS idx_documents_content_fts ON documents USING gin(to_tsvector('english', content))"
             )
 
-            # Ensure document_type column exists for existing databases
-            await conn.execute("""
-                DO $$ BEGIN
-                    ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_type VARCHAR(20) DEFAULT 'original';
-                EXCEPTION
-                    WHEN duplicate_column THEN NULL;
-                END $$;
-            """)
-            
-            # Ensure the unique constraint includes document_type
-            await conn.execute("""
-                DO $$ BEGIN
-                    -- Drop old constraint if it exists
-                    ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_context_id_url_key;
-                    -- Only add new constraint if it doesn't exist
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.table_constraints 
-                        WHERE constraint_name = 'documents_context_id_url_document_type_key'
-                        AND table_name = 'documents'
-                    ) THEN
-                        ALTER TABLE documents ADD CONSTRAINT documents_context_id_url_document_type_key 
-                            UNIQUE(context_id, url, document_type);
-                    END IF;
-                END $$;
-            """)
             
             logger.info("Database schema created successfully")
 

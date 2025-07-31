@@ -84,6 +84,9 @@ context_server/
 
 ## Important Implementation Details
 
+### ⚠️ CRITICAL: NO DATABASE MIGRATIONS
+**NEVER add database migrations to schema.py or anywhere else.** Migrations cause complex issues with existing data and deployment. Always use fresh database instances for schema changes. The schema.py file should only contain clean table creation statements with `CREATE TABLE IF NOT EXISTS`.
+
 ### Database Schema
 Uses PostgreSQL with pgvector halfvec support for efficient vector storage. Key tables:
 - `contexts`: Context metadata with embedding model configuration

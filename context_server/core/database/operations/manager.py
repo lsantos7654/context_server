@@ -44,28 +44,18 @@ class OperationsManager:
                     if isinstance(snippet, dict) and "id" in snippet:
                         snippet_id = snippet["id"]
                         
-                        # Use content directly from snippet data if available
+                        # Use stored preview from database instead of generating at runtime
                         snippet_content = snippet.get("content", "")
+                        preview = snippet.get("preview", "")
                         
+                        # Calculate basic stats
                         if snippet_content:
-                            # Calculate lines and chars from available content
                             lines = snippet_content.split('\n')
                             line_count = len([line for line in lines if line.strip()])
                             char_count = len(snippet_content)
-                            
-                            # Generate preview: show first 8 lines of actual code
-                            if line_count <= 8:
-                                preview = snippet_content.strip()
-                            else:
-                                preview_lines = []
-                                for line in lines[:8]:
-                                    preview_lines.append(line)
-                                preview = '\n'.join(preview_lines).strip()
                         else:
-                            # Fallback for when no content is available in metadata
                             line_count = 0
                             char_count = 0
-                            preview = snippet.get("preview", "")
                         
                         snippet_obj = {
                             "id": snippet_id,

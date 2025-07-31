@@ -169,21 +169,18 @@ def document(context_name, document_id, output_format):
         try:
             client = APIClient()
             
-            # Determine document type based on format
-            if output_format == "raw":
-                document_type = "original"  # Raw format shows original content
-            else:
-                document_type = "cleaned_markdown"  # Card and JSON show cleaned content
+            # Determine whether to get raw or cleaned content based on format
+            raw_param = "true" if output_format == "raw" else "false"
             
             success, response = await client.get(
-                f"contexts/{context_name}/documents/{document_id}/raw?document_type={document_type}"
+                f"contexts/{context_name}/documents/{document_id}/raw?raw={raw_param}"
             )
 
             if success:
                 if output_format == "json":
                     console.print(json.dumps(response, indent=2))
                 elif output_format == "raw":
-                    console.print(response.get("content", ""))
+                    _display_document_card(response, show_full_content=True, raw_format=True)
                 else:  # card format - show full cleaned content without truncation
                     _display_document_card(response, show_full_content=True)
             else:
@@ -356,7 +353,7 @@ def _display_code_snippet_card(snippet):
     console.print()  # Empty line
 
 
-def _display_document_card(document, show_full_content=False):
+def _display_document_card(document, show_full_content=False, raw_format=False):
     """Display a document as a rich card."""
     # Extract metadata
     doc_id = document.get("id", "N/A")
@@ -364,6 +361,7 @@ def _display_document_card(document, show_full_content=False):
     url = document.get("url", "")
     content = document.get("content", "")
     created_at = document.get("created_at", "")
+    document_type = document.get("document_type", "cleaned")
 
     # Create info section
     info_lines = []
@@ -376,13 +374,22 @@ def _display_document_card(document, show_full_content=False):
         info_lines.append(f"[bold cyan]Created:[/bold cyan] {created_at}")
 
     info_lines.append(f"[bold cyan]Size:[/bold cyan] {len(content):,} characters")
+    
+    # Add document type indicator
+    if raw_format:
+        info_lines.append(f"[bold cyan]Type:[/bold cyan] Raw Content (original markdown)")
+    else:
+        info_lines.append(f"[bold cyan]Type:[/bold cyan] Cleaned Content (with CODE_SNIPPET placeholders)")
 
     info_section = "\n".join(info_lines)
 
     # Content display (full content or preview based on parameter)
     if show_full_content:
         content_display = content
-        content_label = "Full Content"
+        if raw_format:
+            content_label = "Raw Content"
+        else:
+            content_label = "Cleaned Content"
     else:
         content_display = content[:1000] + ("..." if len(content) > 1000 else "")
         content_label = "Content Preview"
@@ -394,12 +401,20 @@ def _display_document_card(document, show_full_content=False):
     # Combine sections
     panel_content = info_section + content_section
 
-    # Create panel
-    header = f"Document • {len(content):,} chars"
+    # Create panel with different styling for raw vs cleaned
+    if raw_format:
+        header = f"Raw Document • {len(content):,} chars"
+        border_color = "green"
+        title_color = "bold green"
+    else:
+        header = f"Document • {len(content):,} chars"
+        border_color = "blue"
+        title_color = "bold blue"
+        
     panel = Panel(
         panel_content,
-        title=f"[bold blue]{header}[/bold blue]",
-        border_style="blue",
+        title=f"[{title_color}]{header}[/{title_color}]",
+        border_style=border_color,
         padding=(1, 2),
     )
 

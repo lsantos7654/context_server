@@ -198,7 +198,7 @@ class ContextManager:
                 """
                 SELECT cs.id, cs.document_id, cs.content, cs.language, cs.embedding,
                        cs.metadata, cs.start_line, cs.end_line, cs.char_start, cs.char_end,
-                       cs.snippet_type, cs.summary, cs.summary_model, cs.created_at
+                       cs.snippet_type, cs.preview, cs.created_at
                 FROM code_snippets cs
                 JOIN documents d ON cs.document_id = d.id
                 WHERE d.context_id = $1
@@ -225,8 +225,7 @@ class ContextManager:
                     "char_start": row["char_start"],
                     "char_end": row["char_end"],
                     "snippet_type": row["snippet_type"],
-                    "summary": row["summary"],
-                    "summary_model": row["summary_model"],
+                    "preview": row["preview"],
                     "created_at": row["created_at"].isoformat() if row["created_at"] else None
                 })
             
@@ -352,8 +351,8 @@ class ContextManager:
                         """
                         INSERT INTO code_snippets (document_id, context_id, content, embedding,
                                                  metadata, start_line, end_line, char_start, char_end,
-                                                 snippet_type, summary, summary_model)
-                        VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11, $12)
+                                                 snippet_type, preview)
+                        VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11)
                         """,
                         uuid.UUID(new_doc_id),
                         context_id,
@@ -365,8 +364,7 @@ class ContextManager:
                         snippet_data.get("char_start"),
                         snippet_data.get("char_end"),
                         snippet_data.get("snippet_type", "code_block"),
-                        snippet_data.get("summary"),
-                        snippet_data.get("summary_model")
+                        snippet_data.get("preview", snippet_data.get("summary", ""))  # Support both old and new format
                     )
                 
                 # Update context document count
@@ -539,7 +537,7 @@ class ContextManager:
                     snippets = await conn.fetch(
                         """
                         SELECT content, language, embedding, metadata, start_line, end_line,
-                               char_start, char_end, snippet_type, summary, summary_model
+                               char_start, char_end, snippet_type, preview
                         FROM code_snippets WHERE document_id = $1
                         """,
                         uuid.UUID(old_doc_id)
@@ -550,8 +548,8 @@ class ContextManager:
                             """
                             INSERT INTO code_snippets (document_id, context_id, content, language, embedding,
                                                      metadata, start_line, end_line, char_start, char_end,
-                                                     snippet_type, summary, summary_model)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                                                     snippet_type, preview)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                             """,
                             uuid.UUID(new_doc_id),
                             uuid.UUID(target_context_id),
@@ -564,8 +562,7 @@ class ContextManager:
                             snippet["char_start"],
                             snippet["char_end"],
                             snippet["snippet_type"],
-                            snippet["summary"],
-                            snippet["summary_model"]
+                            snippet["preview"]
                         )
                         total_code_snippets += 1
                 

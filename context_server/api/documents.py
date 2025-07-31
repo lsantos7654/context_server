@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -166,68 +167,30 @@ async def _process_document_background(
                     )
                     return
                 try:
-                    # Store both original and cleaned document versions
-                    # 1. Store original document
+                    # SIMPLIFIED APPROACH: Create document first, then store code snippets with real document_id
+                    
+                    # 1. Store main document with temporary original content
                     doc_id = await asyncio.wait_for(
                         db.create_document(
                             context_id=context["id"],
                             url=doc.url,
                             title=doc.title,
-                            content=doc.content,
+                            content=doc.content,  # Temporary - original content
                             metadata=doc.metadata,
                             source_type=document_data.source_type.value,
-                            document_type="original",
                         ),
                         timeout=30.0,  # 30 second timeout per document
                     )
                     
-                    # 2. Store cleaned document (used for embeddings/search)
-                    cleaned_doc_id = await asyncio.wait_for(
-                        db.create_document(
-                            context_id=context["id"],
-                            url=doc.url,
-                            title=f"{doc.title} (Cleaned)",
-                            content=doc.cleaned_content,
-                            metadata={**doc.metadata, "document_type": "cleaned_markdown"},
-                            source_type=document_data.source_type.value,
-                            document_type="cleaned_markdown",
-                        ),
-                        timeout=30.0,  # 30 second timeout per document
-                    )
-
-                    # Store chunks with embeddings and line tracking (link to cleaned document)
-                    chunk_count = len(doc.chunks)
-                    for i, chunk in enumerate(doc.chunks):
-                        await db.create_chunk(
-                            document_id=cleaned_doc_id,  # Link chunks to cleaned document
-                            context_id=context["id"],
-                            content=chunk.content,
-                            embedding=chunk.embedding,
-                            chunk_index=i,
-                            metadata=chunk.metadata,
-                            tokens=chunk.tokens,
-                            summary=chunk.summary,
-                            summary_model=chunk.summary_model,
-                            start_line=chunk.start_line,
-                            end_line=chunk.end_line,
-                            char_start=chunk.char_start,
-                            char_end=chunk.char_end,
-                            is_code=chunk.metadata.get("is_code", False),
-                        )
-
-                    # Store code snippets with embeddings
-                    snippet_count = len(doc.code_snippets)
+                    # 2. Store code snippets with real document_id to get real UUIDs
+                    code_snippets_with_uuids = []
                     for snippet in doc.code_snippets:
-                        # Generate summary for the code snippet
-                        snippet_dict = {
-                            "content": snippet.content,
-                            "metadata": snippet.metadata,
-                        }
-                        summary = db._generate_code_summary(snippet_dict)
-                        summary_model = "heuristic"  # Since we're using the heuristic method
+                        # Generate preview for the code snippet using existing pipeline logic
+                        preview = processor.code_extractor._generate_code_preview(snippet.content)
                         
-                        await db.create_code_snippet(
-                            document_id=cleaned_doc_id,  # Link code snippets to cleaned document
+                        # Store code snippet with real document_id
+                        real_snippet_id = await db.create_code_snippet(
+                            document_id=doc_id,
                             context_id=context["id"],
                             content=snippet.content,
                             embedding=snippet.embedding,
@@ -236,9 +199,72 @@ async def _process_document_background(
                             end_line=snippet.end_line,
                             char_start=snippet.char_start,
                             char_end=snippet.char_end,
-                            summary=summary,
-                            summary_model=summary_model,
-                            snippet_type=snippet.metadata.get("type", "code_block"),
+                            preview=preview,
+                            snippet_type=snippet.metadata.get("snippet_type", "code_block"),
+                        )
+                        
+                        # Store snippet info with real UUID for placeholder creation
+                        snippet_with_uuid = {
+                            **snippet.metadata,
+                            "content": snippet.content,
+                            "uuid": real_snippet_id,
+                        }
+                        code_snippets_with_uuids.append(snippet_with_uuid)
+                    
+                    # 3. Create cleaned content with real UUIDs using the code extractor
+                    cleaned_content = processor.code_extractor.create_cleaned_content_with_real_uuids(
+                        doc.content, code_snippets_with_uuids
+                    )
+                    
+                    # 4. Update document with cleaned content
+                    async with db.pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE documents SET content = $1 WHERE id = $2",
+                            cleaned_content,
+                            uuid.UUID(doc_id)
+                        )
+                    
+                    # 5. Store raw document content separately  
+                    await asyncio.wait_for(
+                        db.create_raw_document(
+                            document_id=doc_id,
+                            raw_content=doc.content,  # Original raw content
+                        ),
+                        timeout=30.0,  # 30 second timeout per document
+                    )
+
+                    # 6. Store chunks with code snippet references
+                    chunk_count = len(doc.chunks)
+                    for i, chunk in enumerate(doc.chunks):
+                        # Find code snippet references in chunk content
+                        chunk_code_snippet_ids = []
+                        
+                        # Check if this chunk content overlaps with any code snippet positions
+                        for snippet_with_uuid in code_snippets_with_uuids:
+                            snippet_start = snippet_with_uuid.get("start_pos", 0)
+                            snippet_end = snippet_with_uuid.get("end_pos", 0)
+                            chunk_start = chunk.char_start or 0
+                            chunk_end = chunk.char_end or 0
+                            
+                            # If chunk and snippet overlap, link them
+                            if (chunk_start <= snippet_end and chunk_end >= snippet_start):
+                                chunk_code_snippet_ids.append(snippet_with_uuid["uuid"])
+                        
+                        await db.create_chunk(
+                            document_id=doc_id,  # Link chunks to main document
+                            context_id=context["id"],
+                            content=chunk.content,
+                            embedding=chunk.embedding,
+                            chunk_index=i,
+                            code_snippet_ids=chunk_code_snippet_ids,
+                            metadata=chunk.metadata,
+                            tokens=chunk.tokens,
+                            summary=chunk.summary,
+                            summary_model=chunk.summary_model,
+                            start_line=chunk.start_line,
+                            end_line=chunk.end_line,
+                            char_start=chunk.char_start,
+                            char_end=chunk.char_end,
                         )
 
                     # Update document chunk count
@@ -247,7 +273,7 @@ async def _process_document_background(
                     # Track successful storage
                     stored_docs += 1
                     total_chunks += chunk_count
-                    total_code_snippets += snippet_count
+                    total_code_snippets += len(doc.code_snippets)
 
                     logger.info(
                         f"Successfully stored document {doc_idx + 1}/{total_docs}: {doc.title}"
@@ -376,7 +402,7 @@ async def get_document_raw(
     doc_id: str, 
     page_number: int = 1,
     page_size: int = 25000,
-    document_type: str = "original",  # "original" or "cleaned_markdown"
+    raw: bool = False,  # False = cleaned content, True = raw content
     db: DatabaseManager = Depends(get_db_manager)
 ):
     """Get raw document content with pagination support for Claude's 25k token limit."""
@@ -387,7 +413,7 @@ async def get_document_raw(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Get document
-        document = await db.get_document_by_id(context["id"], doc_id, document_type)
+        document = await db.get_document_by_id(context["id"], doc_id, raw)
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 

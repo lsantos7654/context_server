@@ -123,9 +123,13 @@ class DatabaseManager:
     # Document Operations - Delegate to DocumentManager
     # ===================
     
-    async def create_document(self, context_id: str, url: str, title: str, content: str, metadata: dict, source_type: str, document_type: str = "original") -> str:
-        """Create a new document."""
-        return await self.documents.create_document(context_id, url, title, content, metadata, source_type, document_type)
+    async def create_document(self, context_id: str, url: str, title: str, content: str, metadata: dict, source_type: str) -> str:
+        """Create a new document with cleaned content."""
+        return await self.documents.create_document(context_id, url, title, content, metadata, source_type)
+    
+    async def create_raw_document(self, document_id: str, raw_content: str) -> None:
+        """Store raw content for a document."""
+        return await self.documents.create_raw_document(document_id, raw_content)
     
     async def get_documents(self, context_id: str, offset: int = 0, limit: int = 50) -> dict:
         """Get documents in a context."""
@@ -135,9 +139,9 @@ class DatabaseManager:
         """Delete documents from a context."""
         return await self.documents.delete_documents(context_id, document_ids)
     
-    async def get_document_by_id(self, context_id: str, document_id: str, document_type: str = "original") -> dict | None:
-        """Get document content by ID."""
-        return await self.documents.get_document_by_id(context_id, document_id, document_type)
+    async def get_document_by_id(self, context_id: str, document_id: str, raw: bool = False) -> dict | None:
+        """Get document content by ID (cleaned by default, raw if requested)."""
+        return await self.documents.get_document_by_id(context_id, document_id, raw)
     
     async def get_document_content_by_id(self, document_id: str) -> dict | None:
         """Get document content by ID only (for expansion service)."""
@@ -148,13 +152,14 @@ class DatabaseManager:
     # ===================
     
     async def create_chunk(self, document_id: str, context_id: str, content: str, embedding: list[float], 
-                          chunk_index: int, metadata: dict = None, tokens: int = None, summary: str = None,
-                          summary_model: str = None, start_line: int = None, end_line: int = None,
-                          char_start: int = None, char_end: int = None, is_code: bool = False) -> str:
-        """Create a new chunk with embedding and line tracking."""
+                          chunk_index: int, code_snippet_ids: list[str] = None, metadata: dict = None, 
+                          tokens: int = None, summary: str = None, summary_model: str = None, 
+                          start_line: int = None, end_line: int = None, char_start: int = None, 
+                          char_end: int = None) -> str:
+        """Create a new chunk with embedding, line tracking, and code snippet links."""
         return await self.chunks.create_chunk(
-            document_id, context_id, content, embedding, chunk_index, metadata,
-            tokens, summary, summary_model, start_line, end_line, char_start, char_end, is_code
+            document_id, context_id, content, embedding, chunk_index, code_snippet_ids,
+            metadata, tokens, summary, summary_model, start_line, end_line, char_start, char_end
         )
     
     async def update_document_chunk_count(self, document_id: str):
@@ -172,11 +177,11 @@ class DatabaseManager:
     async def create_code_snippet(self, document_id: str, context_id: str, content: str, embedding: list[float],
                                  metadata: dict = None, start_line: int = None, end_line: int = None,
                                  char_start: int = None, char_end: int = None, snippet_type: str = "code_block",
-                                 summary: str = None, summary_model: str = None) -> str:
+                                 preview: str = None) -> str:
         """Create a new code snippet with embedding and line tracking."""
         return await self.code_snippets.create_code_snippet(
             document_id, context_id, content, embedding, metadata, start_line, end_line,
-            char_start, char_end, snippet_type, summary, summary_model
+            char_start, char_end, snippet_type, preview
         )
     
     async def get_code_snippets_by_document(self, document_id: str, context_id: str = None) -> list[dict]:
@@ -254,68 +259,6 @@ class DatabaseManager:
         """Transform code search results to compact MCP format."""
         return self.operations.transform_code_to_compact_format(results, query, execution_time_ms)
 
-    def _generate_code_summary(self, snippet: dict) -> str:
-        """Generate summary for code snippet: full code if ≤8 lines, AI summary if >8 lines."""
-        # Try to get full content first, fallback to preview
-        content = snippet.get("content", "")
-        
-        if not content:
-            # If no full content, use preview which is already truncated and suitable for display
-            preview = snippet.get("preview", "")
-            if preview:
-                return preview
-            else:
-                return "Empty code snippet"
-        
-        # Split into lines and check count
-        lines = content.split('\n')
-        line_count = len([line for line in lines if line.strip()])  # Count non-empty lines
-        
-        # Rule: If 8 lines or fewer, include full code content
-        if line_count <= 8:
-            return content.strip()
-        
-        # For longer code snippets, try AI summarization first
-        if self.summarization_service and self.summarization_service.client:
-            try:
-                # This is a synchronous context, but we need async for AI
-                # For now, use heuristic fallback. In production, this would be called 
-                # from an async context where we can await the AI service
-                import asyncio
-                
-                # Try to get current event loop, if it exists
-                try:
-                    loop = asyncio.get_running_loop()
-                    # We're in an async context, but this method is sync
-                    # Use heuristic fallback for now
-                    pass
-                except RuntimeError:
-                    # No event loop running
-                    pass
-            except Exception:
-                pass
-        
-        # Use heuristic fallback
-        return self._generate_heuristic_code_summary(content, lines)
-
-    def _generate_heuristic_code_summary(self, content: str, lines: list[str]) -> str:
-        """Generate a concise summary for code snippets."""
-        content_lower = content.lower()
-        line_count = len([line for line in lines if line.strip()])
-        
-        # Simple language/type detection
-        if 'def ' in content or 'function ' in content:
-            code_type = "function"
-        elif 'class ' in content:
-            code_type = "class"
-        elif any(keyword in content_lower for keyword in ['config', 'settings', 'options']):
-            code_type = "configuration"
-        elif any(keyword in content_lower for keyword in ['import', 'from ', 'require']):
-            code_type = "imports"
-        else:
-            code_type = "code"
-            
-        return f"{line_count}-line {code_type} snippet"
 
     # Context Export/Import/Merge Operations
     async def export_context(self, context_name: str) -> dict:

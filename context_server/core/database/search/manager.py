@@ -40,7 +40,7 @@ class SearchManager:
                 SELECT
                     c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
                     c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
-                    c.start_line, c.end_line, c.char_start, c.char_end,
+                    c.start_line, c.end_line, c.char_start, c.char_end, c.code_snippet_ids,
                     LENGTH(d.content) as parent_page_size,
                     d.chunk_count as parent_total_chunks,
                     1 - ({embedding_column} <=> $2::{vector_type}) as similarity
@@ -58,9 +58,36 @@ class SearchManager:
                 limit,
             )
 
-            # Simple result formatting for now (without complex helper methods)
+            # Enhanced result formatting with code snippet information
             chunk_results = []
             for row in rows:
+                # Process code_snippet_ids to get actual code snippet data
+                code_snippet_ids = row.get("code_snippet_ids") or []
+                code_snippets_data = []
+                
+                if code_snippet_ids:
+                    # Fetch code snippet details for these IDs
+                    snippet_rows = await conn.fetch(
+                        """
+                        SELECT id, content, snippet_type, preview
+                        FROM code_snippets 
+                        WHERE id = ANY($1::uuid[])
+                        """,
+                        code_snippet_ids
+                    )
+                    
+                    for snippet_row in snippet_rows:
+                        code_snippets_data.append({
+                            "id": format_uuid(snippet_row["id"]),
+                            "content": snippet_row["content"],
+                            "snippet_type": snippet_row["snippet_type"],
+                            "preview": snippet_row.get("preview", ""),
+                        })
+                
+                # Parse metadata and add code snippets
+                chunk_metadata = parse_metadata(row["chunk_metadata"])
+                chunk_metadata["code_snippets"] = code_snippets_data
+                
                 chunk_results.append({
                     "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
@@ -70,7 +97,7 @@ class SearchManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
-                    "metadata": parse_metadata(row["chunk_metadata"]),
+                    "metadata": chunk_metadata,
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),
@@ -89,7 +116,7 @@ class SearchManager:
                 SELECT
                     c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
                     c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
-                    c.start_line, c.end_line, c.char_start, c.char_end,
+                    c.start_line, c.end_line, c.char_start, c.char_end, c.code_snippet_ids,
                     LENGTH(d.content) as parent_page_size,
                     d.chunk_count as parent_total_chunks,
                     ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', $2)) as score
@@ -105,9 +132,36 @@ class SearchManager:
                 limit,
             )
 
-            # Simple result formatting for now (without complex helper methods)
+            # Enhanced result formatting with code snippet information  
             chunk_results = []
             for row in rows:
+                # Process code_snippet_ids to get actual code snippet data
+                code_snippet_ids = row.get("code_snippet_ids") or []
+                code_snippets_data = []
+                
+                if code_snippet_ids:
+                    # Fetch code snippet details for these IDs
+                    snippet_rows = await conn.fetch(
+                        """
+                        SELECT id, content, snippet_type, preview
+                        FROM code_snippets 
+                        WHERE id = ANY($1::uuid[])
+                        """,
+                        code_snippet_ids
+                    )
+                    
+                    for snippet_row in snippet_rows:
+                        code_snippets_data.append({
+                            "id": format_uuid(snippet_row["id"]),
+                            "content": snippet_row["content"],
+                            "snippet_type": snippet_row["snippet_type"],
+                            "preview": snippet_row.get("preview", ""),
+                        })
+                
+                # Parse metadata and add code snippets
+                chunk_metadata = parse_metadata(row["chunk_metadata"])
+                chunk_metadata["code_snippets"] = code_snippets_data
+                
                 chunk_results.append({
                     "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
@@ -117,7 +171,7 @@ class SearchManager:
                     "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),
-                    "metadata": parse_metadata(row["chunk_metadata"]),
+                    "metadata": chunk_metadata,
                     "start_line": row.get("start_line"),
                     "end_line": row.get("end_line"),
                     "char_start": row.get("char_start"),

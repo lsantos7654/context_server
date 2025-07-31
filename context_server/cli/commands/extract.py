@@ -188,13 +188,33 @@ async def wait_for_extraction(
                             metadata = job_data["metadata"]
                             phase = metadata.get("phase", "processing")
 
-                            if phase == "crawling":
+                            if phase == "extracting":
+                                url = metadata.get("url", "content")
+                                description = f"Extracting content from {url}"
+                            elif phase == "crawling":
                                 description = f"Crawling: {metadata.get('url', '...')}"
                             elif phase == "content_extracted":
                                 pages = metadata.get("pages_found", 0)
                                 description = (
                                     f"Found {pages} pages, processing content..."
                                 )
+                            elif phase == "code_extraction":
+                                status = metadata.get("status", "analyzing code blocks")
+                                content_size = metadata.get("content_size", 0)
+                                description = f"Code extraction: {status} ({content_size:,} chars)"
+                            elif phase == "code_embedding":
+                                snippets_found = metadata.get("snippets_found", 0)
+                                model = metadata.get("model", "voyage-code-3")
+                                description = f"Found {snippets_found} code snippets, generating embeddings ({model})"
+                            elif phase == "text_chunking":
+                                content_size = metadata.get("content_size", 0)
+                                code_snippets = metadata.get("code_snippets_processed", 0)
+                                description = f"Creating text chunks ({content_size:,} chars, {code_snippets} code snippets)"
+                            elif phase == "text_embedding":
+                                chunks_created = metadata.get("chunks_created", 0)
+                                embedding_model = metadata.get("embedding_model", "text-embedding-3-large")
+                                summary_model = metadata.get("summary_model", "gpt-4o-mini")
+                                description = f"Processing {chunks_created} chunks (embeddings: {embedding_model}, summaries: {summary_model})"
                             elif phase == "chunking_and_embedding":
                                 processed = metadata.get("processed_pages", 0)
                                 total = metadata.get("total_pages", 1)

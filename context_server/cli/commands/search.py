@@ -365,15 +365,19 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
         code_snippet_details = []
         if code_snippets:
             # Import the transformation logic
-            from ...core.storage import DatabaseManager
+            from ...core.database import DatabaseManager
             db_manager = DatabaseManager()
             
             for snippet in code_snippets:
                 if isinstance(snippet, dict) and "id" in snippet:
+                    # Use stored preview from database instead of generating at runtime
+                    content = snippet.get("content", "")
+                    preview = snippet.get("preview", "Code preview not available")
+                    
                     snippet_detail = {
                         "id": snippet["id"],
-                        "size": len(snippet.get("preview", snippet.get("content", ""))),
-                        "summary": db_manager._generate_code_summary(snippet)
+                        "size": len(content),
+                        "preview": preview
                     }
                     code_snippet_details.append(snippet_detail)
         
@@ -393,10 +397,10 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
                 for snippet in code_snippet_details[:3]:  # Show first 3
                     snippet_id_full = str(snippet["id"])
                     card_content.append(f"[cyan]• {snippet_id_full}[/cyan] ({snippet['size']} chars)")
-                    if snippet["summary"]:
-                        # Show full code summary (no truncation for enhanced 3-4 sentence summaries)
-                        summary = snippet["summary"]
-                        card_content.append(f"  [dim]{summary}[/dim]")
+                    if snippet["preview"]:
+                        # Show actual code preview instead of generic summary
+                        preview = snippet["preview"]
+                        card_content.append(f"  [dim]{preview}[/dim]")
                 
                 if len(code_snippet_details) > 3:
                     remaining = len(code_snippet_details) - 3

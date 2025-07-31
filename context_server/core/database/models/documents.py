@@ -33,20 +33,19 @@ class DocumentManager:
         content: str,
         metadata: dict,
         source_type: str,
-        document_type: str = "original",
     ) -> str:
-        """Create a new document."""
+        """Create a new document with cleaned content."""
         # Normalize URL to prevent duplicates
         normalized_url = self._normalize_url(url)
         
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # Insert document
+                # Insert document (cleaned content)
                 doc_id = await conn.fetchval(
                     """
-                    INSERT INTO documents (context_id, url, title, content, metadata, source_type, document_type)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (context_id, url, document_type) DO UPDATE SET
+                    INSERT INTO documents (context_id, url, title, content, metadata, source_type)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (context_id, url) DO UPDATE SET
                         title = EXCLUDED.title,
                         content = EXCLUDED.content,
                         metadata = EXCLUDED.metadata,
@@ -59,7 +58,6 @@ class DocumentManager:
                     content,
                     json.dumps(metadata),
                     source_type,
-                    document_type,
                 )
 
                 # Update context document count
@@ -74,6 +72,20 @@ class DocumentManager:
                 )
 
                 return str(doc_id)
+    
+    async def create_raw_document(self, document_id: str, raw_content: str) -> None:
+        """Store raw content for a document."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO raw_documents (document_id, raw_content)
+                VALUES ($1, $2)
+                ON CONFLICT (document_id) DO UPDATE SET
+                    raw_content = EXCLUDED.raw_content
+                """,
+                uuid.UUID(document_id),
+                raw_content,
+            )
     
     async def get_documents(self, context_id: str, offset: int = 0, limit: int = 50) -> dict:
         """Get documents in a context with pagination."""
@@ -149,22 +161,37 @@ class DocumentManager:
                 return deleted_count
     
     async def get_document_by_id(
-        self, context_id: str, document_id: str, document_type: str = "original"
+        self, context_id: str, document_id: str, raw: bool = False
     ) -> dict | None:
-        """Get document content by ID."""
+        """Get document content by ID (cleaned by default, raw if requested)."""
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    d.id, d.title, d.url, d.content, d.metadata,
-                    d.indexed_at, d.source_type, d.chunk_count, d.document_type
-                FROM documents d
-                WHERE d.context_id = $1 AND d.id = $2 AND d.document_type = $3
-                """,
-                uuid.UUID(context_id),
-                uuid.UUID(document_id),
-                document_type,
-            )
+            if raw:
+                # Get document info + raw content
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        d.id, d.title, d.url, d.metadata, d.indexed_at, d.source_type, d.chunk_count,
+                        rd.raw_content as content
+                    FROM documents d
+                    LEFT JOIN raw_documents rd ON d.id = rd.document_id
+                    WHERE d.context_id = $1 AND d.id = $2
+                    """,
+                    uuid.UUID(context_id),
+                    uuid.UUID(document_id),
+                )
+            else:
+                # Get document info + cleaned content
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        d.id, d.title, d.url, d.content, d.metadata,
+                        d.indexed_at, d.source_type, d.chunk_count
+                    FROM documents d
+                    WHERE d.context_id = $1 AND d.id = $2
+                    """,
+                    uuid.UUID(context_id),
+                    uuid.UUID(document_id),
+                )
 
             if not row:
                 return None
@@ -173,14 +200,14 @@ class DocumentManager:
                 "id": format_uuid(row["id"]),
                 "title": row["title"],
                 "url": row["url"],
-                "content": row["content"],
+                "content": row["content"] or "",
                 "metadata": parse_metadata(row["metadata"]),
                 "created_at": row["indexed_at"].isoformat()
                 if row["indexed_at"]
                 else None,
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
-                "document_type": row["document_type"],
+                "document_type": "raw" if raw else "cleaned",
             }
     
     async def get_document_content_by_id(self, document_id: str) -> dict | None:
