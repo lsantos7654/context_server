@@ -190,8 +190,8 @@ class DocumentProcessor:
         
         self.extractor = Crawl4aiExtractor()
         self.text_chunker = TextChunker(
-            chunk_size=2500,    # Larger chunks for better context (was 1000)
-            chunk_overlap=500,  # 20% overlap for context continuity (was 200)
+            chunk_size=4000,    # Even larger chunks for better context (was 2500)
+            chunk_overlap=800,  # 20% overlap for context continuity (was 500)
             chunk_type="text"
         )
         self.code_extractor = CodeSnippetExtractor()
@@ -355,9 +355,9 @@ class DocumentProcessor:
                 logger.warning(f"Code embedding failed: {e}")
                 # Continue without code embeddings
         
-        # Step 3: For now, create a temporary cleaned content for chunking
-        # (Real UUIDs will be applied in the API layer after storing code snippets)
-        temp_cleaned_content = content  # We'll process chunks from original content for now
+        # Step 3: Create cleaned content with temporary placeholders for chunking
+        # We'll create placeholders with temporary IDs, then replace with real UUIDs in API layer
+        temp_cleaned_content = self._create_temp_cleaned_content(content, code_snippets_info)
         
         # Step 4: Chunk the content
         if job_id and db:
@@ -394,12 +394,12 @@ class DocumentProcessor:
             chunk_contents = [chunk.content for chunk in text_chunks]
             
             try:
-                # Generate embeddings and summaries concurrently
+                # Generate embeddings, titles, and summaries concurrently
                 embeddings_task = self.embedding_service.embed_batch(chunk_contents)
-                summaries_task = self.summarization_service.summarize_batch(chunk_contents)
+                titles_summaries_task = self.summarization_service.generate_titles_and_summaries_batch(chunk_contents)
                 
-                embeddings, summaries = await asyncio.gather(
-                    embeddings_task, summaries_task, return_exceptions=True
+                embeddings, titles_summaries = await asyncio.gather(
+                    embeddings_task, titles_summaries_task, return_exceptions=True
                 )
                 
                 # Handle exceptions
@@ -407,18 +407,23 @@ class DocumentProcessor:
                     logger.warning(f"Text embedding failed: {embeddings}")
                     embeddings = [None] * len(chunk_contents)
                     
-                if isinstance(summaries, Exception):
-                    logger.warning(f"Summarization failed: {summaries}")
-                    summaries = [None] * len(chunk_contents)
+                if isinstance(titles_summaries, Exception):
+                    logger.warning(f"Title and summary generation failed: {titles_summaries}")
+                    titles_summaries = [(None, None)] * len(chunk_contents)
+                
+                # Extract titles and summaries from tuple results
+                titles = [ts[0] if ts else None for ts in titles_summaries]
+                summaries = [ts[1] if ts else None for ts in titles_summaries]
                 
                 # Create processed chunks (code snippet linking will be done in API layer)
-                for chunk, embedding, summary in zip(text_chunks, embeddings, summaries):
+                for chunk, embedding, title, summary in zip(text_chunks, embeddings, titles, summaries):
                     if embedding:  # Only include if embedding was successful
                         processed_chunk = ProcessedChunk(
                             content=chunk.content,
                             embedding=embedding,
                             metadata=chunk.metadata,
                             tokens=chunk.tokens,
+                            title=title,
                             summary=summary,
                             summary_model=self.summarization_service.model if summary else None,
                             start_line=chunk.start_line,
@@ -454,6 +459,42 @@ class DocumentProcessor:
         
         logger.info(f"Document processing complete: {len(processed_chunks)} chunks, {len(code_snippets)} code snippets")
         return processed_document
+
+    def _create_temp_cleaned_content(self, original_content: str, code_snippets_info: list[dict]) -> str:
+        """Create cleaned content with temporary placeholders for chunking purposes.
+        
+        This creates placeholders using temporary IDs that will be replaced with real UUIDs
+        in the API layer after code snippets are stored in the database.
+        """
+        if not code_snippets_info:
+            return original_content
+            
+        processed_text = original_content
+        
+        # Sort code snippets by start position in reverse order to avoid position shifts
+        sorted_snippets = sorted(
+            code_snippets_info, 
+            key=lambda x: x.get("start_pos", 0), 
+            reverse=True
+        )
+        
+        # Replace each code snippet with a temporary placeholder
+        for i, snippet_info in enumerate(sorted_snippets):
+            original_match = snippet_info.get("original_match", "")
+            if original_match and original_match in processed_text:
+                # Create temporary placeholder (will be replaced with real UUID later)
+                temp_id = f"temp_snippet_{i}"
+                preview = self.code_extractor._generate_code_preview(snippet_info["content"])
+                
+                placeholder = (
+                    f"[CODE_SNIPPET: "
+                    f"size={snippet_info['char_count']}_chars, "
+                    f"preview=\"{preview}\", "
+                    f"snippet_id={temp_id}]"
+                )
+                processed_text = processed_text.replace(original_match, placeholder, 1)
+        
+        return processed_text
 
     def _find_code_snippets_in_chunk(self, chunk_content: str, code_snippets_info: list[dict]) -> list[str]:
         """Find which code snippets are referenced in a chunk."""

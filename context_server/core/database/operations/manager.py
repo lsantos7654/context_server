@@ -109,13 +109,10 @@ class OperationsManager:
             compact_result = {
                 "id": result.get("id"),
                 "document_id": result.get("document_id"),
-                "title": result.get("title"),
                 "content": display_content,
-                "snippet_type": result.get("snippet_type", "code_block"),
                 "score": result.get("score"),
                 "url": result.get("url"),
                 "line_count": line_count,
-                "content_type": "code_snippet",
             }
             compact_results.append(compact_result)
         

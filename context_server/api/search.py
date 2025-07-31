@@ -116,7 +116,6 @@ async def search_context(
             "score": result["score"],
             "metadata": metadata,
             "url": result.get("url"),
-            "content_type": result.get("content_type", "chunk"),
         }
         
         # Extract useful metadata to top level for easier access
@@ -289,14 +288,11 @@ async def search_code_snippets(
         formatted_result = {
             "id": result["id"],
             "document_id": result.get("document_id"),
-            "title": result["title"],
             "content": result["content"],
-            "snippet_type": result.get("snippet_type", "code_block"),
             "score": result["score"],
             "line_count": result.get("line_count", len(result["content"].split('\n')) if result["content"] else 0),
             "metadata": clean_metadata,
             "url": result.get("url"),
-            "content_type": "code_snippet",
         }
         
         # Only add optional fields if they have values

@@ -259,6 +259,7 @@ async def _process_document_background(
                             code_snippet_ids=chunk_code_snippet_ids,
                             metadata=chunk.metadata,
                             tokens=chunk.tokens,
+                            title=chunk.title,
                             summary=chunk.summary,
                             summary_model=chunk.summary_model,
                             start_line=chunk.start_line,

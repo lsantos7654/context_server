@@ -67,6 +67,7 @@ class SchemaManager:
                     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                     context_id UUID NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
+                    title TEXT,  -- LLM-generated title for chunk identification
                     summary TEXT,  -- LLM-generated summary for compact responses
                     summary_model VARCHAR(50),  -- Model used to generate summary
                     text_embedding halfvec(3072),  -- text-embedding-3-large dimension

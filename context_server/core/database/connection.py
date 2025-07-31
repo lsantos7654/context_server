@@ -153,13 +153,13 @@ class DatabaseManager:
     
     async def create_chunk(self, document_id: str, context_id: str, content: str, embedding: list[float], 
                           chunk_index: int, code_snippet_ids: list[str] = None, metadata: dict = None, 
-                          tokens: int = None, summary: str = None, summary_model: str = None, 
+                          tokens: int = None, title: str = None, summary: str = None, summary_model: str = None, 
                           start_line: int = None, end_line: int = None, char_start: int = None, 
                           char_end: int = None) -> str:
         """Create a new chunk with embedding, line tracking, and code snippet links."""
         return await self.chunks.create_chunk(
             document_id, context_id, content, embedding, chunk_index, code_snippet_ids,
-            metadata, tokens, summary, summary_model, start_line, end_line, char_start, char_end
+            metadata, tokens, title, summary, summary_model, start_line, end_line, char_start, char_end
         )
     
     async def update_document_chunk_count(self, document_id: str):

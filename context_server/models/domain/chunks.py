@@ -37,6 +37,7 @@ class ProcessedChunk:
     embedding: list[float]
     tokens: int
     metadata: dict = field(default_factory=dict)
+    title: str | None = None
     summary: str | None = None
     summary_model: str | None = None
     start_line: int | None = None

@@ -35,7 +35,6 @@ class SearchResult(BaseModel):
     score: float
     metadata: dict
     url: str | None = None
-    content_type: str = "chunk"
 
 
 class CodeSearchResult(BaseModel):
@@ -43,14 +42,11 @@ class CodeSearchResult(BaseModel):
 
     id: str
     document_id: str | None = None
-    title: str
     content: str
-    snippet_type: str = "code_block"
     score: float
     line_count: int
     metadata: dict
     url: str | None = None
-    content_type: str = "code_snippet"
     
     class Config:
         # Exclude fields that are None from the JSON output

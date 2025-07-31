@@ -21,6 +21,7 @@ class ChunkManager:
         code_snippet_ids: list[str] = None,
         metadata: dict = None,
         tokens: int = None,
+        title: str = None,
         summary: str = None,
         summary_model: str = None,
         start_line: int = None,
@@ -38,10 +39,11 @@ class ChunkManager:
 
             chunk_id = await conn.fetchval(
                 """
-                INSERT INTO chunks (document_id, context_id, content, summary, summary_model, text_embedding, chunk_index, code_snippet_ids, metadata, tokens, start_line, end_line, char_start, char_end)
-                VALUES ($1, $2, $3, $4, $5, $6::halfvec, $7, $8, $9, $10, $11, $12, $13, $14)
+                INSERT INTO chunks (document_id, context_id, content, title, summary, summary_model, text_embedding, chunk_index, code_snippet_ids, metadata, tokens, start_line, end_line, char_start, char_end)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::halfvec, $8, $9, $10, $11, $12, $13, $14, $15)
                 ON CONFLICT (document_id, chunk_index) DO UPDATE SET
                     content = EXCLUDED.content,
+                    title = EXCLUDED.title,
                     summary = EXCLUDED.summary,
                     summary_model = EXCLUDED.summary_model,
                     text_embedding = EXCLUDED.text_embedding,
@@ -57,6 +59,7 @@ class ChunkManager:
                 uuid.UUID(document_id),
                 uuid.UUID(context_id),
                 content,
+                title,
                 summary,
                 summary_model,
                 embedding_str,
@@ -91,7 +94,7 @@ class ChunkManager:
         async with self.pool.acquire() as conn:
             query = """
                 SELECT
-                    c.id, c.content, c.summary, c.summary_model, d.title, d.url, d.metadata as doc_metadata,
+                    c.id, c.content, c.title, c.summary, c.summary_model, d.title as doc_title, d.url, d.metadata as doc_metadata,
                     c.metadata as chunk_metadata, c.chunk_index, d.id as document_id,
                     c.start_line, c.end_line, c.char_start, c.char_end, c.tokens, c.code_snippet_ids,
                     LENGTH(d.content) as parent_page_size,
@@ -139,9 +142,10 @@ class ChunkManager:
                 "id": format_uuid(row["id"]),
                 "document_id": format_uuid(row["document_id"]),
                 "content": row["content"],
+                "title": row["title"],  # Chunk title
                 "summary": row["summary"],
                 "summary_model": row["summary_model"],
-                "title": row["title"],
+                "doc_title": row["doc_title"],  # Document title
                 "url": row["url"],
                 "chunk_index": row["chunk_index"],
                 "tokens": row["tokens"],

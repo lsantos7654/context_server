@@ -54,6 +54,19 @@ Content:
 
 Summary:"""
 
+        # Prompt for generating both title and summary
+        self.title_summary_prompt = """For this documentation chunk, generate both a concise title and a detailed summary.
+
+TITLE: Generate a descriptive title (5-10 words) that captures the main topic or concept.
+SUMMARY: Generate a summary in 3-5 clear, informative sentences (50-150 words) focusing on key concepts, actionable information, and main takeaways.
+
+Content:
+{text}
+
+Response format:
+Title: [your title here]
+Summary: [your summary here]"""
+
     async def summarize_chunk(self, text: str, timeout: float = 30.0) -> str | None:
         """Generate a summary for a text chunk.
         
@@ -117,6 +130,79 @@ Summary:"""
         except Exception as e:
             logger.warning(f"Summarization failed: {e}")
             return None
+
+    async def generate_title_and_summary(self, text: str, timeout: float = 30.0) -> tuple[str | None, str | None]:
+        """Generate both a title and summary for a text chunk.
+        
+        Args:
+            text: The text content to process
+            timeout: Timeout in seconds for the API call
+            
+        Returns:
+            Tuple of (title, summary) - either can be None if generation fails
+        """
+        if not self.client:
+            logger.warning("OpenAI client not configured, skipping title and summary generation")
+            return None, None
+
+        if not text or len(text.strip()) < 50:
+            logger.debug("Text too short for title and summary generation")
+            return None, None
+
+        try:
+            # Make API call
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a helpful assistant that generates concise titles and informative summaries for documentation content."
+                        },
+                        {
+                            "role": "user",
+                            "content": self.title_summary_prompt.format(text=text)
+                        }
+                    ],
+                    temperature=0.3,  # Low temperature for consistent output
+                    max_tokens=200,   # Enough for both title and summary
+                ),
+                timeout=timeout
+            )
+            
+            full_response = response.choices[0].message.content.strip()
+            
+            # Parse the response to extract title and summary
+            title = None
+            summary = None
+            
+            lines = full_response.split('\n')
+            for line in lines:
+                if line.startswith('Title:'):
+                    title = line[6:].strip()
+                elif line.startswith('Summary:'):
+                    summary = line[8:].strip()
+            
+            # Validate results
+            if title and len(title) < 5:
+                title = None
+            if summary and len(summary) < 20:
+                summary = None
+                
+            logger.debug(f"Generated title: {title}, summary: {len(summary) if summary else 0} chars")
+            return title, summary
+            
+        except (APITimeoutError, asyncio.TimeoutError):
+            logger.warning(f"Title and summary generation timed out after {timeout}s")
+            return None, None
+            
+        except RateLimitError:
+            logger.warning("Rate limit hit during title and summary generation")
+            return None, None
+            
+        except Exception as e:
+            logger.warning(f"Title and summary generation failed: {e}")
+            return None, None
 
     async def summarize_batch(
         self, 
@@ -190,6 +276,78 @@ Summary:"""
         except Exception as e:
             logger.error(f"Batch summarization failed: {e}")
             return [None] * len(texts)
+
+    async def generate_titles_and_summaries_batch(
+        self, 
+        texts: list[str], 
+        timeout: float = 120.0,
+        max_concurrent: int = 3
+    ) -> list[tuple[str | None, str | None]]:
+        """Generate titles and summaries for multiple text chunks concurrently.
+        
+        Args:
+            texts: List of text chunks to process
+            timeout: Timeout in seconds for the entire batch operation
+            max_concurrent: Maximum number of concurrent requests
+            
+        Returns:
+            List of (title, summary) tuples (same order as input), None values for failed generations
+        """
+        if not self.client:
+            logger.warning("OpenAI client not configured, skipping batch title and summary generation")
+            return [(None, None)] * len(texts)
+
+        if not texts:
+            return []
+
+        # Create semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def _generate_with_semaphore(text: str, index: int) -> tuple[int, tuple[str | None, str | None]]:
+            """Generate title and summary for a single text with semaphore control."""
+            async with semaphore:
+                try:
+                    title, summary = await self.generate_title_and_summary(text)
+                    return index, (title, summary)
+                except Exception as e:
+                    logger.warning(f"Failed to generate title and summary for chunk {index}: {e}")
+                    return index, (None, None)
+
+        try:
+            # Execute all generations concurrently with timeout
+            tasks = [
+                _generate_with_semaphore(text, i) 
+                for i, text in enumerate(texts)
+            ]
+            
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=timeout
+            )
+            
+            # Process results and maintain order
+            title_summaries = [(None, None)] * len(texts)
+            successful_count = 0
+            
+            for result in results:
+                if isinstance(result, tuple) and len(result) == 2:
+                    index, (title, summary) = result
+                    title_summaries[index] = (title, summary)
+                    if title or summary:
+                        successful_count += 1
+                else:
+                    logger.warning(f"Unexpected result format: {result}")
+            
+            logger.info(f"Generated titles and summaries for {successful_count}/{len(texts)} chunks")
+            return title_summaries
+            
+        except asyncio.TimeoutError:
+            logger.error(f"Batch title and summary generation timed out after {timeout}s")
+            return [(None, None)] * len(texts)
+            
+        except Exception as e:
+            logger.error(f"Batch title and summary generation failed: {e}")
+            return [(None, None)] * len(texts)
 
     async def health_check(self) -> bool:
         """Check if the summarization service is available."""

@@ -195,7 +195,7 @@ class SearchManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, cs.snippet_type, d.title, d.url, 
+                    cs.id, cs.content, cs.snippet_type, d.url, 
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata, 
                     d.id as document_id,
                     1 - (cs.embedding <=> $2::halfvec) as similarity
@@ -217,8 +217,6 @@ class SearchManager:
                     "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
-                    "snippet_type": row["snippet_type"],
-                    "title": row["title"],
                     "url": row["url"],
                     "score": float(row["similarity"]),
                     "line_count": len(row["content"].split('\n')) if row["content"] else 0,
@@ -235,7 +233,7 @@ class SearchManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, cs.snippet_type, d.title, d.url,
+                    cs.id, cs.content, cs.snippet_type, d.url,
                     d.metadata as doc_metadata, cs.metadata as snippet_metadata,
                     d.id as document_id,
                     ts_rank(to_tsvector('english', cs.content), plainto_tsquery('english', $2)) as score
@@ -256,8 +254,6 @@ class SearchManager:
                     "id": format_uuid(row["id"]),
                     "document_id": str(row["document_id"]),
                     "content": row["content"],
-                    "snippet_type": row["snippet_type"],
-                    "title": row["title"],
                     "url": row["url"],
                     "score": float(row["score"]),
                     "line_count": len(row["content"].split('\n')) if row["content"] else 0,
