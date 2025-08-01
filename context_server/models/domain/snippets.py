@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 @dataclass
 class CodeSnippet:
     """A code snippet extracted from content."""
-    
+
     content: str
     embedding: list[float]
     metadata: dict = field(default_factory=dict)

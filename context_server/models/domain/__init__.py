@@ -6,11 +6,12 @@ from context_server.models.domain.snippets import *
 
 __all__ = [
     # Chunk models
-    "TextChunk", "ProcessedChunk",
-    
-    # Document models  
-    "ProcessedDocument", "ProcessingResult", "DocumentStats",
-    
+    "TextChunk",
+    "ProcessedChunk",
+    # Document models
+    "ProcessedDocument",
+    "ProcessingResult",
+    "DocumentStats",
     # Code snippet models
     "CodeSnippet",
 ]

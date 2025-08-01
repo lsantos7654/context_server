@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from context_server.core.database import DatabaseManager
 from context_server.api.error_handlers import handle_document_errors
+from context_server.core.database import DatabaseManager
 from context_server.models.api.system import JobStatus
 
 logger = logging.getLogger(__name__)

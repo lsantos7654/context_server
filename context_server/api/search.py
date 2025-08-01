@@ -5,11 +5,18 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from context_server.core.services.embeddings import EmbeddingService, VoyageEmbeddingService
-from context_server.core.services.transformation import get_transformation_service
-from context_server.core.database import DatabaseManager
 from context_server.api.error_handlers import handle_search_errors
-from context_server.models.api.search import SearchRequest, SearchResponse, CodeSearchResponse
+from context_server.core.database import DatabaseManager
+from context_server.core.services.embeddings import (
+    EmbeddingService,
+    VoyageEmbeddingService,
+)
+from context_server.core.services.transformation import get_transformation_service
+from context_server.models.api.search import (
+    CodeSearchResponse,
+    SearchRequest,
+    SearchResponse,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -105,23 +112,27 @@ async def search_context(
 
     # Use centralized transformation service for consistent result formatting
     transformation_service = get_transformation_service()
-    
+
     # Standardize results first
     standardized_results = []
     for result in results:
-        standardized_result = transformation_service.standardize_search_result_fields(result)
-        
+        standardized_result = transformation_service.standardize_search_result_fields(
+            result
+        )
+
         # Extract useful metadata to top level for easier access
         metadata = result.get("metadata", {})
-        standardized_result.update({
-            "page_url": metadata.get("page_url", result.get("url")),
-            "source_type": metadata.get("source_type"),
-            "base_url": metadata.get("base_url"),
-            "is_individual_page": metadata.get("is_individual_page", False),
-            "source_title": metadata.get("source_title"),
-        })
+        standardized_result.update(
+            {
+                "page_url": metadata.get("page_url", result.get("url")),
+                "source_type": metadata.get("source_type"),
+                "base_url": metadata.get("base_url"),
+                "is_individual_page": metadata.get("is_individual_page", False),
+                "source_title": metadata.get("source_title"),
+            }
+        )
         standardized_results.append(standardized_result)
-    
+
     formatted_results = standardized_results
 
     execution_time_ms = int((time.time() - start_time) * 1000)
@@ -138,10 +149,10 @@ async def search_context(
             formatted_results,
             query=search_request.query,
             mode=search_request.mode.value,
-            execution_time_ms=execution_time_ms
+            execution_time_ms=execution_time_ms,
         )
         return compact_response
-    
+
     # Return standard format
     return SearchResponse(
         results=formatted_results,
@@ -209,7 +220,9 @@ async def search_code_snippets(
     search_request: SearchRequest,
     format: str = "standard",  # "standard" or "compact"
     db: DatabaseManager = Depends(get_db_manager),
-    code_embedding_service: VoyageEmbeddingService = Depends(get_code_embedding_service),
+    code_embedding_service: VoyageEmbeddingService = Depends(
+        get_code_embedding_service
+    ),
 ):
     """Search code snippets within a context using code-optimized embeddings."""
     start_time = time.time()
@@ -271,31 +284,33 @@ async def search_code_snippets(
 
     # Use centralized transformation service for consistent code result formatting
     transformation_service = get_transformation_service()
-    
+
     # Standardize code search results first
     standardized_results = []
     for result in results:
-        standardized_result = transformation_service.standardize_code_search_result_fields(result)
-        
+        standardized_result = (
+            transformation_service.standardize_code_search_result_fields(result)
+        )
+
         # Extract useful metadata to top level for easier access
         metadata = result.get("metadata", {})
-        
+
         # Only add optional fields if they have values
         page_url = metadata.get("page_url", result.get("url"))
         if page_url and page_url != result.get("url"):
             standardized_result["page_url"] = page_url
-            
+
         if metadata.get("source_type"):
             standardized_result["source_type"] = metadata.get("source_type")
-            
+
         if metadata.get("base_url"):
             standardized_result["base_url"] = metadata.get("base_url")
-            
+
         if metadata.get("source_title"):
             standardized_result["source_title"] = metadata.get("source_title")
-        
+
         standardized_results.append(standardized_result)
-    
+
     formatted_results = standardized_results
 
     execution_time_ms = int((time.time() - start_time) * 1000)
@@ -311,10 +326,10 @@ async def search_code_snippets(
         compact_response = transformation_service.transform_code_to_compact_format(
             formatted_results,
             query=search_request.query,
-            execution_time_ms=execution_time_ms
+            execution_time_ms=execution_time_ms,
         )
         return compact_response
-    
+
     # Return standard format
     return CodeSearchResponse(
         results=formatted_results,

@@ -68,9 +68,9 @@ class HealthResponse(BaseModel):
 
 __all__ = [
     "LogLevel",
-    "LogEntry", 
+    "LogEntry",
     "LogsResponse",
-    "JobStatus", 
-    "SystemStatus", 
-    "HealthResponse"
+    "JobStatus",
+    "SystemStatus",
+    "HealthResponse",
 ]

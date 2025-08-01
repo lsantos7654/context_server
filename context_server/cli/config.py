@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from context_server.models.config import CLIConfig, ServerConfig
 
+from context_server.models.config import CLIConfig, ServerConfig
 
 # Global configuration instance
 _config: CLIConfig | None = None
@@ -42,11 +42,11 @@ def get_api_url(path: str) -> str:
 def get_compose_file_path() -> Path:
     """Get docker-compose.yml path with intelligent fallbacks."""
     config = get_config()
-    
+
     # 1st: User-configured project path
     if config.project_path and (config.project_path / "docker-compose.yml").exists():
         return config.project_path / "docker-compose.yml"
-    
+
     # 2nd: Development mode - editable install (current directory has docker-compose.yml)
     current_dir = Path.cwd()
     if (current_dir / "docker-compose.yml").exists():
@@ -54,7 +54,7 @@ def get_compose_file_path() -> Path:
         config.project_path = current_dir
         config.save_to_file()
         return current_dir / "docker-compose.yml"
-    
+
     # 3rd: Development mode - package location (for editable installs)
     try:
         # Get the package root directory (parent of context_server)
@@ -67,10 +67,10 @@ def get_compose_file_path() -> Path:
             return compose_path
     except Exception:
         pass
-    
+
     # 4th: Bundled resources (future enhancement for proper package installs)
     # This would be where we'd check for bundled docker-compose.yml in package data
-    
+
     raise FileNotFoundError(
         "Could not locate docker-compose.yml. Please run from the Context Server project directory "
         "or configure the project path with: ctx setup --project-path /path/to/context-server"

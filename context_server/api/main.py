@@ -102,8 +102,6 @@ async def root():
     return {"message": "Context Server API", "version": "0.1.0", "docs": "/docs"}
 
 
-
-
 @app.post("/admin/reinitialize-db")
 async def reinitialize_database():
     """Reinitialize database schema (admin endpoint)."""

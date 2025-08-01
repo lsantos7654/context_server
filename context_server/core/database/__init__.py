@@ -2,7 +2,7 @@
 
 This package organizes database operations into focused modules:
 - connection.py: Connection management & health checks
-- schema.py: Schema creation & migrations  
+- schema.py: Schema creation & migrations
 - models/: Entity CRUD operations (contexts, documents, chunks, etc.)
 - search/: Search operations (vector, fulltext, formatters)
 - operations/: Helper operations (code preview, summaries)

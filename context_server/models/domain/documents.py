@@ -9,7 +9,7 @@ from context_server.models.domain.snippets import CodeSnippet
 @dataclass
 class ProcessedDocument:
     """A processed document with chunks and code snippets."""
-    
+
     url: str
     title: str
     content: str  # Original content
@@ -22,7 +22,7 @@ class ProcessedDocument:
 @dataclass
 class ProcessingResult:
     """Result of document processing operation."""
-    
+
     success: bool
     documents: list[ProcessedDocument] = field(default_factory=list)
     error: str | None = None
@@ -31,7 +31,7 @@ class ProcessingResult:
 @dataclass
 class DocumentStats:
     """Statistics about document processing."""
-    
+
     total_documents: int
     total_chunks: int
     total_code_snippets: int

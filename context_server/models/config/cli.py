@@ -16,7 +16,7 @@ class CLIConfig(BaseSettings):
         env_file=".env",
         extra="ignore",
     )
-    
+
     # Direct environment variables (without prefix)
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     voyage_api_key: str | None = Field(default=None, alias="VOYAGE_API_KEY")
@@ -37,7 +37,7 @@ class CLIConfig(BaseSettings):
     def load_from_file(cls, config_path: Path | None = None) -> "CLIConfig":
         """Load configuration from file."""
         import yaml
-        
+
         if config_path is None:
             config_path = Path.home() / ".context-server" / "config.yaml"
 
@@ -51,11 +51,15 @@ class CLIConfig(BaseSettings):
             # Handle nested server config
             if "server" in config_data:
                 config_data["server"] = ServerConfig(**config_data["server"])
-            
+
             # Handle Path objects
-            if "config_dir" in config_data and isinstance(config_data["config_dir"], str):
+            if "config_dir" in config_data and isinstance(
+                config_data["config_dir"], str
+            ):
                 config_data["config_dir"] = Path(config_data["config_dir"])
-            if "project_path" in config_data and isinstance(config_data["project_path"], str):
+            if "project_path" in config_data and isinstance(
+                config_data["project_path"], str
+            ):
                 config_data["project_path"] = Path(config_data["project_path"])
 
             return cls(**config_data)
@@ -66,7 +70,7 @@ class CLIConfig(BaseSettings):
     def save_to_file(self, config_path: Path | None = None) -> None:
         """Save configuration to file."""
         import yaml
-        
+
         if config_path is None:
             config_path = self.config_dir / "config.yaml"
 

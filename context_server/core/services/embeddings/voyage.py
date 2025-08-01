@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 class VoyageEmbeddingService:
     """Service for generating code embeddings using Voyage AI API."""
 
-    def __init__(
-        self, model: str = "voyage-code-3", api_key: str | None = None
-    ):
+    def __init__(self, model: str = "voyage-code-3", api_key: str | None = None):
         self.model = model
         self.api_key = api_key or os.getenv("VOYAGE_API_KEY")
 
@@ -48,7 +46,9 @@ class VoyageEmbeddingService:
     async def embed_text(self, text: str, timeout: float = 30.0) -> list[float]:
         """Generate embedding for a single text with timeout and retry logic."""
         if not self.client:
-            raise ValueError("Voyage AI API key not configured or package not installed")
+            raise ValueError(
+                "Voyage AI API key not configured or package not installed"
+            )
 
         # Clean and truncate text if needed
         text = self._prepare_text(text)
@@ -62,11 +62,11 @@ class VoyageEmbeddingService:
                 # Use asyncio.wait_for to enforce total timeout
                 response = await asyncio.wait_for(
                     self.client.embed(
-                        texts=[text], 
+                        texts=[text],
                         model=self.model,
                         output_dimension=self.get_dimension(),
                         input_type="document",
-                        output_dtype="float"
+                        output_dtype="float",
                     ),
                     timeout=timeout,
                 )
@@ -85,7 +85,9 @@ class VoyageEmbeddingService:
                     await asyncio.sleep(delay)
                     continue
                 else:
-                    logger.error(f"Voyage AI embedding failed after {max_retries} attempts: {e}")
+                    logger.error(
+                        f"Voyage AI embedding failed after {max_retries} attempts: {e}"
+                    )
                     raise
 
     async def embed_batch(
@@ -93,7 +95,9 @@ class VoyageEmbeddingService:
     ) -> list[list[float]]:
         """Generate embeddings for a batch of texts with comprehensive timeout and retry logic."""
         if not self.client:
-            raise ValueError("Voyage AI API key not configured or package not installed")
+            raise ValueError(
+                "Voyage AI API key not configured or package not installed"
+            )
 
         # Clean and prepare texts
         prepared_texts = [self._prepare_text(text) for text in texts]
@@ -124,11 +128,11 @@ class VoyageEmbeddingService:
                             # Individual batch timeout
                             response = await asyncio.wait_for(
                                 self.client.embed(
-                                    texts=batch, 
+                                    texts=batch,
                                     model=self.model,
                                     output_dimension=self.get_dimension(),
                                     input_type="document",
-                                    output_dtype="float"
+                                    output_dtype="float",
                                 ),
                                 timeout=batch_timeout,
                             )
@@ -188,7 +192,9 @@ class VoyageEmbeddingService:
         max_chars = 60000  # Conservative limit for code
         if len(text) > max_chars:
             text = text[:max_chars]
-            logger.debug(f"Truncated code text from {len(text)} to {max_chars} characters")
+            logger.debug(
+                f"Truncated code text from {len(text)} to {max_chars} characters"
+            )
 
         return text
 

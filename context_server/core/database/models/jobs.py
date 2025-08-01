@@ -4,17 +4,18 @@ import json
 import logging
 import uuid
 from typing import Any
-from ..utils import parse_metadata, format_uuid, parse_uuid
+
+from ..utils import format_uuid, parse_metadata, parse_uuid
 
 logger = logging.getLogger(__name__)
 
 
 class JobManager:
     """Manages job-related database operations."""
-    
+
     def __init__(self):
         self.pool = None
-    
+
     async def create_job(
         self,
         job_id: str,
@@ -99,20 +100,20 @@ class JobManager:
                 "context_id": str(row["context_id"]) if row["context_id"] else None,
                 "status": row["status"],
                 "progress": row["progress"],
-                "started_at": row["started_at"].isoformat()
-                if row["started_at"]
-                else None,
-                "updated_at": row["updated_at"].isoformat()
-                if row["updated_at"]
-                else None,
-                "completed_at": row["completed_at"].isoformat()
-                if row["completed_at"]
-                else None,
+                "started_at": (
+                    row["started_at"].isoformat() if row["started_at"] else None
+                ),
+                "updated_at": (
+                    row["updated_at"].isoformat() if row["updated_at"] else None
+                ),
+                "completed_at": (
+                    row["completed_at"].isoformat() if row["completed_at"] else None
+                ),
                 "metadata": parse_metadata(row["metadata"]),
                 "error_message": row["error_message"],
-                "result_data": json.loads(row["result_data"])
-                if row["result_data"]
-                else {},
+                "result_data": (
+                    json.loads(row["result_data"]) if row["result_data"] else {}
+                ),
             }
 
     async def complete_job(
@@ -168,12 +169,12 @@ class JobManager:
                     "context_id": str(row["context_id"]) if row["context_id"] else None,
                     "status": row["status"],
                     "progress": row["progress"],
-                    "started_at": row["started_at"].isoformat()
-                    if row["started_at"]
-                    else None,
-                    "updated_at": row["updated_at"].isoformat()
-                    if row["updated_at"]
-                    else None,
+                    "started_at": (
+                        row["started_at"].isoformat() if row["started_at"] else None
+                    ),
+                    "updated_at": (
+                        row["updated_at"].isoformat() if row["updated_at"] else None
+                    ),
                     "metadata": parse_metadata(row["metadata"]),
                 }
                 for row in rows

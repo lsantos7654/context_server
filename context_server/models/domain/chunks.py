@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 @dataclass
 class TextChunk:
     """A chunk of text with metadata and line tracking."""
-    
+
     content: str
     tokens: int
     metadata: dict = field(default_factory=dict)
@@ -32,7 +32,7 @@ class TextChunk:
 @dataclass
 class ProcessedChunk:
     """A processed text chunk with embedding and line tracking."""
-    
+
     content: str
     embedding: list[float]
     tokens: int

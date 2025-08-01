@@ -2,15 +2,21 @@
 
 import json
 import uuid
-from ..utils import convert_embedding_to_postgres, parse_metadata, format_uuid, parse_uuid
+
+from ..utils import (
+    convert_embedding_to_postgres,
+    format_uuid,
+    parse_metadata,
+    parse_uuid,
+)
 
 
 class CodeSnippetManager:
     """Manages code snippet-related database operations."""
-    
+
     def __init__(self):
         self.pool = None
-    
+
     async def create_code_snippet(
         self,
         document_id: str,
@@ -50,7 +56,7 @@ class CodeSnippetManager:
             )
 
             return str(snippet_id)
-    
+
     async def update_code_snippet_document_id(
         self, snippet_id: str, document_id: str
     ) -> None:
@@ -65,7 +71,7 @@ class CodeSnippetManager:
                 uuid.UUID(document_id),
                 uuid.UUID(snippet_id),
             )
-    
+
     async def get_code_snippets_by_document(
         self, document_id: str, context_id: str = None
     ) -> list[dict]:
@@ -93,25 +99,27 @@ class CodeSnippetManager:
             result = []
             for row in rows:
                 content = row["content"]
-                lines = content.split('\n')
+                lines = content.split("\n")
                 line_count = len([line for line in lines if line.strip()])
-                
-                result.append({
-                    "id": format_uuid(row["id"]),
-                    "content": row["content"],
-                    "preview": row["preview"] or "",  # Use stored preview
-                    "type": row["snippet_type"],
-                    "start_line": row["start_line"],
-                    "end_line": row["end_line"],
-                    "char_start": row["char_start"],
-                    "char_end": row["char_end"],
-                    "metadata": parse_metadata(row["metadata"]),
-                    "created_at": row["created_at"],
-                    "line_count": line_count,
-                })
+
+                result.append(
+                    {
+                        "id": format_uuid(row["id"]),
+                        "content": row["content"],
+                        "preview": row["preview"] or "",  # Use stored preview
+                        "type": row["snippet_type"],
+                        "start_line": row["start_line"],
+                        "end_line": row["end_line"],
+                        "char_start": row["char_start"],
+                        "char_end": row["char_end"],
+                        "metadata": parse_metadata(row["metadata"]),
+                        "created_at": row["created_at"],
+                        "line_count": line_count,
+                    }
+                )
 
             return result
-    
+
     async def get_code_snippet_by_id(
         self, snippet_id: str, context_id: str = None
     ) -> dict | None:
@@ -145,7 +153,7 @@ class CodeSnippetManager:
                 "preview": row["preview"] or "",  # Use stored preview
                 "type": row["snippet_type"],
                 "start_line": row["start_line"],
-                "end_line": row["end_line"], 
+                "end_line": row["end_line"],
                 "char_start": row["char_start"],
                 "char_end": row["char_end"],
                 "metadata": parse_metadata(row["metadata"]),

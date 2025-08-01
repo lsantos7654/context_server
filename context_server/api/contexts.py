@@ -5,10 +5,19 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
-from context_server.core.database import DatabaseManager
 from context_server.api.error_handlers import handle_context_errors
-from context_server.models.api.contexts import ContextCreate, ContextMerge, ContextResponse
-from context_server.models.api.export import ContextExport, ContextImportRequest, ContextImportResponse, ContextMergeResponse
+from context_server.core.database import DatabaseManager
+from context_server.models.api.contexts import (
+    ContextCreate,
+    ContextMerge,
+    ContextResponse,
+)
+from context_server.models.api.export import (
+    ContextExport,
+    ContextImportRequest,
+    ContextImportResponse,
+    ContextMergeResponse,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -87,7 +96,7 @@ async def merge_contexts(
     merge_data: ContextMerge, db: DatabaseManager = Depends(get_db_manager)
 ):
     """Merge multiple contexts into a target context.
-    
+
     Supports two merge modes:
     - union: Combine all documents from source contexts
     - intersection: Only keep documents that exist in ALL source contexts
@@ -96,12 +105,14 @@ async def merge_contexts(
         result = await db.merge_contexts(
             source_contexts=merge_data.source_contexts,
             target_context=merge_data.target_context,
-            mode=merge_data.mode.value
+            mode=merge_data.mode.value,
         )
-        
-        logger.info(f"Merged contexts: {merge_data.source_contexts} -> {merge_data.target_context} ({merge_data.mode})")
+
+        logger.info(
+            f"Merged contexts: {merge_data.source_contexts} -> {merge_data.target_context} ({merge_data.mode})"
+        )
         return ContextMergeResponse(**result)
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -115,16 +126,16 @@ async def export_context(
     context_name: str, db: DatabaseManager = Depends(get_db_manager)
 ):
     """Export complete context data for backup/migration.
-    
+
     Returns all context data including documents, chunks, code snippets,
     and embeddings in a structured JSON format.
     """
     try:
         export_data = await db.export_context(context_name)
-        
+
         logger.info(f"Exported context: {context_name}")
         return ContextExport(**export_data)
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -138,19 +149,21 @@ async def import_context(
     import_request: ContextImportRequest, db: DatabaseManager = Depends(get_db_manager)
 ):
     """Import context data from export.
-    
+
     Supports importing complete context data with transaction safety.
     Can optionally overwrite existing contexts with the same name.
     """
     try:
-        result = await db.import_context({
-            "context_data": import_request.context_data.dict(),
-            "overwrite_existing": import_request.overwrite_existing
-        })
-        
+        result = await db.import_context(
+            {
+                "context_data": import_request.context_data.dict(),
+                "overwrite_existing": import_request.overwrite_existing,
+            }
+        )
+
         logger.info(f"Imported context: {result['context_name']}")
         return ContextImportResponse(**result)
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

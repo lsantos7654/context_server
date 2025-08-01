@@ -52,9 +52,9 @@ class DocumentDelete(BaseModel):
 
 
 __all__ = [
-    "SourceType", 
-    "DocumentIngest", 
-    "DocumentResponse", 
-    "DocumentsResponse", 
-    "DocumentDelete"
+    "SourceType",
+    "DocumentIngest",
+    "DocumentResponse",
+    "DocumentsResponse",
+    "DocumentDelete",
 ]

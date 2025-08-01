@@ -168,10 +168,10 @@ def document(context_name, document_id, output_format):
     async def get_document():
         try:
             client = APIClient()
-            
+
             # Determine whether to get raw or cleaned content based on format
             raw_param = "true" if output_format == "raw" else "false"
-            
+
             success, response = await client.get(
                 f"contexts/{context_name}/documents/{document_id}/raw?raw={raw_param}"
             )
@@ -180,7 +180,9 @@ def document(context_name, document_id, output_format):
                 if output_format == "json":
                     console.print(json.dumps(response, indent=2))
                 elif output_format == "raw":
-                    _display_document_card(response, show_full_content=True, raw_format=True)
+                    _display_document_card(
+                        response, show_full_content=True, raw_format=True
+                    )
                 else:  # card format - show full cleaned content without truncation
                     _display_document_card(response, show_full_content=True)
             else:
@@ -374,12 +376,16 @@ def _display_document_card(document, show_full_content=False, raw_format=False):
         info_lines.append(f"[bold cyan]Created:[/bold cyan] {created_at}")
 
     info_lines.append(f"[bold cyan]Size:[/bold cyan] {len(content):,} characters")
-    
+
     # Add document type indicator
     if raw_format:
-        info_lines.append(f"[bold cyan]Type:[/bold cyan] Raw Content (original markdown)")
+        info_lines.append(
+            f"[bold cyan]Type:[/bold cyan] Raw Content (original markdown)"
+        )
     else:
-        info_lines.append(f"[bold cyan]Type:[/bold cyan] Cleaned Content (with CODE_SNIPPET placeholders)")
+        info_lines.append(
+            f"[bold cyan]Type:[/bold cyan] Cleaned Content (with CODE_SNIPPET placeholders)"
+        )
 
     info_section = "\n".join(info_lines)
 
@@ -393,7 +399,7 @@ def _display_document_card(document, show_full_content=False, raw_format=False):
     else:
         content_display = content[:1000] + ("..." if len(content) > 1000 else "")
         content_label = "Content Preview"
-    
+
     content_section = (
         f"\n\n[bold white]{content_label}:[/bold white]\n{content_display}"
     )
@@ -410,7 +416,7 @@ def _display_document_card(document, show_full_content=False, raw_format=False):
         header = f"Document • {len(content):,} chars"
         border_color = "blue"
         title_color = "bold blue"
-        
+
     panel = Panel(
         panel_content,
         title=f"[{title_color}]{header}[/{title_color}]",

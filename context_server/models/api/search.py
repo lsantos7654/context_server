@@ -47,7 +47,7 @@ class CodeSearchResult(BaseModel):
     line_count: int
     metadata: dict
     url: str | None = None
-    
+
     class Config:
         # Exclude fields that are None from the JSON output
         exclude_none = True
@@ -75,9 +75,9 @@ class CodeSearchResponse(BaseModel):
 
 __all__ = [
     "SearchMode",
-    "SearchRequest", 
-    "SearchResult", 
+    "SearchRequest",
+    "SearchResult",
     "CodeSearchResult",
-    "SearchResponse", 
-    "CodeSearchResponse"
+    "SearchResponse",
+    "CodeSearchResponse",
 ]

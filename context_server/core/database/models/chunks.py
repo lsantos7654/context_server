@@ -2,15 +2,21 @@
 
 import json
 import uuid
-from ..utils import convert_embedding_to_postgres, parse_metadata, format_uuid, parse_uuid
+
+from ..utils import (
+    convert_embedding_to_postgres,
+    format_uuid,
+    parse_metadata,
+    parse_uuid,
+)
 
 
 class ChunkManager:
     """Manages chunk-related database operations."""
-    
+
     def __init__(self):
         self.pool = None
-    
+
     async def create_chunk(
         self,
         document_id: str,
@@ -33,7 +39,7 @@ class ChunkManager:
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
             embedding_str = convert_embedding_to_postgres(embedding)
-            
+
             # Convert code snippet IDs to UUID array
             snippet_ids_array = [uuid.UUID(sid) for sid in (code_snippet_ids or [])]
 
@@ -74,7 +80,7 @@ class ChunkManager:
             )
 
             return format_uuid(chunk_id)
-    
+
     async def update_document_chunk_count(self, document_id: str):
         """Update document chunk count."""
         async with self.pool.acquire() as conn:
@@ -86,7 +92,7 @@ class ChunkManager:
             """,
                 uuid.UUID(document_id),
             )
-    
+
     async def get_chunk_by_id(
         self, chunk_id: str, context_id: str = None
     ) -> dict | None:
@@ -118,7 +124,7 @@ class ChunkManager:
             # Process code_snippet_ids to get actual code snippet data
             code_snippet_ids = row.get("code_snippet_ids") or []
             code_snippets_data = []
-            
+
             if code_snippet_ids:
                 # Fetch code snippet details for these IDs
                 snippet_rows = await conn.fetch(
@@ -127,16 +133,18 @@ class ChunkManager:
                     FROM code_snippets 
                     WHERE id = ANY($1::uuid[])
                     """,
-                    code_snippet_ids
+                    code_snippet_ids,
                 )
-                
+
                 for snippet_row in snippet_rows:
-                    code_snippets_data.append({
-                        "id": format_uuid(snippet_row["id"]),
-                        "content": snippet_row["content"],
-                        "snippet_type": snippet_row["snippet_type"],
-                        "preview": snippet_row.get("preview", ""),
-                    })
+                    code_snippets_data.append(
+                        {
+                            "id": format_uuid(snippet_row["id"]),
+                            "content": snippet_row["content"],
+                            "snippet_type": snippet_row["snippet_type"],
+                            "preview": snippet_row.get("preview", ""),
+                        }
+                    )
 
             return {
                 "id": format_uuid(row["id"]),

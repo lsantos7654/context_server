@@ -149,7 +149,7 @@ async def handle_list_tools() -> list[types.Tool]:
                         "description": "File patterns to include (e.g., ['*.md', '*.py']). Defaults to common text files.",
                     },
                     "exclude_patterns": {
-                        "type": "array", 
+                        "type": "array",
                         "items": {"type": "string"},
                         "description": "File patterns to exclude (e.g., ['*.pyc', '__pycache__']). Defaults to common binary/temp files.",
                     },
@@ -341,7 +341,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": [],
             },
         ),
-        # Note: Utility tools like list_documents, get_code_snippets, and delete_documents 
+        # Note: Utility tools like list_documents, get_code_snippets, and delete_documents
         # have been removed to focus on the optimal search-first workflow:
         # search_context/search_code → get_document/get_code_snippet → get_chunk
     ]

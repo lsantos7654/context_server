@@ -268,5 +268,3 @@ def complete_context_name(ctx, param, incomplete):
     """Complete context names by fetching from server."""
     context_names = get_context_names_sync()
     return [name for name in context_names if name.startswith(incomplete)]
-
-

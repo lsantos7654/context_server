@@ -2,29 +2,30 @@
 
 import json
 import uuid
-from ..utils import parse_metadata, format_uuid, parse_uuid
+
+from ..utils import format_uuid, parse_metadata, parse_uuid
 
 
 class DocumentManager:
     """Manages document-related database operations."""
-    
+
     def __init__(self):
         self.pool = None
-    
+
     def _normalize_url(self, url: str) -> str:
         """Normalize URL to prevent duplicates (strip trailing slashes, etc.)."""
         if not url:
             return url
-        
+
         # Strip trailing slashes
-        normalized = url.rstrip('/')
-        
+        normalized = url.rstrip("/")
+
         # Ensure we have a valid URL
         if not normalized:
             return url
-            
+
         return normalized
-    
+
     async def create_document(
         self,
         context_id: str,
@@ -37,7 +38,7 @@ class DocumentManager:
         """Create a new document with cleaned content."""
         # Normalize URL to prevent duplicates
         normalized_url = self._normalize_url(url)
-        
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 # Insert document (cleaned content)
@@ -72,7 +73,7 @@ class DocumentManager:
                 )
 
                 return str(doc_id)
-    
+
     async def create_raw_document(self, document_id: str, raw_content: str) -> None:
         """Store raw content for a document."""
         async with self.pool.acquire() as conn:
@@ -86,8 +87,10 @@ class DocumentManager:
                 uuid.UUID(document_id),
                 raw_content,
             )
-    
-    async def get_documents(self, context_id: str, offset: int = 0, limit: int = 50) -> dict:
+
+    async def get_documents(
+        self, context_id: str, offset: int = 0, limit: int = 50
+    ) -> dict:
         """Get documents in a context with pagination."""
         async with self.pool.acquire() as conn:
             # Get total count
@@ -130,7 +133,7 @@ class DocumentManager:
                 "offset": offset,
                 "limit": limit,
             }
-    
+
     async def delete_documents(self, context_id: str, document_ids: list[str]) -> int:
         """Delete documents from a context with transaction safety."""
         async with self.pool.acquire() as conn:
@@ -159,7 +162,7 @@ class DocumentManager:
                 # Extract number of deleted rows
                 deleted_count = int(result.split()[-1]) if result else 0
                 return deleted_count
-    
+
     async def get_document_by_id(
         self, context_id: str, document_id: str, raw: bool = False
     ) -> dict | None:
@@ -202,14 +205,14 @@ class DocumentManager:
                 "url": row["url"],
                 "content": row["content"] or "",
                 "metadata": parse_metadata(row["metadata"]),
-                "created_at": row["indexed_at"].isoformat()
-                if row["indexed_at"]
-                else None,
+                "created_at": (
+                    row["indexed_at"].isoformat() if row["indexed_at"] else None
+                ),
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
                 "document_type": "raw" if raw else "cleaned",
             }
-    
+
     async def get_document_content_by_id(self, document_id: str) -> dict | None:
         """Get document content by ID only (for expansion service)."""
         async with self.pool.acquire() as conn:
@@ -233,9 +236,9 @@ class DocumentManager:
                 "url": row["url"],
                 "content": row["content"],
                 "metadata": parse_metadata(row["metadata"]),
-                "created_at": row["indexed_at"].isoformat()
-                if row["indexed_at"]
-                else None,
+                "created_at": (
+                    row["indexed_at"].isoformat() if row["indexed_at"] else None
+                ),
                 "source_type": row["source_type"],
                 "chunk_count": row["chunk_count"] or 0,
             }

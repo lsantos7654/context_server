@@ -16,7 +16,12 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
-from ..config import get_api_base_url, get_api_url, get_compose_file_path, ensure_project_setup
+from ..config import (
+    ensure_project_setup,
+    get_api_base_url,
+    get_api_url,
+    get_compose_file_path,
+)
 from ..help_formatter import rich_help_option
 from ..utils import (
     check_api_health,
@@ -70,14 +75,16 @@ def up():
     try:
         # Auto-detect and ensure project is configured
         ensure_project_setup()
-        
+
         # Get the docker-compose.yml file path
         compose_file = get_compose_file_path()
         echo_info(f"Using docker-compose file: {compose_file}")
-        
+
         # Use docker-compose with explicit file path to start services with build
         echo_info("Building and starting services with docker-compose...")
-        run_command(["docker-compose", "--file", str(compose_file), "up", "-d", "--build"])
+        run_command(
+            ["docker-compose", "--file", str(compose_file), "up", "-d", "--build"]
+        )
 
         echo_success("Context Server started!")
         echo_info(f"API available at: {get_api_base_url()}")
@@ -94,7 +101,9 @@ def up():
 
     except FileNotFoundError as e:
         echo_error(str(e))
-        echo_info("Make sure you're in the Context Server project directory or configure the path.")
+        echo_info(
+            "Make sure you're in the Context Server project directory or configure the path."
+        )
     except Exception as e:
         echo_error(f"Failed to start services: {e}")
 
@@ -111,7 +120,7 @@ def down():
     try:
         # Get the docker-compose.yml file path
         compose_file = get_compose_file_path()
-        
+
         # Use docker-compose with explicit file path to stop services
         echo_info("Stopping services with docker-compose...")
         run_command(["docker-compose", "--file", str(compose_file), "down"])
@@ -124,10 +133,10 @@ def down():
             # Fallback to direct container commands
             echo_info(f"Stopping {API_CONTAINER}...")
             run_command(["docker", "stop", API_CONTAINER])
-            
+
             echo_info(f"Stopping {POSTGRES_CONTAINER}...")
             run_command(["docker", "stop", POSTGRES_CONTAINER])
-            
+
             echo_success("Context Server stopped!")
         except Exception as fallback_e:
             echo_error(f"Failed to stop services: {fallback_e}")
@@ -147,21 +156,23 @@ def restart():
     try:
         # Auto-detect and ensure project is configured
         ensure_project_setup()
-        
+
         # Get the docker-compose.yml file path
         compose_file = get_compose_file_path()
         echo_info(f"Using docker-compose file: {compose_file}")
-        
+
         # Stop services first
         echo_info("Stopping services...")
         run_command(["docker-compose", "--file", str(compose_file), "down"])
-        
+
         # Start services with build
         echo_info("Building and starting services...")
-        run_command(["docker-compose", "--file", str(compose_file), "up", "-d", "--build"])
+        run_command(
+            ["docker-compose", "--file", str(compose_file), "up", "-d", "--build"]
+        )
 
         echo_success("Context Server restarted!")
-        
+
         # Wait for services to be ready
         echo_info("Waiting for services to be ready...")
         if wait_for_services():
@@ -171,7 +182,9 @@ def restart():
 
     except FileNotFoundError as e:
         echo_error(str(e))
-        echo_info("Make sure you're in the Context Server project directory or configure the path.")
+        echo_info(
+            "Make sure you're in the Context Server project directory or configure the path."
+        )
     except Exception as e:
         echo_error(f"Failed to restart services: {e}")
 
@@ -198,19 +211,19 @@ def logs(service, follow, tail):
         "api": API_CONTAINER,
         "postgres": POSTGRES_CONTAINER,
     }
-    
+
     if service not in container_map:
         echo_error(f"Unknown service: {service}. Use 'api' or 'postgres'")
         return
-        
+
     container_name = container_map[service]
-    
+
     # Check if container is running
     try:
         result = subprocess.run(
             ["docker", "ps", "-q", "-f", f"name={container_name}"],
             capture_output=True,
-            text=True
+            text=True,
         )
         if not result.stdout.strip():
             echo_error(f"Container {container_name} is not running")
@@ -322,7 +335,7 @@ def shell(database, user):
         result = subprocess.run(
             ["docker", "ps", "-q", "-f", f"name={POSTGRES_CONTAINER}"],
             capture_output=True,
-            text=True
+            text=True,
         )
         if not result.stdout.strip():
             echo_error(f"PostgreSQL container ({POSTGRES_CONTAINER}) is not running")
@@ -334,7 +347,17 @@ def shell(database, user):
 
     echo_info(f"Connecting to database: {database}")
 
-    cmd = ["docker", "exec", "-it", POSTGRES_CONTAINER, "psql", "-U", user, "-d", database]
+    cmd = [
+        "docker",
+        "exec",
+        "-it",
+        POSTGRES_CONTAINER,
+        "psql",
+        "-U",
+        user,
+        "-d",
+        database,
+    ]
 
     try:
         run_command(cmd)
@@ -350,7 +373,7 @@ def _check_containers_running() -> bool:
             result = subprocess.run(
                 ["docker", "ps", "-q", "-f", f"name={container}"],
                 capture_output=True,
-                text=True
+                text=True,
             )
             if not result.stdout.strip():
                 return False

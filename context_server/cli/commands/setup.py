@@ -140,9 +140,13 @@ def init(overwrite):
                     if append_to_claude_md(str(current_dir), get_claude_md_template()):
                         echo_success("Enhanced CLAUDE.md with documentation strategy")
                     else:
-                        echo_warning("Failed to enhance CLAUDE.md with documentation strategy")
+                        echo_warning(
+                            "Failed to enhance CLAUDE.md with documentation strategy"
+                        )
                 else:
-                    echo_warning(f"Claude /init returned non-zero exit code: {init_result.stderr}")
+                    echo_warning(
+                        f"Claude /init returned non-zero exit code: {init_result.stderr}"
+                    )
                     # Continue anyway and create our own CLAUDE.md
                     if not create_claude_md(str(current_dir)):
                         echo_warning("Failed to create CLAUDE.md file")
@@ -253,7 +257,7 @@ eval "$(_CTX_COMPLETE=bash_source ctx)"
 """
         echo_info("Add this to your ~/.bashrc:")
         console.print(Panel(completion_script.strip(), border_style="green"))
-        
+
     elif shell == "zsh":
         completion_script = """
 # Context Server completion for zsh
@@ -261,7 +265,7 @@ eval "$(_CTX_COMPLETE=zsh_source ctx)"
 """
         echo_info("Add this to your ~/.zshrc:")
         console.print(Panel(completion_script.strip(), border_style="green"))
-        
+
     elif shell == "fish":
         completion_script = """
 # Context Server completion for fish
@@ -271,4 +275,8 @@ eval (env _CTX_COMPLETE=fish_source ctx)
         console.print(Panel(completion_script.strip(), border_style="green"))
 
     echo_info(f"\nAfter adding to your shell config, restart your terminal or run:")
-    echo_info(f"source ~/.{shell}rc" if shell != "fish" else "source ~/.config/fish/config.fish")
+    echo_info(
+        f"source ~/.{shell}rc"
+        if shell != "fish"
+        else "source ~/.config/fish/config.fish"
+    )

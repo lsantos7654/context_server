@@ -40,7 +40,7 @@ class ContextServerTools:
             # Ensure we use the correct default if embedding_model is not provided
             if not embedding_model:
                 embedding_model = "text-embedding-3-large"
-                
+
             data = {
                 "name": name,
                 "description": description,
@@ -181,12 +181,12 @@ class ContextServerTools:
             raise
 
     async def extract_local_directory(
-        self, 
-        context_name: str, 
+        self,
+        context_name: str,
         directory_path: str,
         include_patterns: list[str] = None,
         exclude_patterns: list[str] = None,
-        max_files: int = 100
+        max_files: int = 100,
     ) -> dict[str, Any]:
         """Extract and index content from a local directory.
 
@@ -206,74 +206,96 @@ class ContextServerTools:
         try:
             import fnmatch
             from pathlib import Path
-            
+
             source_path = Path(directory_path)
             if not source_path.exists():
                 raise ContextServerError(f"Directory does not exist: {directory_path}")
-            
+
             if not source_path.is_dir():
                 raise ContextServerError(f"Path is not a directory: {directory_path}")
-            
+
             # Set default patterns if none provided
             if not include_patterns:
                 include_patterns = [
-                    "*.md", "*.txt", "*.rst", "*.py", "*.js", "*.ts", 
-                    "*.html", "*.json", "*.yaml", "*.yml"
+                    "*.md",
+                    "*.txt",
+                    "*.rst",
+                    "*.py",
+                    "*.js",
+                    "*.ts",
+                    "*.html",
+                    "*.json",
+                    "*.yaml",
+                    "*.yml",
                 ]
-            
+
             if not exclude_patterns:
                 exclude_patterns = [
-                    "*.pyc", "__pycache__", ".git", ".venv", "node_modules",
-                    "*.log", ".DS_Store", "*.tmp", "dist", "build", ".env"
+                    "*.pyc",
+                    "__pycache__",
+                    ".git",
+                    ".venv",
+                    "node_modules",
+                    "*.log",
+                    ".DS_Store",
+                    "*.tmp",
+                    "dist",
+                    "build",
+                    ".env",
                 ]
-            
+
             # Collect files to process
             files_to_process = []
-            
+
             for file_path in source_path.rglob("*"):
                 if file_path.is_file():
                     # Check exclude patterns first
                     excluded = False
                     for pattern in exclude_patterns:
-                        if (fnmatch.fnmatch(file_path.name, pattern) or 
-                            fnmatch.fnmatch(str(file_path.relative_to(source_path)), pattern)):
+                        if fnmatch.fnmatch(file_path.name, pattern) or fnmatch.fnmatch(
+                            str(file_path.relative_to(source_path)), pattern
+                        ):
                             excluded = True
                             break
-                    
+
                     if excluded:
                         continue
-                    
+
                     # Check include patterns
                     included = False
                     for pattern in include_patterns:
                         if fnmatch.fnmatch(file_path.name, pattern):
                             included = True
                             break
-                    
+
                     if included:
                         files_to_process.append(file_path)
-                        
+
                         # Safety limit to prevent processing too many files
                         if len(files_to_process) >= max_files:
-                            logger.warning(f"Reached max files limit ({max_files}), stopping scan")
+                            logger.warning(
+                                f"Reached max files limit ({max_files}), stopping scan"
+                            )
                             break
-            
+
             if not files_to_process:
                 return {
                     "success": True,
                     "message": "No files found matching the criteria",
                     "processed_files": 0,
                     "failed_files": 0,
-                    "files": []
+                    "files": [],
                 }
-            
-            logger.info(f"Found {len(files_to_process)} files to process in {directory_path}")
-            
+
+            logger.info(
+                f"Found {len(files_to_process)} files to process in {directory_path}"
+            )
+
             # Process files one by one through the API
             processed_files = 0
             failed_files = 0
             file_results = []
-            
+
             for file_path in files_to_process:
                 try:
                     # Read file content
@@ -285,13 +307,15 @@ class ContextServerTools:
                         except:
                             logger.warning(f"Skipping binary file: {file_path}")
                             failed_files += 1
-                            file_results.append({
-                                "file": str(file_path),
-                                "status": "skipped",
-                                "error": "Binary file"
-                            })
+                            file_results.append(
+                                {
+                                    "file": str(file_path),
+                                    "status": "skipped",
+                                    "error": "Binary file",
+                                }
+                            )
                             continue
-                    
+
                     # Send to API for processing
                     data = {
                         "source_type": "file",
@@ -299,36 +323,42 @@ class ContextServerTools:
                         "options": {
                             "filename": file_path.name,
                             "relative_path": str(file_path.relative_to(source_path)),
-                            "directory_extraction": True
-                        }
+                            "directory_extraction": True,
+                        },
                     }
-                    
+
                     result = await self.client.post(
                         f"/api/contexts/{context_name}/documents", data
                     )
-                    
+
                     processed_files += 1
-                    file_results.append({
-                        "file": str(file_path.relative_to(source_path)),
-                        "status": "processed",
-                        "job_id": result.get("job_id")
-                    })
-                    
-                    logger.debug(f"Processed file {processed_files}/{len(files_to_process)}: {file_path.name}")
-                    
+                    file_results.append(
+                        {
+                            "file": str(file_path.relative_to(source_path)),
+                            "status": "processed",
+                            "job_id": result.get("job_id"),
+                        }
+                    )
+
+                    logger.debug(
+                        f"Processed file {processed_files}/{len(files_to_process)}: {file_path.name}"
+                    )
+
                 except Exception as e:
                     failed_files += 1
-                    file_results.append({
-                        "file": str(file_path.relative_to(source_path)),
-                        "status": "failed",
-                        "error": str(e)
-                    })
+                    file_results.append(
+                        {
+                            "file": str(file_path.relative_to(source_path)),
+                            "status": "failed",
+                            "error": str(e),
+                        }
+                    )
                     logger.error(f"Failed to process {file_path}: {e}")
-            
+
             logger.info(
                 f"Directory extraction completed: {processed_files} processed, {failed_files} failed"
             )
-            
+
             return {
                 "success": True,
                 "message": f"Processed {processed_files} files from directory",
@@ -336,9 +366,9 @@ class ContextServerTools:
                 "failed_files": failed_files,
                 "total_files": len(files_to_process),
                 "directory_path": directory_path,
-                "files": file_results
+                "files": file_results,
             }
-            
+
         except ContextServerError:
             raise
         except Exception as e:
@@ -371,7 +401,7 @@ class ContextServerTools:
             result = await self.client.post(
                 f"/api/contexts/{context_name}/search", data, params=params
             )
-            
+
             logger.info(
                 f"MCP search completed: {len(result.get('results', []))} compact results for '{query}' in {context_name}"
             )
@@ -383,11 +413,11 @@ class ContextServerTools:
             raise
 
     async def get_document(
-        self, 
-        context_name: str, 
-        doc_id: str, 
-        page_number: int = 1, 
-        page_size: int = 20000
+        self,
+        context_name: str,
+        doc_id: str,
+        page_number: int = 1,
+        page_size: int = 20000,
     ) -> dict[str, Any]:
         """Get raw content of a specific document with pagination support.
 
@@ -404,20 +434,20 @@ class ContextServerTools:
             ContextServerError: If context or document not found
         """
         try:
-            params = {
-                "page_number": page_number,
-                "page_size": page_size
-            }
-            
+            params = {"page_number": page_number, "page_size": page_size}
+
             result = await self.client.get(
-                f"/api/contexts/{context_name}/documents/{doc_id}/raw",
-                params
+                f"/api/contexts/{context_name}/documents/{doc_id}/raw", params
             )
-            
+
             # Add pagination metadata to the response
             content_length = len(result.get("content", ""))
-            total_pages = max(1, (result.get("full_content_length", content_length) + page_size - 1) // page_size)
-            
+            total_pages = max(
+                1,
+                (result.get("full_content_length", content_length) + page_size - 1)
+                // page_size,
+            )
+
             # Only include essential fields to reduce response size
             # Exclude metadata which can contain large extracted page content
             paginated_result = {
@@ -427,7 +457,9 @@ class ContextServerTools:
                 "content": result.get("content", ""),
                 "document_type": result.get("document_type"),
                 "created_at": result.get("created_at"),
-                "full_content_length": result.get("full_content_length", content_length),
+                "full_content_length": result.get(
+                    "full_content_length", content_length
+                ),
                 "pagination": {
                     "page_number": page_number,
                     "page_size": page_size,
@@ -436,10 +468,12 @@ class ContextServerTools:
                     "has_next_page": page_number < total_pages,
                     "has_previous_page": page_number > 1,
                 },
-                "note": "Metadata excluded to reduce response size. Full metadata available via direct API call."
+                "note": "Metadata excluded to reduce response size. Full metadata available via direct API call.",
             }
-            
-            logger.info(f"Retrieved document page {page_number}/{total_pages}: {doc_id} from {context_name}")
+
+            logger.info(
+                f"Retrieved document page {page_number}/{total_pages}: {doc_id} from {context_name}"
+            )
             return paginated_result
 
         except ContextServerError as e:
@@ -517,9 +551,7 @@ class ContextServerTools:
                     )
             raise
 
-    async def get_chunk(
-        self, context_name: str, chunk_id: str
-    ) -> dict[str, Any]:
+    async def get_chunk(self, context_name: str, chunk_id: str) -> dict[str, Any]:
         """Get a specific chunk by ID with full content and metadata.
 
         Args:
@@ -570,21 +602,23 @@ class ContextServerTools:
             data = {
                 "query": query,
                 "mode": "hybrid",  # Use hybrid search for best results
-                "limit": limit
+                "limit": limit,
             }
             params = {"format": "compact"}
 
             result = await self.client.post(
                 f"/api/contexts/{context_name}/search/code", data, params=params
             )
-            
+
             # Filter by language if specified (note: language field was removed from results)
             # This filtering is now mostly obsolete since language was removed from the data
             if language:
                 # Add language filter info to response for user information
                 result["language_filter"] = language
-                result["note"] = f"Language filter '{language}' applied (results may not be language-specific)"
-            
+                result["note"] = (
+                    f"Language filter '{language}' applied (results may not be language-specific)"
+                )
+
             logger.info(
                 f"Code search completed: {len(result.get('results', []))} results for '{query}' in {context_name}"
             )
@@ -611,7 +645,9 @@ class ContextServerTools:
         """
         try:
             result = await self.client.get(f"/api/jobs/{job_id}/status")
-            logger.info(f"Retrieved job status: {job_id} - {result.get('status', 'unknown')}")
+            logger.info(
+                f"Retrieved job status: {job_id} - {result.get('status', 'unknown')}"
+            )
             return result
 
         except ContextServerError as e:
@@ -681,7 +717,7 @@ class ContextServerTools:
             params = {}
             if context_id:
                 params["context_id"] = context_id
-            
+
             result = await self.client.get("/api/jobs/active", params)
             active_count = len(result.get("active_jobs", []))
             logger.info(f"Retrieved {active_count} active jobs")

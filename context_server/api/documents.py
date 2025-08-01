@@ -7,10 +7,14 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
-from context_server.core.pipeline import DocumentProcessor
-from context_server.core.database import DatabaseManager
 from context_server.api.error_handlers import handle_document_errors
-from context_server.models.api.documents import DocumentDelete, DocumentIngest, DocumentsResponse
+from context_server.core.database import DatabaseManager
+from context_server.core.pipeline import DocumentProcessor
+from context_server.models.api.documents import (
+    DocumentDelete,
+    DocumentIngest,
+    DocumentsResponse,
+)
 from context_server.models.api.system import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -168,7 +172,7 @@ async def _process_document_background(
                     return
                 try:
                     # SIMPLIFIED APPROACH: Create document first, then store code snippets with real document_id
-                    
+
                     # 1. Store main document with temporary original content
                     doc_id = await asyncio.wait_for(
                         db.create_document(
@@ -181,13 +185,15 @@ async def _process_document_background(
                         ),
                         timeout=30.0,  # 30 second timeout per document
                     )
-                    
+
                     # 2. Store code snippets with real document_id to get real UUIDs
                     code_snippets_with_uuids = []
                     for snippet in doc.code_snippets:
                         # Generate preview for the code snippet using existing pipeline logic
-                        preview = processor.code_extractor._generate_code_preview(snippet.content)
-                        
+                        preview = processor.code_extractor._generate_code_preview(
+                            snippet.content
+                        )
+
                         # Store code snippet with real document_id
                         real_snippet_id = await db.create_code_snippet(
                             document_id=doc_id,
@@ -200,9 +206,11 @@ async def _process_document_background(
                             char_start=snippet.char_start,
                             char_end=snippet.char_end,
                             preview=preview,
-                            snippet_type=snippet.metadata.get("snippet_type", "code_block"),
+                            snippet_type=snippet.metadata.get(
+                                "snippet_type", "code_block"
+                            ),
                         )
-                        
+
                         # Store snippet info with real UUID for placeholder creation
                         snippet_with_uuid = {
                             **snippet.metadata,
@@ -210,21 +218,23 @@ async def _process_document_background(
                             "uuid": real_snippet_id,
                         }
                         code_snippets_with_uuids.append(snippet_with_uuid)
-                    
+
                     # 3. Create cleaned content with real UUIDs using the code extractor
-                    cleaned_content = processor.code_extractor.create_cleaned_content_with_real_uuids(
-                        doc.content, code_snippets_with_uuids
+                    cleaned_content = (
+                        processor.code_extractor.create_cleaned_content_with_real_uuids(
+                            doc.content, code_snippets_with_uuids
+                        )
                     )
-                    
+
                     # 4. Update document with cleaned content
                     async with db.pool.acquire() as conn:
                         await conn.execute(
                             "UPDATE documents SET content = $1 WHERE id = $2",
                             cleaned_content,
-                            uuid.UUID(doc_id)
+                            uuid.UUID(doc_id),
                         )
-                    
-                    # 5. Store raw document content separately  
+
+                    # 5. Store raw document content separately
                     await asyncio.wait_for(
                         db.create_raw_document(
                             document_id=doc_id,
@@ -238,28 +248,30 @@ async def _process_document_background(
                     for i, chunk in enumerate(doc.chunks):
                         # Find code snippet references in chunk content
                         chunk_code_snippet_ids = []
-                        
+
                         # Check if this chunk content overlaps with any code snippet positions
                         for snippet_with_uuid in code_snippets_with_uuids:
                             snippet_start = snippet_with_uuid.get("start_pos", 0)
                             snippet_end = snippet_with_uuid.get("end_pos", 0)
                             chunk_start = chunk.char_start or 0
                             chunk_end = chunk.char_end or 0
-                            
+
                             # If chunk and snippet overlap, link them
-                            if (chunk_start <= snippet_end and chunk_end >= snippet_start):
+                            if (
+                                chunk_start <= snippet_end
+                                and chunk_end >= snippet_start
+                            ):
                                 chunk_code_snippet_ids.append(snippet_with_uuid["uuid"])
-                        
+
                         # Fix: Replace temp_snippet placeholders with real UUIDs in chunk content
                         chunk_content = chunk.content
                         for j, snippet_with_uuid in enumerate(code_snippets_with_uuids):
                             temp_id = f"temp_snippet_{j}"
                             real_uuid = snippet_with_uuid["uuid"]
                             chunk_content = chunk_content.replace(
-                                f"snippet_id={temp_id}",
-                                f"snippet_id={real_uuid}"
+                                f"snippet_id={temp_id}", f"snippet_id={real_uuid}"
                             )
-                        
+
                         await db.create_chunk(
                             document_id=doc_id,  # Link chunks to main document
                             context_id=context["id"],
@@ -409,12 +421,12 @@ async def delete_documents(
 
 @router.get("/contexts/{context_name}/documents/{doc_id}/raw")
 async def get_document_raw(
-    context_name: str, 
-    doc_id: str, 
+    context_name: str,
+    doc_id: str,
     page_number: int = 1,
     page_size: int = 25000,
     raw: bool = False,  # False = cleaned content, True = raw content
-    db: DatabaseManager = Depends(get_db_manager)
+    db: DatabaseManager = Depends(get_db_manager),
 ):
     """Get raw document content with pagination support for Claude's 25k token limit."""
     try:
@@ -431,24 +443,24 @@ async def get_document_raw(
         # Handle pagination
         full_content = document.get("content", "")
         full_content_length = len(full_content)
-        
+
         # Calculate pagination
         start_index = (page_number - 1) * page_size
         end_index = start_index + page_size
-        
+
         # Get the page content
         page_content = full_content[start_index:end_index]
-        
+
         # Calculate total pages
         total_pages = max(1, (full_content_length + page_size - 1) // page_size)
-        
+
         # Validate page number
         if page_number > total_pages:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Page {page_number} not found. Document has {total_pages} pages."
+                status_code=400,
+                detail=f"Page {page_number} not found. Document has {total_pages} pages.",
             )
-        
+
         # Create paginated response
         paginated_document = {
             **document,
@@ -462,7 +474,7 @@ async def get_document_raw(
                 "has_next_page": page_number < total_pages,
                 "has_previous_page": page_number > 1,
                 "content_truncated": full_content_length > page_size,
-            }
+            },
         }
 
         return paginated_document
@@ -554,7 +566,5 @@ async def get_chunk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Failed to get chunk {chunk_id} from context {context_name}: {e}"
-        )
+        logger.error(f"Failed to get chunk {chunk_id} from context {context_name}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get chunk")

@@ -11,11 +11,7 @@ console = Console()
 
 
 @click.group(invoke_without_command=True)
-@click.option(
-    "-v", "--version", 
-    is_flag=True, 
-    help="Show version information"
-)
+@click.option("-v", "--version", is_flag=True, help="Show version information")
 @rich_help_option("-h", "--help")
 @click.pass_context
 def cli(ctx, version):
@@ -37,6 +33,7 @@ def cli(ctx, version):
     # Handle version flag
     if version:
         from . import __version__
+
         console.print(f"Context Server CLI v{__version__}")
         ctx.exit()
 
@@ -118,7 +115,6 @@ def register_commands():
         cli.add_command(job)
     except ImportError as e:
         echo_error(f"Failed to load job commands: {e}")
-
 
 
 # Register commands when module is imported

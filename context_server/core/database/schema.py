@@ -125,7 +125,6 @@ class SchemaManager:
             """
             )
 
-
             # Create indexes for performance
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_text_embedding ON chunks USING ivfflat (text_embedding halfvec_cosine_ops)"
@@ -174,7 +173,6 @@ class SchemaManager:
                 "CREATE INDEX IF NOT EXISTS idx_documents_content_fts ON documents USING gin(to_tsvector('english', content))"
             )
 
-            
             logger.info("Database schema created successfully")
 
 

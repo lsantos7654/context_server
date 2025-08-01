@@ -129,12 +129,10 @@ def query(
             if output_format == "mcp_json":
                 # Use the centralized transformation service
                 from ...core.services.transformation import get_transformation_service
+
                 transformation_service = get_transformation_service()
                 compact_response = transformation_service.transform_to_compact_format(
-                    results,
-                    query=query,
-                    mode=mode,
-                    execution_time_ms=execution_time
+                    results, query=query, mode=mode, execution_time_ms=execution_time
                 )
                 console.print(compact_response)
             elif output_format == "cards":
@@ -202,7 +200,9 @@ def code(query, context_name, limit, output_format):
 
             if not results:
                 echo_info("No code snippets found")
-                echo_info("Try a different query or check if code snippets exist in this context")
+                echo_info(
+                    "Try a different query or check if code snippets exist in this context"
+                )
                 return
 
             echo_success(f"Found {total} code snippet(s) in {execution_time}ms")
@@ -212,11 +212,12 @@ def code(query, context_name, limit, output_format):
             if output_format == "mcp_json":
                 # Use the centralized transformation service
                 from ...core.services.transformation import get_transformation_service
+
                 transformation_service = get_transformation_service()
-                compact_response = transformation_service.transform_code_to_compact_format(
-                    results,
-                    query=query,
-                    execution_time_ms=execution_time
+                compact_response = (
+                    transformation_service.transform_code_to_compact_format(
+                        results, query=query, execution_time_ms=execution_time
+                    )
                 )
                 console.print(compact_response)
             else:  # cards format
@@ -231,8 +232,6 @@ def code(query, context_name, limit, output_format):
                 echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(search_code())
-
-
 
 
 @search.command()
@@ -287,7 +286,9 @@ def interactive(context_name):
 
                     echo_success(f"Found {total} result(s) in {execution_time}ms")
                     console.print()
-                    display_results_cards(results, True, query)  # show_content=True for interactive
+                    display_results_cards(
+                        results, True, query
+                    )  # show_content=True for interactive
 
                 else:
                     if "404" in str(response):
@@ -310,31 +311,33 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
     """Display search results in card format with all metadata from MCP format."""
     for i, result in enumerate(results, 1):
         # Create simple card header
-        score = result['score']
-        
+        score = result["score"]
+
         header = f"Result {i} • Score: {score:.3f}"
-        
+
         # Create card content
         card_content = []
-        
+
         # Title and URL
         title = result["title"]
         url = result.get("url", "")
         card_content.append(f"[bold blue]{title}[/bold blue]")
         if url:
             card_content.append(f"[dim blue]{url}[/dim blue]")
-        
+
         # Metadata information
         result_id = result.get("id", "N/A")
         doc_id = result.get("document_id", "N/A")
         content_type = result.get("content_type", "chunk")
         has_summary = bool(result.get("summary"))
-        
+
         card_content.append("")  # Empty line
         card_content.append(f"[dim cyan]ID: {result_id}[/dim cyan]")
         card_content.append(f"[dim cyan]Doc: {doc_id}[/dim cyan]")
-        card_content.append(f"[dim cyan]Type: {content_type} • Summary: {has_summary}[/dim cyan]")
-        
+        card_content.append(
+            f"[dim cyan]Type: {content_type} • Summary: {has_summary}[/dim cyan]"
+        )
+
         # Summary (if available and show_content is True)
         if show_content:
             summary = result.get("summary", "")
@@ -342,9 +345,11 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
                 card_content.append("")  # Empty line
                 card_content.append("[bold yellow]Summary:[/bold yellow]")
                 # Highlight query terms in summary
-                highlighted_summary = highlight_query_terms(summary, query) if query else summary
+                highlighted_summary = (
+                    highlight_query_terms(summary, query) if query else summary
+                )
                 card_content.append(f"[italic]{highlighted_summary}[/italic]")
-            
+
             # Content preview
             content = result.get("content", "")
             if content and len(content.strip()) > 0:
@@ -354,13 +359,13 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
                     # Truncate content for card view
                     preview = content[:300] + "..." if len(content) > 300 else content
                     card_content.append(f"[dim]{preview}[/dim]")
-        
+
         # Enhanced metadata (code snippets, chunk info) - same as MCP format
         metadata = result.get("metadata", {})
         code_snippets = metadata.get("code_snippets", [])
         code_snippets_count = len(code_snippets)
         chunk_index = result.get("chunk_index", "N/A")
-        
+
         # Generate detailed code snippet info like MCP format
         code_snippet_details = []
         if code_snippets:
@@ -369,14 +374,14 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
                     # Use stored preview from database instead of generating at runtime
                     content = snippet.get("content", "")
                     preview = snippet.get("preview", "Code preview not available")
-                    
+
                     snippet_detail = {
                         "id": snippet["id"],
                         "size": len(content),
-                        "preview": preview
+                        "preview": preview,
                     }
                     code_snippet_details.append(snippet_detail)
-        
+
         if code_snippets_count > 0 or chunk_index != "N/A":
             card_content.append("")  # Empty line
             metadata_line = []
@@ -385,23 +390,25 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
             if code_snippets_count > 0:
                 metadata_line.append(f"Code snippets: {code_snippets_count}")
             card_content.append(f"[dim cyan]{' • '.join(metadata_line)}[/dim cyan]")
-            
+
             # Show detailed code snippet information
             if code_snippet_details:
                 card_content.append("")
                 card_content.append("[bold cyan]Code Snippets:[/bold cyan]")
                 for snippet in code_snippet_details[:3]:  # Show first 3
                     snippet_id_full = str(snippet["id"])
-                    card_content.append(f"[cyan]• {snippet_id_full}[/cyan] ({snippet['size']} chars)")
+                    card_content.append(
+                        f"[cyan]• {snippet_id_full}[/cyan] ({snippet['size']} chars)"
+                    )
                     if snippet["preview"]:
                         # Show actual code preview instead of generic summary
                         preview = snippet["preview"]
                         card_content.append(f"  [dim]{preview}[/dim]")
-                
+
                 if len(code_snippet_details) > 3:
                     remaining = len(code_snippet_details) - 3
                     card_content.append(f"[dim]  ... and {remaining} more[/dim]")
-        
+
         # Create panel
         panel = Panel(
             "\n".join(card_content),
@@ -445,7 +452,7 @@ def display_results_table(results: list, show_content: bool = True):
             # Show summary if available (no truncation for AI-generated summaries)
             summary = result.get("summary", "")
             summary_display = summary if summary else ""
-            
+
             # Show truncated content
             content = result["content"][:150] + (
                 "..." if len(result["content"]) > 150 else ""
@@ -502,11 +509,11 @@ def display_results_rich(
         title_text += (
             f"\n[dim white]Chunk {chunk_index} • Score: {score:.4f}[/dim white]"
         )
-        
+
         # Show summary if available, or create one from content (always shown, not just in verbose mode)
         summary = result.get("summary", "")
         summary_model = result.get("summary_model", "")
-        
+
         # If no summary exists, create a brief summary from content
         if not summary:
             content = result.get("content", "")
@@ -516,7 +523,7 @@ def display_results_rich(
             summary_type = "Summary"
             if summary_model:
                 summary_type += f" ({summary_model})"
-        
+
         if summary.strip():
             title_text += f"\n[bold yellow]{summary_type}:[/bold yellow]\n[italic cyan]{summary}[/italic cyan]"
 
@@ -612,14 +619,16 @@ def display_results_rich(
             summary = result.get("summary", "")
             summary_model = result.get("summary_model", "")
             content_section = ""
-            
+
             if summary:
                 summary_header = "[bold yellow]Summary"
                 if summary_model:
                     summary_header += f" ({summary_model})"
                 summary_header += ":[/bold yellow]"
-                content_section += f"{summary_header}\n[italic yellow]{summary}[/italic yellow]\n\n"
-            
+                content_section += (
+                    f"{summary_header}\n[italic yellow]{summary}[/italic yellow]\n\n"
+                )
+
             # Highlight query terms in content (simple highlighting)
             highlighted_content = highlight_query_terms(content, query)
 
@@ -635,7 +644,9 @@ def display_results_rich(
                 )
 
             # Add content section
-            content_section += f"[bold white]Content:[/bold white]\n{highlighted_content}"
+            content_section += (
+                f"[bold white]Content:[/bold white]\n{highlighted_content}"
+            )
 
             # Create panel with summary and content
             panel_content = f"{title_text}\n\n{content_section}"
@@ -665,7 +676,9 @@ def highlight_query_terms(text: str, query: str) -> str:
             import re
 
             pattern = re.compile(re.escape(term), re.IGNORECASE)
-            highlighted = pattern.sub(lambda m: f"[bold yellow]{m.group(0)}[/bold yellow]", highlighted)
+            highlighted = pattern.sub(
+                lambda m: f"[bold yellow]{m.group(0)}[/bold yellow]", highlighted
+            )
 
     return highlighted
 
@@ -674,39 +687,39 @@ def display_code_results_cards(results: list):
     """Display code search results in card format with syntax highlighting."""
     for i, result in enumerate(results, 1):
         # Create card header
-        score = result['score']
+        score = result["score"]
         snippet_id = result.get("id", "N/A")
-        
+
         header = f"Code Result {i} • Score: {score:.3f}"
-        
+
         # Create card content
         card_content = []
-        
+
         # Snippet ID - prominently displayed
         card_content.append(f"[bold green]ID: {snippet_id}[/bold green]")
-        
+
         # Title and URL
         title = result.get("title", "")
         if title:
             card_content.append(f"[bold blue]{title}[/bold blue]")
-        
+
         url = result.get("url", "")
         if url:
             card_content.append(f"[dim blue]{url}[/dim blue]")
-        
+
         # Code content with syntax highlighting
         content = result.get("content", "")
         if content:
             # Calculate and show line count (clean calculation)
-            line_count = len(content.split('\n')) if content else 0
+            line_count = len(content.split("\n")) if content else 0
             card_content.append(f"[dim cyan]Lines: {line_count}[/dim cyan]")
             card_content.append("")  # Empty line
             card_content.append("[bold white]Code:[/bold white]")
-            
+
             # Truncate very long code snippets for card view
             if len(content) > 800:
                 content = content[:800] + "\n... (truncated)"
-            
+
             try:
                 # Try to detect language from content for syntax highlighting
                 language = "text"
@@ -716,10 +729,16 @@ def display_code_results_cards(results: list):
                     language = "javascript"
                 elif "#!/bin/bash" in content or "#!/bin/sh" in content:
                     language = "bash"
-                
+
                 # Create syntax-highlighted content
-                syntax = Syntax(content, language, theme="monokai", line_numbers=True, word_wrap=True)
-                
+                syntax = Syntax(
+                    content,
+                    language,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=True,
+                )
+
                 # Add the syntax object to the panel content
                 card_content.append("")  # Empty line before code
             except Exception:
@@ -728,18 +747,19 @@ def display_code_results_cards(results: list):
                 syntax = None
         else:
             syntax = None
-        
+
         # Create panel with the text content
         panel_text = "\n".join(card_content)
-        
+
         # If we have syntax highlighting, create a panel that includes both text and syntax
         if syntax is not None:
             # Create a group with text content and syntax
             from rich.console import Group
+
             panel_content = Group(panel_text, syntax)
         else:
             panel_content = panel_text
-        
+
         panel = Panel(
             panel_content,
             title=header,
@@ -753,7 +773,7 @@ def display_code_results_cards(results: list):
 def display_code_results_table(results: list):
     """Display code search results in table format (legacy)."""
     from rich.syntax import Syntax
-    
+
     table = Table(title="Code Search Results")
     table.add_column("Score", style="bold green", width=8)
     table.add_column("ID", style="yellow", width=15)
@@ -763,36 +783,44 @@ def display_code_results_table(results: list):
 
     for result in results:
         score = f"{result['score']:.3f}"
-        snippet_id = result.get("id", "N/A")[:12] + "..." if len(result.get("id", "")) > 12 else result.get("id", "N/A")
-        
+        snippet_id = (
+            result.get("id", "N/A")[:12] + "..."
+            if len(result.get("id", "")) > 12
+            else result.get("id", "N/A")
+        )
+
         # Extract title (truncate if too long)
-        title = result.get("title", "")[:28] + ("..." if len(result.get("title", "")) > 28 else "")
-        
+        title = result.get("title", "")[:28] + (
+            "..." if len(result.get("title", "")) > 28 else ""
+        )
+
         # Format line count
         content = result.get("content", "")
-        line_count = result.get("line_count", len(content.split('\n')) if content else 0)
+        line_count = result.get(
+            "line_count", len(content.split("\n")) if content else 0
+        )
         line_info = f"{line_count}" if line_count else "N/A"
-        
+
         # Create code preview (first 100 chars)
         preview = content[:100] + ("..." if len(content) > 100 else "")
-        
+
         table.add_row(score, snippet_id, title, line_info, preview)
 
     console.print(table)
     console.print()
-    
+
     # Show first result with syntax highlighting
     if results:
         first_result = results[0]
         content = first_result.get("content", "")
-        
+
         console.print(f"[bold]Top Result Preview:[/bold]")
         console.print(f"[dim]Score: {first_result['score']:.3f}[/dim]")
-        
+
         # Truncate very long code snippets
         if len(content) > 1000:
             content = content[:1000] + "\n... (truncated)"
-        
+
         try:
             # Try to detect language from content for syntax highlighting
             language = "text"
@@ -802,17 +830,15 @@ def display_code_results_table(results: list):
                 language = "javascript"
             elif "#!/bin/bash" in content or "#!/bin/sh" in content:
                 language = "bash"
-            
+
             syntax = Syntax(content, language, theme="monokai", line_numbers=True)
             console.print(syntax)
         except Exception:
             # Fallback to plain text if syntax highlighting fails
             console.print(f"[dim]{content}[/dim]")
-        
+
         console.print()
 
 
 # Alias for the query command to avoid naming conflicts
 query_cmd = query
-
-

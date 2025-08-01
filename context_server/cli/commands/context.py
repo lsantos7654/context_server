@@ -241,7 +241,6 @@ def delete(name, force):
     asyncio.run(delete_context())
 
 
-
 @context.command()
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--output-file", "-o", type=click.Path(), help="Output file path")
@@ -444,5 +443,3 @@ def documents(context_name, offset, limit, output_format):
             echo_info("Make sure the server is running: ctx server up")
 
     asyncio.run(list_documents())
-
-

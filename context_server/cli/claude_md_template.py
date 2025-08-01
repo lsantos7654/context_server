@@ -123,6 +123,7 @@ def get_claude_md_template() -> str:
 def should_create_claude_md(project_dir: str) -> bool:
     """Check if CLAUDE.md exists in the project directory."""
     from pathlib import Path
+
     claude_md_path = Path(project_dir) / "CLAUDE.md"
     return not claude_md_path.exists()
 
@@ -130,6 +131,7 @@ def should_create_claude_md(project_dir: str) -> bool:
 def append_to_claude_md(project_dir: str, content: str) -> bool:
     """Append content to existing CLAUDE.md file."""
     from pathlib import Path
+
     try:
         claude_md_path = Path(project_dir) / "CLAUDE.md"
         with open(claude_md_path, "a", encoding="utf-8") as f:
@@ -142,11 +144,14 @@ def append_to_claude_md(project_dir: str, content: str) -> bool:
 def create_claude_md(project_dir: str) -> bool:
     """Create new CLAUDE.md file with the template content."""
     from pathlib import Path
+
     try:
         claude_md_path = Path(project_dir) / "CLAUDE.md"
         with open(claude_md_path, "w", encoding="utf-8") as f:
             f.write("# Claude Code Instructions\n\n")
-            f.write("This file provides guidance to Claude Code when working with this project.\n")
+            f.write(
+                "This file provides guidance to Claude Code when working with this project.\n"
+            )
             f.write(get_claude_md_template())
         return True
     except Exception:
