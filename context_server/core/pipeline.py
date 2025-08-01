@@ -257,7 +257,7 @@ class DocumentProcessor:
 
             # Step 2: Always process as an array of pages (unified processing)
             processed_documents = []
-            
+
             # Debug logging to understand what we got from extraction
             logger.info(
                 f"Extraction result: is_multi_page={extraction_result.is_multi_page}, "
@@ -273,78 +273,102 @@ class DocumentProcessor:
             else:
                 # Create a single PageResult from the main extraction
                 from context_server.core.services.extraction import PageResult
+
                 single_page = PageResult(
                     url=url,
                     title=extraction_result.metadata.get("title", "Untitled"),
                     content=extraction_result.content,
-                    metadata=extraction_result.metadata
+                    metadata=extraction_result.metadata,
                 )
                 pages_to_process = [single_page]
 
-            # Now process ALL cases with the same logic
-            logger.info(f"Processing {len(pages_to_process)} page(s)")
+            # Now process ALL cases with parallel logic
+            logger.info(f"Processing {len(pages_to_process)} page(s) in parallel")
 
-            for i, page in enumerate(pages_to_process):
-                # Report starting to process this page
-                if job_id and db:
-                    progress = 0.1 + (0.7 * (i / len(pages_to_process)))
-                    await db.update_job_progress(
-                        job_id,
-                        progress,
-                        metadata={
-                            "phase": "processing_page_start",
-                            "current_page": i + 1,
-                            "total_pages": len(pages_to_process),
-                            "current_page_url": page.url,
-                            "current_page_title": page.title,
-                            "page_status": "starting",
-                        },
+            # Create a semaphore to limit concurrent document processing
+            max_concurrent_docs = min(
+                3, len(pages_to_process)
+            )  # Max 3 concurrent documents
+            semaphore = asyncio.Semaphore(max_concurrent_docs)
+            completed_count = 0
+
+            async def process_single_document(i: int, page) -> "ProcessedDocument":
+                """Process a single document with concurrency control."""
+                async with semaphore:
+                    # Report starting to process this document
+                    if job_id and db:
+                        await db.update_job_progress(
+                            job_id,
+                            0.1,  # Don't calculate progress linearly for parallel processing
+                            metadata={
+                                "phase": "processing_document_start",
+                                "current_page": i + 1,
+                                "total_pages": len(pages_to_process),
+                                "current_document_url": page.url,
+                                "current_document_title": page.title,
+                                "document_status": "starting",
+                            },
+                        )
+
+                    processed_doc = await self._process_content(
+                        url=page.url,
+                        title=page.title,
+                        content=page.content,
+                        metadata=page.metadata,
+                        job_id=job_id,
+                        db=db,
                     )
 
-                # Report starting to process this document
-                if job_id and db:
-                    progress = 0.1 + (0.7 * (i / len(pages_to_process)))
-                    await db.update_job_progress(
-                        job_id,
-                        progress,
-                        metadata={
-                            "phase": "processing_document_start",
-                            "current_page": i + 1,
-                            "total_pages": len(pages_to_process),
-                            "current_document_url": page.url,
-                            "current_document_title": page.title,
-                            "document_status": "starting",
-                        },
+                    # Report completion of this document
+                    nonlocal completed_count
+                    completed_count += 1
+                    if job_id and db:
+                        progress = 0.1 + (
+                            0.7 * (completed_count / len(pages_to_process))
+                        )
+                        await db.update_job_progress(
+                            job_id,
+                            progress,
+                            metadata={
+                                "phase": "processing_document_complete",
+                                "current_page": i + 1,
+                                "total_pages": len(pages_to_process),
+                                "current_document_url": page.url,
+                                "current_document_title": page.title,
+                                "document_status": "completed",
+                                "completed_count": completed_count,
+                                "processing_mode": "parallel",
+                            },
+                        )
+
+                    logger.info(
+                        f"✓ Processed document {i+1}/{len(pages_to_process)} ({completed_count}/{len(pages_to_process)} total): {page.url}"
                     )
+                    return processed_doc
 
-                processed_doc = await self._process_content(
-                    url=page.url,
-                    title=page.title,
-                    content=page.content,
-                    metadata=page.metadata,
-                    job_id=job_id,
-                    db=db,
-                )
-                processed_documents.append(processed_doc)
+            # Process all documents concurrently
+            logger.info(
+                f"Starting parallel processing with max {max_concurrent_docs} concurrent documents"
+            )
+            document_tasks = [
+                process_single_document(i, page)
+                for i, page in enumerate(pages_to_process)
+            ]
 
-                # Report completion of this document
-                if job_id and db:
-                    progress = 0.1 + (0.7 * ((i + 1) / len(pages_to_process)))
-                    await db.update_job_progress(
-                        job_id,
-                        progress,
-                        metadata={
-                            "phase": "processing_document_complete",
-                            "current_page": i + 1,
-                            "total_pages": len(pages_to_process),
-                            "current_document_url": page.url,
-                            "current_document_title": page.title,
-                            "document_status": "completed",
-                            "completed_documents": [doc.url for doc in processed_documents],
-                        },
-                    )
+            # Wait for all documents to complete
+            processed_documents = await asyncio.gather(
+                *document_tasks, return_exceptions=True
+            )
 
-                logger.info(f"✓ Processed page {i+1}/{len(pages_to_process)}: {page.url}")
+            # Filter out any exceptions and log errors
+            successful_documents = []
+            for i, result in enumerate(processed_documents):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to process document {i+1}: {result}")
+                else:
+                    successful_documents.append(result)
+
+            processed_documents = successful_documents
 
             logger.info(
                 f"Successfully processed {len(processed_documents)} documents from URL: {url}"

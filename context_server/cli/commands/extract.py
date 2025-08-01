@@ -118,7 +118,7 @@ def extract(
                 response = await client.post(
                     get_api_url(f"contexts/{context_name}/documents"),
                     json=request_data,
-                    timeout=300.0,  # 5 minute timeout for extraction
+                    timeout=1800.0,  # 30 minute timeout for extraction
                 )
 
                 if response.status_code == 202:
@@ -149,14 +149,14 @@ def extract(
 
 
 async def wait_for_extraction(
-    job_id: str, check_interval: float = 2.0, timeout: int = 600
+    job_id: str, check_interval: float = 2.0, timeout: int = 3600
 ):
     """Wait for extraction job to complete by polling job status API.
 
     Args:
         job_id: Job ID to monitor
         check_interval: Time between checks in seconds
-        timeout: Maximum time to wait in seconds
+        timeout: Maximum time to wait in seconds (default: 1 hour)
     """
     start_time = time.time()
 
@@ -229,20 +229,45 @@ async def wait_for_extraction(
                                 state_key = f"doc_start:{doc_url}"
                                 # Only print if state changed
                                 if should_print_message(state_key):
-                                    progress.console.print(f"Processing: {display_url}", style="cyan")
-                                description = f"Processing document {current_doc}/{total_docs}"
+                                    progress.console.print(
+                                        f"Processing: {display_url}", style="cyan"
+                                    )
+                                description = (
+                                    f"Processing document {current_doc}/{total_docs}"
+                                )
                             elif phase == "processing_document_complete":
                                 current_doc = metadata.get("current_page", 1)
                                 total_docs = metadata.get("total_pages", 1)
                                 doc_url = metadata.get("current_document_url", "")
+                                completed_count = metadata.get(
+                                    "completed_count", current_doc
+                                )
+                                processing_mode = metadata.get(
+                                    "processing_mode", "sequential"
+                                )
                                 display_url = format_url_for_display(doc_url)
                                 # Create state key for this phase
                                 state_key = f"doc_complete:{doc_url}"
                                 # Only print if state changed and not already completed
-                                if doc_url not in completed_documents and should_print_message(state_key):
+                                if (
+                                    doc_url not in completed_documents
+                                    and should_print_message(state_key)
+                                ):
                                     completed_documents.append(doc_url)
-                                    progress.console.print(f"Completed: {display_url}", style="green")
-                                description = f"Completed {current_doc}/{total_docs} documents"
+                                    if processing_mode == "parallel":
+                                        progress.console.print(
+                                            f"Completed: {display_url} ({completed_count}/{total_docs})",
+                                            style="green",
+                                        )
+                                    else:
+                                        progress.console.print(
+                                            f"Completed: {display_url}", style="green"
+                                        )
+
+                                if processing_mode == "parallel":
+                                    description = f"Parallel processing: {completed_count}/{total_docs} documents completed"
+                                else:
+                                    description = f"Completed {current_doc}/{total_docs} documents"
                             elif phase == "code_extraction":
                                 status = metadata.get("status", "analyzing code blocks")
                                 content_size = metadata.get("content_size", 0)
@@ -252,7 +277,10 @@ async def wait_for_extraction(
                                 state_key = f"code_extraction:{doc_url}:{content_size}"
                                 # Only print if state changed
                                 if should_print_message(state_key):
-                                    progress.console.print(f"Code extraction: {status} for {display_url} ({content_size:,} chars)", style="blue")
+                                    progress.console.print(
+                                        f"Code extraction: {status} for {display_url} ({content_size:,} chars)",
+                                        style="blue",
+                                    )
                                 description = f"Processing document phases..."
                             elif phase == "code_embedding":
                                 snippets_found = metadata.get("snippets_found", 0)
@@ -260,33 +288,50 @@ async def wait_for_extraction(
                                 doc_url = metadata.get("current_document_url", "")
                                 display_url = format_url_for_display(doc_url)
                                 # Create state key for this phase
-                                state_key = f"code_embedding:{doc_url}:{snippets_found}:{model}"
+                                state_key = (
+                                    f"code_embedding:{doc_url}:{snippets_found}:{model}"
+                                )
                                 # Only print if state changed
                                 if should_print_message(state_key):
-                                    progress.console.print(f"Code embedding: {snippets_found} snippets for {display_url} ({model})", style="blue")
+                                    progress.console.print(
+                                        f"Code embedding: {snippets_found} snippets for {display_url} ({model})",
+                                        style="blue",
+                                    )
                                 description = f"Processing document phases..."
                             elif phase == "text_chunking":
                                 content_size = metadata.get("content_size", 0)
-                                code_snippets = metadata.get("code_snippets_processed", 0)
+                                code_snippets = metadata.get(
+                                    "code_snippets_processed", 0
+                                )
                                 doc_url = metadata.get("current_document_url", "")
                                 display_url = format_url_for_display(doc_url)
                                 # Create state key for this phase
                                 state_key = f"text_chunking:{doc_url}:{content_size}:{code_snippets}"
                                 # Only print if state changed
                                 if should_print_message(state_key):
-                                    progress.console.print(f"Text chunking: {display_url} ({content_size:,} chars, {code_snippets} code snippets)", style="blue")
+                                    progress.console.print(
+                                        f"Text chunking: {display_url} ({content_size:,} chars, {code_snippets} code snippets)",
+                                        style="blue",
+                                    )
                                 description = f"Processing document phases..."
                             elif phase == "text_embedding":
                                 chunks_created = metadata.get("chunks_created", 0)
-                                embedding_model = metadata.get("embedding_model", "text-embedding-3-large")
-                                summary_model = metadata.get("summary_model", "gpt-4o-mini")
+                                embedding_model = metadata.get(
+                                    "embedding_model", "text-embedding-3-large"
+                                )
+                                summary_model = metadata.get(
+                                    "summary_model", "gpt-4o-mini"
+                                )
                                 doc_url = metadata.get("current_document_url", "")
                                 display_url = format_url_for_display(doc_url)
                                 # Create state key for this phase
                                 state_key = f"text_embedding:{doc_url}:{chunks_created}:{embedding_model}:{summary_model}"
                                 # Only print if state changed
                                 if should_print_message(state_key):
-                                    progress.console.print(f"Text embedding: {chunks_created} chunks for {display_url} ({embedding_model}, {summary_model})", style="blue")
+                                    progress.console.print(
+                                        f"Text embedding: {chunks_created} chunks for {display_url} ({embedding_model}, {summary_model})",
+                                        style="blue",
+                                    )
                                 description = f"Processing document phases..."
                             elif phase == "chunking_and_embedding":
                                 processed = metadata.get("processed_pages", 0)
@@ -305,7 +350,7 @@ async def wait_for_extraction(
                                 if len(page_url) > 50:
                                     display_url = page_url[:47] + "..."
                                 description = f"📄 Processing page {current_page}/{total_pages}: {display_url}"
-                                        
+
                             elif phase == "processing_page_complete":
                                 current_page = metadata.get("current_page", 1)
                                 total_pages = metadata.get("total_pages", 1)
@@ -313,13 +358,15 @@ async def wait_for_extraction(
                                 display_url = page_url
                                 if len(page_url) > 50:
                                     display_url = page_url[:47] + "..."
-                                
+
                                 # Add to completed pages and print completion
                                 if page_url not in completed_pages:
                                     completed_pages.append(page_url)
                                     # Print completion message above the progress bar
-                                    progress.console.print(f"✓ Completed: {display_url}", style="green")
-                                
+                                    progress.console.print(
+                                        f"✓ Completed: {display_url}", style="green"
+                                    )
+
                                 description = f"Processing documents ({current_page}/{total_pages} pages completed)"
                             else:
                                 description = (
@@ -360,8 +407,11 @@ async def wait_for_extraction(
 
             await asyncio.sleep(check_interval)
 
-        echo_warning("Extraction timed out, but may still be running in the background")
+        echo_warning(
+            f"Extraction timed out after {timeout//60} minutes, but may still be running in the background"
+        )
         echo_info(f"Job ID: {job_id}")
+        echo_info("You can check status later with: ctx job status <job_id>")
 
 
 async def handle_local_extraction(
