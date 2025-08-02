@@ -173,7 +173,7 @@ class Crawl4aiExtractor:
 
             if filters:
                 filter_chain = FilterChain(filters)
-        
+
         # Log filtering status
         if filter_chain:
             logger.info("✅ Filter chain created with filters enabled")
@@ -186,11 +186,11 @@ class Crawl4aiExtractor:
             "include_external": config.include_external,
             "max_pages": config.max_pages,
         }
-        
+
         # Only add filter_chain if it's not None
         if filter_chain is not None:
             strategy_params["filter_chain"] = filter_chain
-            
+
         if config.strategy_type == "best_first":
             # BestFirstCrawlingStrategy does NOT use score_threshold (processes by highest score first)
             if scorer is not None:
@@ -285,7 +285,7 @@ class Crawl4aiExtractor:
                 logger.info(
                     f"Intelligent crawling found {len(results)} pages in {extraction_time:.2f}s"
                 )
-                
+
                 # Debug: Log details about discovered pages
                 if results:
                     logger.info("🔍 Discovered pages:")

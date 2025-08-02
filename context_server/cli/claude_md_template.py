@@ -2,7 +2,7 @@
 
 CLAUDE_MD_DOCUMENTATION_STRATEGY = """
 
-## Intelligent Documentation Gap Detection & Extraction
+## Context Server User Guide
 
 When you encounter missing information while helping users:
 
@@ -42,7 +42,7 @@ User asks about missing concept
 ↓
 Search existing contexts first
 ↓
-If insufficient: Analyze what's missing specifically  
+If insufficient: Analyze what's missing specifically
 ↓
 Use WebFetch to find the right documentation section
 ↓
@@ -96,7 +96,7 @@ mcp__context-server__extract_url(context_name="framework-docs", url="https://doc
 - Tertiary sources: Community wikis, tutorial sites
 - Always prioritize official docs over community content
 
-### 7. Troubleshooting Missing Information  
+### 7. Troubleshooting Missing Information
 If you can't find specific information after initial search:
 
 1. **Check extraction completeness**: Verify if the context has sufficient pages for the topic
@@ -106,12 +106,60 @@ If you can't find specific information after initial search:
 5. **Use get_document for full content**: When summaries don't provide enough detail
 6. **Cross-reference sources**: Check if information exists elsewhere in the ecosystem
 
-### 8. Context Server Anti-Patterns to Avoid
-❌ **Don't use list_documents** - Overwhelming and not actionable
-❌ **Don't extract entire sites blindly** - Use targeted approach
-❌ **Don't create duplicate contexts** - Enhance existing ones
-❌ **Don't ignore sitemaps** - They provide the roadmap to complete documentation
-❌ **Don't rely on single search terms** - Try variations and synonyms
+### 8. Context Server Workflow Patterns
+
+#### Discovery-First Development
+```
+1. Check existing contexts before creating new ones
+2. Search current contexts for gaps
+3. Extract only missing documentation sections
+4. Monitor long-running jobs
+5. Maintain context hygiene over time
+```
+
+#### Progressive Information Retrieval
+```
+search_context (summaries) → get_chunk (targeted details) → get_document (comprehensive context)
+```
+
+#### When to Use Each Method
+- **Chunks**: Quick reference, API details, specific code examples
+- **Documents**: Complex concepts, tutorials, comprehensive understanding
+- **Multiple chunks**: Comparing approaches, scanning multiple solutions
+
+#### Context Management Philosophy
+**Conservative approach for sustainable development sessions:**
+- Start with summaries to scan and identify relevance
+- Use chunks for targeted information without context flooding
+- Retrieve full documents only when chunks are insufficient
+- Maintain context window space for iterative development
+
+#### Documentation Gap Workflow
+```
+User asks about missing concept
+↓
+Search existing contexts first
+↓
+If insufficient → Identify specific missing sections
+↓
+Extract targeted documentation (not entire sites)
+↓
+Re-search with enhanced context
+↓
+Provide complete answer
+```
+
+#### Maintenance Patterns
+- **Regular cleanup**: Remove completed jobs and outdated contexts
+- **Targeted updates**: Re-extract specific sections, not entire documentation sites
+- **Context focus**: One context per framework/library for clarity
+
+#### Anti-Patterns
+❌ **Extracting entire sites** - Use targeted extraction
+❌ **Creating duplicate contexts** - Enhance existing ones
+❌ **Ignoring job monitoring** - Large extractions need oversight
+❌ **Skipping context discovery** - Always check what exists first
+❌ **Single search terms** - Try variations and synonyms
 """
 
 

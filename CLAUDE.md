@@ -4,71 +4,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Context Server is a modern documentation RAG system with FastAPI backend, PostgreSQL + pgvector storage, and semantic search capabilities. Built specifically for Claude integration via MCP (Model Context Protocol).
+Context Server is a modern, intelligent documentation RAG system with FastAPI backend, PostgreSQL + pgvector storage, and semantic search capabilities. It provides native MCP (Model Context Protocol) support for seamless Claude integration.
 
-**Core Architecture**: Three-document pipeline processing:
-1. **Original Document**: Raw parsed markdown content
-2. **Code Snippets**: Extracted code blocks with voyage-code-3 embeddings  
-3. **Cleaned Text**: Text with code snippet placeholders for improved search
+**Key Features:**
+- Three-document pipeline: original content, code snippets (voyage-code-3), cleaned text (text-embedding-3-large)
+- Hybrid semantic search with PostgreSQL + pgvector + halfvec optimization
+- Intelligent web crawling with crawl4ai
+- Async job system with real-time progress tracking
+- Full Docker containerization
 
-**Dual Embedding Strategy**: 
-- OpenAI text-embedding-3-large for documents
-- Voyage AI voyage-code-3 for code snippets
+## Development Commands
 
-## Essential Commands
-
-### Development Environment
+### Environment Setup
 ```bash
-# Install with uv package manager  
-uv sync --extra dev
+# Using Makefile (recommended)
+make init              # Initialize development environment
+make up                # Start PostgreSQL + API in Docker
+make down              # Stop services
+make restart           # Restart services
 
-# Start services (PostgreSQL + API)
-make up
-
-# Development server (with reload)
-make restart
-
-# Environment setup 
-make init
-
-# Clean caches
-make clean
+# Using CLI directly
+uv sync --extra dev    # Install dependencies
+ctx server up          # Start services
+ctx server down        # Stop services
+ctx server status      # Check health
 ```
 
 ### Testing & Quality
 ```bash
-# Run tests with coverage
-make test
-
-# Format code (black + isort)
-make format
-
-# Run linting (flake8, mypy, bandit)
-make lint
-
-# Full quality check
-make quality-check
-
-# Watch mode for development
-make test-watch
+make test              # Run tests with coverage
+make test-watch        # Run tests in watch mode
+make format            # Format with black + isort
+make lint              # Run flake8, mypy, bandit
+make quality-check     # Run format + lint + test
 ```
 
-### Docker Operations
-```bash
-# Check server status
-make status
-
-# View API logs  
-make logs
-
-# Database shell
-make db-shell
-
-# Reset database (destroys all data)
-make db-reset
-```
-
-### CLI Usage (ctx command)
+### CLI Operations
 ```bash
 # Context management
 ctx context create my-docs --description "Documentation context"
@@ -77,76 +48,149 @@ ctx context delete old-context
 
 # Document extraction
 ctx extract https://docs.python.org/ my-docs --max-pages 50
-ctx extract ./my-project/ local-docs --source-type local
+ctx extract ./local-files/ my-docs --source-type local
 
-# Search operations  
+# Search operations
 ctx search query "async functions" my-docs --limit 5
 ctx search code "impl Error" my-docs --language rust
+
+# Server management
+ctx server logs        # View API logs
+ctx server shell       # Connect to PostgreSQL
 ```
 
-## Key Architecture Components
+## Architecture Overview
 
-### Core Pipeline (`context_server/core/pipeline.py`)
-- **DocumentProcessor**: Main orchestrator of three-document processing
-- **CodeSnippetExtractor**: Extracts and processes code blocks
-- Text chunking with LangChain RecursiveCharacterTextSplitter
-- Concurrent embedding generation and summarization
+### Core Components
 
-### MCP Integration (`context_server/mcp_server/`)
-- **tools.py**: Complete MCP tool implementations for Claude
-- **client.py**: HTTP client for Context Server API
-- Native Model Context Protocol support for seamless AI workflows
+**Processing Pipeline** (`context_server/core/pipeline.py`):
+- Three-document processing: original → code snippets → cleaned content
+- Parallel document processing with concurrency control
+- Real-time job progress tracking
 
-### Database Layer (`context_server/core/database/`)
-- PostgreSQL with pgvector extension
-- Async SQLAlchemy models
-- Hybrid search (semantic + keyword) capabilities
-- Optimized chunking and embedding storage
+**Database Layer** (`context_server/core/database/`):
+- PostgreSQL with pgvector extension for embeddings
+- Models: contexts, documents, chunks, code_snippets, jobs
+- Search manager with hybrid (semantic + full-text) search
 
-### API Layer (`context_server/api/`)
-- FastAPI application with async support
-- RESTful endpoints for contexts, documents, search
-- Job system for async processing with progress tracking
-- Error handling and validation
+**API Layer** (`context_server/api/`):
+- FastAPI with async support
+- Routers: contexts, documents, search, jobs
+- Health checks and global exception handling
 
-## Important Development Notes
+**MCP Server** (`context_server/mcp_server/`):
+- Native Model Context Protocol integration
+- Tools for context management, document extraction, search
+- Optimized for Claude integration
 
-### Database Schema
-- Uses pgvector with halfvec optimization for performance
-- Three main tables: documents, chunks, code_snippets  
-- UUID-based relationships between documents and code snippets
-- Embedding vectors stored as halfvec for memory efficiency
+### Key Services
 
-### Text Processing
-- **Text chunks**: 4000 chars, 800 overlap (20% for context continuity)
-- **Code chunks**: 700 chars, 150 overlap (optimized for code blocks)
-- Code snippet placeholders link chunks to code for enhanced search
+**Embeddings** (`context_server/core/services/embeddings/`):
+- OpenAI text-embedding-3-large for documents (3072 dimensions)
+- Voyage AI voyage-code-3 for code snippets (2048 dimensions)
 
-### API Configuration
-- Server runs on localhost:8000 by default
-- API docs available at /docs and /redoc
-- Database URL: postgresql://context_user:context_password@localhost:5432/context_server
+**Extraction** (`context_server/core/services/extraction/`):
+- Crawl4ai for intelligent web scraping
+- URL discovery and content cleaning
+- Multi-page extraction with parallel processing
 
-### Environment Variables
-Required in `.env` file:
-- `OPENAI_API_KEY`: For text embeddings and summarization
-- `VOYAGE_API_KEY`: For code embeddings (voyage-code-3)
-- `DATABASE_URL`: PostgreSQL connection string (optional, defaults to Docker setup)
+**Text Processing** (`context_server/core/text/`):
+- LangChain RecursiveCharacterTextSplitter for chunking
+- Code-aware chunking with placeholder system
+- Text cleaning and preprocessing
 
-### Testing
-- Uses pytest with async support
-- Test markers: unit, integration, slow
-- Coverage reports generated in htmlcov/
-- Factory-boy for test data generation
+## Database Schema
 
-### Code Quality
-- Black formatter (88 char line length)
-- isort for import sorting  
-- mypy for type checking (not strict, allows untyped defs)
-- bandit for security scanning
-- pre-commit hooks configured
+**Key Tables:**
+- `contexts`: Documentation namespaces with embedding model config
+- `documents`: Original content with metadata and source URLs
+- `chunks`: Text chunks with embeddings and AI-generated summaries
+- `code_snippets`: Extracted code with voyage-code-3 embeddings
+- `jobs`: Async processing jobs with progress tracking
 
-## Intelligent Documentation Gap Detection & Extraction
+**Extensions:**
+- `pgvector` with `halfvec` optimization for embeddings
+- Full-text search capabilities
+
+## Development Patterns
+
+### Code Snippet Processing
+The system uses a three-stage approach:
+1. Extract code snippets during processing
+2. Generate voyage-code-3 embeddings
+3. Replace original code with placeholders containing real UUIDs
+
+### Async Job Pattern
+Long-running operations (URL extraction) use async jobs:
+- Job creation returns `job_id`
+- Progress tracking with metadata
+- Status endpoints for monitoring
+
+### Search Modes
+- `hybrid`: Semantic + keyword search (recommended)
+- `vector`: Pure semantic search
+- `fulltext`: Keyword-only search
+
+### Error Handling
+- Structured exceptions with status codes
+- Global exception handler in FastAPI
+- Graceful degradation when services fail
+
+## Configuration
+
+**Environment Variables:**
+```bash
+OPENAI_API_KEY=your_openai_key
+VOYAGE_API_KEY=your_voyage_key
+DATABASE_URL=postgresql://context_user:context_password@localhost:5432/context_server
+CONTEXT_SERVER_HOST=localhost
+CONTEXT_SERVER_PORT=8000
+```
+
+**Default Chunk Sizes:**
+- Text chunks: 4000 chars with 800 overlap
+- Code chunks: 700 chars with 150 overlap
+
+## Testing
+
+Run the full test suite:
+```bash
+make test
+```
+
+Test markers available:
+- `unit`: Unit tests
+- `integration`: Integration tests
+- `slow`: Slow-running tests
+
+## Docker Services
+
+**Services defined in docker-compose.yml:**
+- `postgres`: PostgreSQL 15 with pgvector extension
+- `api`: Context Server API (built from Dockerfile)
+
+**Ports:**
+- API: http://localhost:8000
+- PostgreSQL: localhost:5432
+- API Docs: http://localhost:8000/docs
+
+## Common Issues
+
+**Database Connection**: Ensure PostgreSQL is running via `make up`
+**API Keys**: Verify OPENAI_API_KEY and VOYAGE_API_KEY in .env file
+**Port Conflicts**: Check if ports 8000 or 5432 are already in use
+**Memory**: Large document processing may require sufficient RAM
+
+## File Structure Notes
+
+- `context_server/cli/`: Click-based CLI with rich output formatting
+- `context_server/api/`: FastAPI routers and main application
+- `context_server/core/`: Core business logic and services
+- `context_server/mcp_server/`: MCP protocol implementation
+- `context_server/models/`: Pydantic models for API and domain objects
+- `scripts/`: Utility scripts for development
+
+## Context Server User Guide
 
 When you encounter missing information while helping users:
 
@@ -186,7 +230,7 @@ User asks about missing concept
 ↓
 Search existing contexts first
 ↓
-If insufficient: Analyze what's missing specifically  
+If insufficient: Analyze what's missing specifically
 ↓
 Use WebFetch to find the right documentation section
 ↓
@@ -240,7 +284,7 @@ mcp__context-server__extract_url(context_name="framework-docs", url="https://doc
 - Tertiary sources: Community wikis, tutorial sites
 - Always prioritize official docs over community content
 
-### 7. Troubleshooting Missing Information  
+### 7. Troubleshooting Missing Information
 If you can't find specific information after initial search:
 
 1. **Check extraction completeness**: Verify if the context has sufficient pages for the topic
@@ -250,9 +294,57 @@ If you can't find specific information after initial search:
 5. **Use get_document for full content**: When summaries don't provide enough detail
 6. **Cross-reference sources**: Check if information exists elsewhere in the ecosystem
 
-### 8. Context Server Anti-Patterns to Avoid
-❌ **Don't use list_documents** - Overwhelming and not actionable
-❌ **Don't extract entire sites blindly** - Use targeted approach
-❌ **Don't create duplicate contexts** - Enhance existing ones
-❌ **Don't ignore sitemaps** - They provide the roadmap to complete documentation
-❌ **Don't rely on single search terms** - Try variations and synonyms
+### 8. Context Server Workflow Patterns
+
+#### Discovery-First Development
+```
+1. Check existing contexts before creating new ones
+2. Search current contexts for gaps
+3. Extract only missing documentation sections
+4. Monitor long-running jobs
+5. Maintain context hygiene over time
+```
+
+#### Progressive Information Retrieval
+```
+search_context (summaries) → get_chunk (targeted details) → get_document (comprehensive context)
+```
+
+#### When to Use Each Method
+- **Chunks**: Quick reference, API details, specific code examples
+- **Documents**: Complex concepts, tutorials, comprehensive understanding
+- **Multiple chunks**: Comparing approaches, scanning multiple solutions
+
+#### Context Management Philosophy
+**Conservative approach for sustainable development sessions:**
+- Start with summaries to scan and identify relevance
+- Use chunks for targeted information without context flooding
+- Retrieve full documents only when chunks are insufficient
+- Maintain context window space for iterative development
+
+#### Documentation Gap Workflow
+```
+User asks about missing concept
+↓
+Search existing contexts first
+↓
+If insufficient → Identify specific missing sections
+↓
+Extract targeted documentation (not entire sites)
+↓
+Re-search with enhanced context
+↓
+Provide complete answer
+```
+
+#### Maintenance Patterns
+- **Regular cleanup**: Remove completed jobs and outdated contexts
+- **Targeted updates**: Re-extract specific sections, not entire documentation sites
+- **Context focus**: One context per framework/library for clarity
+
+#### Anti-Patterns
+❌ **Extracting entire sites** - Use targeted extraction
+❌ **Creating duplicate contexts** - Enhance existing ones
+❌ **Ignoring job monitoring** - Large extractions need oversight
+❌ **Skipping context discovery** - Always check what exists first
+❌ **Single search terms** - Try variations and synonyms
