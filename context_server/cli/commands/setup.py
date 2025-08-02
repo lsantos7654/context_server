@@ -9,15 +9,15 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..claude_md_template import (
+from context_server.cli.claude_md_template import (
     append_to_claude_md,
     create_claude_md,
     get_claude_md_template,
     should_create_claude_md,
 )
-from ..config import get_config
-from ..help_formatter import rich_help_option
-from ..utils import check_api_health, echo_error, echo_info, echo_success, echo_warning
+from context_server.cli.config import get_config
+from context_server.cli.help_formatter import rich_help_option
+from context_server.cli.utils import check_api_health, echo_error, echo_info, echo_success, echo_warning
 
 console = Console()
 

@@ -10,11 +10,6 @@ from fastapi.responses import JSONResponse
 
 from context_server.models.api.system import HealthResponse
 
-# Import routers after app creation to avoid circular imports
-# from .contexts import router as contexts_router
-# from .documents import router as documents_router
-# from .search import router as search_router
-
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +21,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Context Server API")
 
     # Import here to avoid issues
-    from ..core.database import DatabaseManager
+    from context_server.core.database import DatabaseManager
 
     # Initialize database
     db_manager = DatabaseManager()
@@ -120,10 +115,10 @@ async def reinitialize_database():
 
 # Include routers after app creation
 def setup_routers():
-    from .contexts import router as contexts_router
-    from .documents import router as documents_router
-    from .jobs import router as jobs_router
-    from .search import router as search_router
+    from context_server.api.contexts import router as contexts_router
+    from context_server.api.documents import router as documents_router
+    from context_server.api.jobs import router as jobs_router
+    from context_server.api.search import router as search_router
 
     app.include_router(contexts_router, prefix="/api/contexts", tags=["contexts"])
     app.include_router(documents_router, prefix="/api", tags=["documents"])

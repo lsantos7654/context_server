@@ -3,7 +3,6 @@
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 import httpx
@@ -17,8 +16,8 @@ console = Console()
 
 def run_command(
     command: list[str],
-    cwd: Optional[Path] = None,
-    env: Optional[dict[str, str]] = None,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
     capture_output: bool = False,
     check: bool = True,
 ) -> subprocess.CompletedProcess:
@@ -67,7 +66,7 @@ def check_docker_compose_running() -> bool:
         return False
 
 
-async def check_api_health() -> tuple[bool, Optional[str]]:
+async def check_api_health() -> tuple[bool, str | None]:
     """Check if the API is healthy."""
     try:
         async with httpx.AsyncClient() as client:
@@ -100,7 +99,7 @@ def get_project_root() -> Path:
 
 
 def print_table(
-    data: list[dict], title: str = "", headers: Optional[list[str]] = None
+    data: list[dict], title: str = "", headers: list[str] | None = None
 ) -> None:
     """Print data as a rich table."""
     if not data:

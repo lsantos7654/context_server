@@ -1,9 +1,6 @@
 """Common validation utilities for domain models."""
 
-from typing import Any
-
-
-def validate_non_negative(value: Any, field_name: str) -> None:
+def validate_non_negative(value, field_name: str) -> None:
     """Validate that a numeric value is non-negative.
     
     Args:

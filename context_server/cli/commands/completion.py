@@ -6,8 +6,8 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from ..help_formatter import rich_help_option
-from ..utils import echo_error, echo_info, echo_success, echo_warning
+from context_server.cli.help_formatter import rich_help_option
+from context_server.cli.utils import echo_error, echo_info, echo_success, echo_warning
 
 console = Console()
 

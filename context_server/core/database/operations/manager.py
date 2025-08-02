@@ -1,6 +1,6 @@
 """Operations manager for metadata filtering and result transformation."""
 
-from ...services.transformation import get_transformation_service
+from context_server.core.services.transformation import get_transformation_service
 
 
 class OperationsManager:

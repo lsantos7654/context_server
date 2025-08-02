@@ -11,7 +11,6 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -27,8 +26,8 @@ class URLInfo:
 
     url: str
     priority: float = 1.0
-    last_modified: Optional[datetime] = None
-    change_frequency: Optional[str] = None
+    last_modified: datetime | None = None
+    change_frequency: str | None = None
     source: str = "unknown"  # "sitemap", "robots", "crawl"
     relevance_score: float = 1.0
 
@@ -38,7 +37,7 @@ class SitemapInfo:
     """Information about a discovered sitemap."""
 
     url: str
-    last_modified: Optional[datetime] = None
+    last_modified: datetime | None = None
     urls_count: int = 0
 
 
@@ -48,9 +47,9 @@ class RobotsTxtParser:
     def __init__(self, robots_content: str, user_agent: str = "*"):
         self.robots_content = robots_content
         self.user_agent = user_agent
-        self.disallowed_paths: Set[str] = set()
-        self.crawl_delay: Optional[float] = None
-        self.sitemaps: List[str] = []
+        self.disallowed_paths: set[str] = set()
+        self.crawl_delay: float | None = None
+        self.sitemaps: list[str] = []
         self._parse()
 
     def _parse(self):
@@ -106,7 +105,7 @@ class SitemapParser:
 
     async def parse_sitemap(
         self, sitemap_url: str
-    ) -> Tuple[List[URLInfo], List[SitemapInfo]]:
+    ) -> tuple[list[URLInfo], list[SitemapInfo]]:
         """Parse a sitemap and return URLs and nested sitemaps."""
         urls = []
         nested_sitemaps = []
@@ -203,7 +202,7 @@ class SitemapParser:
 
         return urls, nested_sitemaps
 
-    def _parse_date(self, date_str: Optional[str]) -> Optional[datetime]:
+    def _parse_date(self, date_str: str | None) -> datetime | None:
         """Parse ISO date string to datetime."""
         if not date_str:
             return None
@@ -231,7 +230,7 @@ class URLDiscoveryService:
 
     def __init__(self):
         self.sitemap_parser = SitemapParser()
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -244,10 +243,10 @@ class URLDiscoveryService:
     async def discover_urls(
         self,
         base_url: str,
-        keywords: Optional[List[str]] = None,
+        keywords: list[str] | None = None,
         max_urls: int = 1000,
         respect_robots: bool = True,
-    ) -> List[URLInfo]:
+    ) -> list[URLInfo]:
         """Discover URLs from a base URL using sitemaps and other methods."""
 
         all_urls = []
@@ -294,7 +293,7 @@ class URLDiscoveryService:
         logger.info(f"Discovered {len(all_urls[:max_urls])} URLs from {base_url}")
         return all_urls[:max_urls]
 
-    async def _fetch_robots_txt(self, base_url: str) -> Optional[RobotsTxtParser]:
+    async def _fetch_robots_txt(self, base_url: str) -> RobotsTxtParser | None:
         """Fetch and parse robots.txt from base URL."""
         robots_url = f"{base_url}/robots.txt"
 
@@ -319,7 +318,7 @@ class URLDiscoveryService:
 
     async def _parse_sitemap_recursive(
         self, sitemap_url: str, max_depth: int = 3
-    ) -> List[URLInfo]:
+    ) -> list[URLInfo]:
         """Recursively parse sitemap and nested sitemaps."""
         if max_depth <= 0:
             return []
@@ -338,8 +337,8 @@ class URLDiscoveryService:
         return all_urls
 
     def _score_urls_by_keywords(
-        self, urls: List[URLInfo], keywords: List[str]
-    ) -> List[URLInfo]:
+        self, urls: list[URLInfo], keywords: list[str]
+    ) -> list[URLInfo]:
         """Score URLs based on keyword relevance in URL path."""
         keyword_patterns = [re.compile(re.escape(kw), re.IGNORECASE) for kw in keywords]
 

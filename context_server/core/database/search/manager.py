@@ -3,8 +3,8 @@
 import json
 import uuid
 
-from ..base import DatabaseManagerBase
-from ..utils import format_uuid, parse_metadata, parse_uuid
+from context_server.core.database.base import DatabaseManagerBase
+from context_server.core.database.utils import format_uuid, parse_metadata, parse_uuid
 
 
 class SearchManager(DatabaseManagerBase):

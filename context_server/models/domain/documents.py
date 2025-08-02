@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from context_server.models.domain.chunks import ProcessedChunk
 from context_server.models.domain.snippets import CodeSnippet
-from ..validation import validate_range_fields
+from context_server.models.validation import validate_range_fields
 
 
 @dataclass

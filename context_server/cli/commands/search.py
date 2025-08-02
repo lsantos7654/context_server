@@ -1,7 +1,6 @@
 """Search commands for Context Server CLI."""
 
 import asyncio
-from typing import Optional
 
 import click
 import httpx
@@ -11,9 +10,9 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
-from ..config import get_api_url
-from ..help_formatter import rich_help_option
-from ..utils import (
+from context_server.cli.config import get_api_url
+from context_server.cli.help_formatter import rich_help_option
+from context_server.cli.utils import (
     APIClient,
     complete_context_name,
     echo_error,
@@ -128,7 +127,7 @@ def query(
 
             if output_format == "mcp_json":
                 # Use the centralized transformation service
-                from ...core.services.transformation import get_transformation_service
+                from context_server.core.services.transformation import get_transformation_service
 
                 transformation_service = get_transformation_service()
                 compact_response = transformation_service.transform_to_compact_format(
@@ -211,7 +210,7 @@ def code(query, context_name, limit, output_format):
             # Display code results
             if output_format == "mcp_json":
                 # Use the centralized transformation service
-                from ...core.services.transformation import get_transformation_service
+                from context_server.core.services.transformation import get_transformation_service
 
                 transformation_service = get_transformation_service()
                 compact_response = (

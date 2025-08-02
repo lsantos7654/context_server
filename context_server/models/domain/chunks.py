@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from ..validation import validate_range_fields
+from context_server.models.validation import validate_range_fields
 
 
 @dataclass

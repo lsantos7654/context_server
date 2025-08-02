@@ -1,9 +1,9 @@
 """MCP tools for Context Server integration."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from .client import ContextServerClient, ContextServerError
+from context_server.mcp_server.client import ContextServerClient, ContextServerError
 
 logger = logging.getLogger(__name__)
 

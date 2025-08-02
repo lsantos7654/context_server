@@ -1,14 +1,15 @@
 """Error handling decorators and utilities for FastAPI endpoints."""
 
 import logging
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import TypeVar
 
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
-F = TypeVar("F", bound=Callable[..., Any])
+F = TypeVar("F")
 
 
 def handle_api_errors(

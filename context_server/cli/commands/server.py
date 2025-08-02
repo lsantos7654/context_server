@@ -8,7 +8,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import click
 import httpx
@@ -16,14 +15,14 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
-from ..config import (
+from context_server.cli.config import (
     ensure_project_setup,
     get_api_base_url,
     get_api_url,
     get_compose_file_path,
 )
-from ..help_formatter import rich_help_option
-from ..utils import (
+from context_server.cli.help_formatter import rich_help_option
+from context_server.cli.utils import (
     check_api_health,
     check_docker_running,
     confirm_action,
@@ -412,7 +411,7 @@ def wait_for_services(timeout: int = 60, check_interval: float = 2.0) -> bool:
     return False
 
 
-def _detect_claude_config_dir() -> Optional[str]:
+def _detect_claude_config_dir() -> str | None:
     """Detect Claude configuration directory."""
     possible_paths = [
         # macOS

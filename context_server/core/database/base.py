@@ -3,7 +3,6 @@
 import logging
 from abc import ABC
 from contextlib import asynccontextmanager
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ class DatabaseManagerBase(ABC):
                     logger.error(f"Database transaction failed: {e}")
                     raise
 
-    async def execute_query(self, query: str, *args) -> Any:
+    async def execute_query(self, query: str, *args):
         """Execute a query with connection management."""
         async with self.connection() as conn:
             return await conn.execute(query, *args)
@@ -57,7 +56,7 @@ class DatabaseManagerBase(ABC):
         async with self.connection() as conn:
             return await conn.fetch(query, *args)
 
-    async def fetch_value(self, query: str, *args) -> Any:
+    async def fetch_value(self, query: str, *args):
         """Fetch a single value with connection management."""
         async with self.connection() as conn:
             return await conn.fetchval(query, *args)

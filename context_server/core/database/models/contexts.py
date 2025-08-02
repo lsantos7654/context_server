@@ -5,8 +5,8 @@ import logging
 import uuid
 from datetime import datetime
 
-from ..base import DatabaseManagerBase
-from ..utils import (
+from context_server.core.database.base import DatabaseManagerBase
+from context_server.core.database.utils import (
     convert_embedding_to_postgres,
     format_uuid,
     parse_metadata,

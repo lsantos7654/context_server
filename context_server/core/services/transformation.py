@@ -6,7 +6,7 @@ source of truth for result formatting and field standardization.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,11 @@ class TransformationService:
 
     def transform_to_compact_format(
         self,
-        results: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
         query: str = "",
         mode: str = "hybrid",
         execution_time_ms: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Transform full search results to compact MCP format.
 
         This is the single source of truth for transforming search results
@@ -111,8 +111,8 @@ class TransformationService:
         }
 
     def transform_code_to_compact_format(
-        self, results: List[Dict[str, Any]], query: str = "", execution_time_ms: int = 0
-    ) -> Dict[str, Any]:
+        self, results: list[dict[str, Any]], query: str = "", execution_time_ms: int = 0
+    ) -> dict[str, Any]:
         """Transform code search results to compact MCP format.
 
         This is the single source of truth for transforming code search results
@@ -159,7 +159,7 @@ class TransformationService:
             "note": "Code search using voyage-code-3 embeddings for enhanced code understanding.",
         }
 
-    def clean_search_result_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def clean_search_result_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
         """Clean and organize metadata into consistent structure for search results.
 
         Args:
@@ -176,8 +176,8 @@ class TransformationService:
         }
 
     def standardize_search_result_fields(
-        self, result: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, result: dict[str, Any]
+    ) -> dict[str, Any]:
         """Standardize field names and structures across all search results.
 
         Args:
@@ -204,8 +204,8 @@ class TransformationService:
         return standardized
 
     def standardize_code_search_result_fields(
-        self, result: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, result: dict[str, Any]
+    ) -> dict[str, Any]:
         """Standardize field names and structures for code search results.
 
         Args:

@@ -9,9 +9,9 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
-from .client import ContextServerClient, ContextServerError
-from .config import Config
-from .tools import ContextServerTools
+from context_server.mcp_server.client import ContextServerClient, ContextServerError
+from context_server.mcp_server.config import Config
+from context_server.mcp_server.tools import ContextServerTools
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

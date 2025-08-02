@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
@@ -36,8 +36,8 @@ class DeepCrawlConfig:
     include_external: bool = False
 
     # Intelligent features
-    keywords: List[str] = field(default_factory=list)
-    url_patterns: List[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    url_patterns: list[str] = field(default_factory=list)
     seo_threshold: float = 0.5
     content_threshold: float = 0.7
 
@@ -49,13 +49,13 @@ class DeepCrawlConfig:
     # Crawler settings
     word_count_threshold: int = 15
     page_timeout: int = 20000
-    excluded_tags: List[str] = field(
+    excluded_tags: list[str] = field(
         default_factory=lambda: ["nav", "footer", "header", "aside", "script", "style"]
     )
 
     @classmethod
     def for_documentation(
-        cls, keywords: Optional[List[str]] = None
+        cls, keywords: list[str] | None = None
     ) -> "DeepCrawlConfig":
         """Optimized configuration for documentation sites."""
         return cls(
@@ -84,7 +84,7 @@ class DeepCrawlConfig:
         )
 
     @classmethod
-    def for_focused(cls, keywords: List[str], max_pages: int = 25) -> "DeepCrawlConfig":
+    def for_focused(cls, keywords: list[str], max_pages: int = 25) -> "DeepCrawlConfig":
         """Configuration for focused, high-relevance crawling."""
         return cls(
             strategy_type="best_first",
@@ -118,7 +118,7 @@ class ExtractionResult:
         metadata: dict | None = None,
         error: str | None = None,
         extracted_pages: list | None = None,
-        individual_pages: List[PageResult] | None = None,
+        individual_pages: list[PageResult] | None = None,
     ):
         self.success = success
         self.content = content  # Will be empty for multi-page extractions
@@ -207,8 +207,8 @@ class Crawl4aiExtractor:
         self,
         url: str,
         max_pages: int = 50,
-        config: Optional[DeepCrawlConfig] = None,
-        keywords: Optional[List[str]] = None,
+        config: DeepCrawlConfig | None = None,
+        keywords: list[str] | None = None,
     ) -> ExtractionResult:
         """Extract content from URL with intelligent deep crawling support."""
         try:

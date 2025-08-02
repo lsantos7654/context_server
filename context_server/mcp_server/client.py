@@ -2,11 +2,11 @@
 
 import json
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 import httpx
 
-from .config import Config
+from context_server.mcp_server.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,8 @@ class ContextServerError(Exception):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
-        details: Optional[dict] = None,
+        status_code: int | None = None,
+        details: dict | None = None,
     ):
         self.message = message
         self.status_code = status_code
@@ -35,7 +35,7 @@ class ContextServerClient:
         self.base_url = config.context_server_url.rstrip("/")
 
     async def post(
-        self, endpoint: str, data: Optional[dict] = None, params: Optional[dict] = None
+        self, endpoint: str, data: dict | None = None, params: dict | None = None
     ) -> dict[str, Any]:
         """Make a POST request to the Context Server API."""
         url = f"{self.base_url}{endpoint}"
@@ -60,8 +60,8 @@ class ContextServerClient:
             raise ContextServerError(f"Request failed: {str(e)}")
 
     async def get(
-        self, endpoint: str, params: Optional[dict] = None
-    ) -> Union[dict[str, Any], list[Any]]:
+        self, endpoint: str, params: dict | None = None
+    ) -> dict[str, Any] | list[Any]:
         """Make a GET request to the Context Server API."""
         url = f"{self.base_url}{endpoint}"
 
@@ -79,7 +79,7 @@ class ContextServerClient:
         except Exception as e:
             raise ContextServerError(f"Request failed: {str(e)}")
 
-    async def delete(self, endpoint: str) -> Optional[dict[str, Any]]:
+    async def delete(self, endpoint: str) -> dict[str, Any] | None:
         """Make a DELETE request to the Context Server API."""
         url = f"{self.base_url}{endpoint}"
 
@@ -104,7 +104,7 @@ class ContextServerClient:
 
     def _handle_response(
         self, response: httpx.Response
-    ) -> Union[dict[str, Any], list[Any]]:
+    ) -> dict[str, Any] | list[Any]:
         """Handle HTTP response and extract JSON data."""
         try:
             if response.status_code >= 400:
