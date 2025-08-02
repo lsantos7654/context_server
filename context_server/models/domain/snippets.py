@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from ..validation import validate_range_fields
+
 
 @dataclass
 class CodeSnippet:
@@ -17,14 +19,7 @@ class CodeSnippet:
 
     def __post_init__(self):
         """Validate fields after initialization."""
-        if self.start_line is not None and self.start_line < 0:
-            raise ValueError("start_line must be non-negative")
-        if self.end_line is not None and self.end_line < 0:
-            raise ValueError("end_line must be non-negative")
-        if self.char_start is not None and self.char_start < 0:
-            raise ValueError("char_start must be non-negative")
-        if self.char_end is not None and self.char_end < 0:
-            raise ValueError("char_end must be non-negative")
+        validate_range_fields(self, ["start_line", "end_line", "char_start", "char_end"])
 
 
 __all__ = ["CodeSnippet"]

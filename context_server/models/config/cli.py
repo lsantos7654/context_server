@@ -48,9 +48,9 @@ class CLIConfig(BaseSettings):
             with open(config_path, "r") as f:
                 config_data = yaml.safe_load(f)
 
-            # Handle nested server config
+            # Handle nested server config (now Pydantic)
             if "server" in config_data:
-                config_data["server"] = ServerConfig(**config_data["server"])
+                config_data["server"] = ServerConfig.parse_obj(config_data["server"])
 
             # Handle Path objects
             if "config_dir" in config_data and isinstance(
@@ -79,6 +79,10 @@ class CLIConfig(BaseSettings):
 
         # Convert to dict for YAML serialization
         config_dict = self.model_dump()
+        
+        # Handle nested Pydantic models
+        if "server" in config_dict and hasattr(config_dict["server"], "dict"):
+            config_dict["server"] = config_dict["server"].dict()
 
         # Handle Path objects
         if isinstance(config_dict.get("config_dir"), Path):

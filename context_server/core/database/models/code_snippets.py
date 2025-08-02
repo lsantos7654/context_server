@@ -3,6 +3,7 @@
 import json
 import uuid
 
+from ..base import DatabaseManagerBase
 from ..utils import (
     convert_embedding_to_postgres,
     format_uuid,
@@ -11,11 +12,8 @@ from ..utils import (
 )
 
 
-class CodeSnippetManager:
+class CodeSnippetManager(DatabaseManagerBase):
     """Manages code snippet-related database operations."""
-
-    def __init__(self):
-        self.pool = None
 
     async def create_code_snippet(
         self,
@@ -64,7 +62,7 @@ class CodeSnippetManager:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                UPDATE code_snippets 
+                UPDATE code_snippets
                 SET document_id = $1
                 WHERE id = $2
                 """,

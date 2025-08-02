@@ -3,6 +3,7 @@
 import json
 import uuid
 
+from ..base import DatabaseManagerBase
 from ..utils import (
     convert_embedding_to_postgres,
     format_uuid,
@@ -11,11 +12,8 @@ from ..utils import (
 )
 
 
-class ChunkManager:
+class ChunkManager(DatabaseManagerBase):
     """Manages chunk-related database operations."""
-
-    def __init__(self):
-        self.pool = None
 
     async def create_chunk(
         self,
@@ -130,7 +128,7 @@ class ChunkManager:
                 snippet_rows = await conn.fetch(
                     """
                     SELECT id, content, snippet_type, preview
-                    FROM code_snippets 
+                    FROM code_snippets
                     WHERE id = ANY($1::uuid[])
                     """,
                     code_snippet_ids,

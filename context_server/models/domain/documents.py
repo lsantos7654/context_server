@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from context_server.models.domain.chunks import ProcessedChunk
 from context_server.models.domain.snippets import CodeSnippet
+from ..validation import validate_range_fields
 
 
 @dataclass
@@ -40,16 +41,10 @@ class DocumentStats:
 
     def __post_init__(self):
         """Validate fields after initialization."""
-        if self.total_documents < 0:
-            raise ValueError("total_documents must be non-negative")
-        if self.total_chunks < 0:
-            raise ValueError("total_chunks must be non-negative")
-        if self.total_code_snippets < 0:
-            raise ValueError("total_code_snippets must be non-negative")
-        if self.total_tokens < 0:
-            raise ValueError("total_tokens must be non-negative")
-        if self.processing_time_seconds < 0:
-            raise ValueError("processing_time_seconds must be non-negative")
+        validate_range_fields(self, [
+            "total_documents", "total_chunks", "total_code_snippets", 
+            "total_tokens", "processing_time_seconds"
+        ])
 
 
 __all__ = ["ProcessedDocument", "ProcessingResult", "DocumentStats"]

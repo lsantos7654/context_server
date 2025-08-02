@@ -3,14 +3,12 @@
 import json
 import uuid
 
+from ..base import DatabaseManagerBase
 from ..utils import format_uuid, parse_metadata, parse_uuid
 
 
-class DocumentManager:
+class DocumentManager(DatabaseManagerBase):
     """Manages document-related database operations."""
-
-    def __init__(self):
-        self.pool = None
 
     def _normalize_url(self, url: str) -> str:
         """Normalize URL to prevent duplicates (strip trailing slashes, etc.)."""

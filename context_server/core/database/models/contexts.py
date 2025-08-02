@@ -5,6 +5,7 @@ import logging
 import uuid
 from datetime import datetime
 
+from ..base import DatabaseManagerBase
 from ..utils import (
     convert_embedding_to_postgres,
     format_uuid,
@@ -15,11 +16,8 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
-class ContextManager:
+class ContextManager(DatabaseManagerBase):
     """Manages context-related database operations."""
-
-    def __init__(self):
-        self.pool = None
 
     async def create_context(
         self,
@@ -28,56 +26,54 @@ class ContextManager:
         embedding_model: str = "text-embedding-3-large",
     ) -> dict:
         """Create a new context."""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO contexts (name, description, embedding_model)
-                VALUES ($1, $2, $3)
-                RETURNING id, name, description, embedding_model, created_at, updated_at
-            """,
-                name,
-                description,
-                embedding_model,
-            )
+        row = await self.fetch_one(
+            """
+            INSERT INTO contexts (name, description, embedding_model)
+            VALUES ($1, $2, $3)
+            RETURNING id, name, description, embedding_model, created_at, updated_at
+        """,
+            name,
+            description,
+            embedding_model,
+        )
 
-            return {
+        return {
+            "id": format_uuid(row["id"]),
+            "name": row["name"],
+            "description": row["description"],
+            "embedding_model": row["embedding_model"],
+            "created_at": row["created_at"],
+            "document_count": 0,
+            "size_mb": 0.0,
+            "last_updated": row["updated_at"],
+        }
+
+    async def get_contexts(self) -> list[dict]:
+        """Get all contexts."""
+        rows = await self.fetch_many(
+            """
+            SELECT
+                c.id, c.name, c.description, c.embedding_model,
+                c.created_at, c.updated_at, c.document_count,
+                COALESCE(pg_size_pretty(pg_total_relation_size('chunks'))::text, '0 bytes') as size_mb
+            FROM contexts c
+            ORDER BY c.created_at DESC
+        """
+        )
+
+        return [
+            {
                 "id": format_uuid(row["id"]),
                 "name": row["name"],
                 "description": row["description"],
                 "embedding_model": row["embedding_model"],
                 "created_at": row["created_at"],
-                "document_count": 0,
+                "document_count": row["document_count"],
                 "size_mb": 0.0,
                 "last_updated": row["updated_at"],
             }
-
-    async def get_contexts(self) -> list[dict]:
-        """Get all contexts."""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    c.id, c.name, c.description, c.embedding_model,
-                    c.created_at, c.updated_at, c.document_count,
-                    COALESCE(pg_size_pretty(pg_total_relation_size('chunks'))::text, '0 bytes') as size_mb
-                FROM contexts c
-                ORDER BY c.created_at DESC
-            """
-            )
-
-            return [
-                {
-                    "id": format_uuid(row["id"]),
-                    "name": row["name"],
-                    "description": row["description"],
-                    "embedding_model": row["embedding_model"],
-                    "created_at": row["created_at"],
-                    "document_count": row["document_count"],
-                    "size_mb": 0.0,
-                    "last_updated": row["updated_at"],
-                }
-                for row in rows
-            ]
+            for row in rows
+        ]
 
     async def get_context_by_name(self, name: str) -> dict | None:
         """Get context by name."""

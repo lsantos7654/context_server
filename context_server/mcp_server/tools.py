@@ -615,9 +615,9 @@ class ContextServerTools:
             if language:
                 # Add language filter info to response for user information
                 result["language_filter"] = language
-                result["note"] = (
-                    f"Language filter '{language}' applied (results may not be language-specific)"
-                )
+                result[
+                    "note"
+                ] = f"Language filter '{language}' applied (results may not be language-specific)"
 
             logger.info(
                 f"Code search completed: {len(result.get('results', []))} results for '{query}' in {context_name}"

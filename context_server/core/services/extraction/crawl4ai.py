@@ -198,7 +198,9 @@ class Crawl4aiExtractor:
             return BestFirstCrawlingStrategy(**strategy_params)
         else:  # fallback to BFS
             # BFS/DFS strategies REQUIRE score_threshold parameter
-            strategy_params["score_threshold"] = 0.3  # Minimum score for URLs to be crawled
+            strategy_params[
+                "score_threshold"
+            ] = 0.3  # Minimum score for URLs to be crawled
             return BFSDeepCrawlStrategy(**strategy_params)
 
     async def extract_url(
@@ -267,11 +269,13 @@ class Crawl4aiExtractor:
                 if config.streaming:
                     logger.info("Using streaming mode for real-time processing")
 
-                logger.info(f"Starting crawl with strategy: {config.strategy_type}, max_depth: {config.max_depth}, max_pages: {config.max_pages}")
+                logger.info(
+                    f"Starting crawl with strategy: {config.strategy_type}, max_depth: {config.max_depth}, max_pages: {config.max_pages}"
+                )
                 results = await crawler.arun(url=normalized_url, config=crawler_config)
 
                 # Handle async generator for streaming mode
-                if hasattr(results, '__aiter__'):
+                if hasattr(results, "__aiter__"):
                     # It's an async generator, collect all results
                     collected_results = []
                     async for result in results:
@@ -279,7 +283,11 @@ class Crawl4aiExtractor:
                     results = collected_results
                 elif not isinstance(results, list):
                     # Handle single result
-                    results = [results] if hasattr(results, 'success') and results.success else []
+                    results = (
+                        [results]
+                        if hasattr(results, "success") and results.success
+                        else []
+                    )
 
                 extraction_time = (datetime.now() - start_time).total_seconds()
                 logger.info(
@@ -290,11 +298,15 @@ class Crawl4aiExtractor:
                 if results:
                     logger.info("🔍 Discovered pages:")
                     for i, result in enumerate(results[:10]):  # Show first 10
-                        logger.info(f"  {i+1}. {result.url} (success: {result.success})")
+                        logger.info(
+                            f"  {i+1}. {result.url} (success: {result.success})"
+                        )
                     if len(results) > 10:
                         logger.info(f"  ... and {len(results) - 10} more pages")
                 else:
-                    logger.warning("❌ No pages discovered - this indicates a crawling configuration issue")
+                    logger.warning(
+                        "❌ No pages discovered - this indicates a crawling configuration issue"
+                    )
 
                 # Validate results
                 if not results:

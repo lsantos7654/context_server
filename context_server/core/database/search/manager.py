@@ -3,14 +3,15 @@
 import json
 import uuid
 
+from ..base import DatabaseManagerBase
 from ..utils import format_uuid, parse_metadata, parse_uuid
 
 
-class SearchManager:
+class SearchManager(DatabaseManagerBase):
     """Manages all search-related database operations."""
 
     def __init__(self, summarization_service=None):
-        self.pool = None
+        super().__init__()
         self.summarization_service = summarization_service
 
     async def vector_search(
@@ -71,7 +72,7 @@ class SearchManager:
                     snippet_rows = await conn.fetch(
                         """
                         SELECT id, content, preview
-                        FROM code_snippets 
+                        FROM code_snippets
                         WHERE id = ANY($1::uuid[])
                         """,
                         code_snippet_ids,
@@ -148,7 +149,7 @@ class SearchManager:
                     snippet_rows = await conn.fetch(
                         """
                         SELECT id, content, preview
-                        FROM code_snippets 
+                        FROM code_snippets
                         WHERE id = ANY($1::uuid[])
                         """,
                         code_snippet_ids,
@@ -202,8 +203,8 @@ class SearchManager:
             rows = await conn.fetch(
                 """
                 SELECT
-                    cs.id, cs.content, d.url, 
-                    d.metadata as doc_metadata, cs.metadata as snippet_metadata, 
+                    cs.id, cs.content, d.url,
+                    d.metadata as doc_metadata, cs.metadata as snippet_metadata,
                     d.id as document_id,
                     1 - (cs.embedding <=> $2::halfvec) as similarity
                 FROM code_snippets cs

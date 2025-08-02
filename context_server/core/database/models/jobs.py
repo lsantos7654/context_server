@@ -5,16 +5,14 @@ import logging
 import uuid
 from typing import Any
 
+from ..base import DatabaseManagerBase
 from ..utils import format_uuid, parse_metadata, parse_uuid
 
 logger = logging.getLogger(__name__)
 
 
-class JobManager:
+class JobManager(DatabaseManagerBase):
     """Manages job-related database operations."""
-
-    def __init__(self):
-        self.pool = None
 
     async def create_job(
         self,
