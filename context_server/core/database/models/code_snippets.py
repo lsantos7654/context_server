@@ -26,11 +26,9 @@ class CodeSnippetManager(DatabaseManagerBase):
         content: str,
         embedding: list[float],
         metadata: dict = None,
-        start_line: int = None,
-        end_line: int = None,
-        char_start: int = None,
-        char_end: int = None,
         snippet_type: str = "code_block",
+        line_count: int = 0,
+        char_count: int = 0,
         preview: str = None,
     ) -> str:
         """Create a new code snippet with embedding and line tracking."""
@@ -40,8 +38,8 @@ class CodeSnippetManager(DatabaseManagerBase):
 
             snippet_id = await conn.fetchval(
                 """
-                INSERT INTO code_snippets (document_id, context_id, content, embedding, metadata, start_line, end_line, char_start, char_end, snippet_type, preview)
-                VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11)
+                INSERT INTO code_snippets (document_id, context_id, content, embedding, metadata, snippet_type, line_count, char_count, preview)
+                VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9)
                 RETURNING id
             """,
                 uuid.UUID(document_id) if document_id else None,
@@ -49,11 +47,9 @@ class CodeSnippetManager(DatabaseManagerBase):
                 content,
                 embedding_str,
                 json.dumps(metadata or {}),
-                start_line,
-                end_line,
-                char_start,
-                char_end,
                 snippet_type,
+                line_count,
+                char_count,
                 preview,
             )
 
@@ -135,7 +131,7 @@ class CodeSnippetManager(DatabaseManagerBase):
             query = """
                 SELECT
                     cs.id, cs.content, cs.metadata, cs.preview,
-                    cs.start_line, cs.end_line, cs.char_start, cs.char_end,
+                    cs.line_count, cs.char_count,
                     cs.snippet_type, cs.created_at, cs.document_id,
                     d.title as document_title, d.url as document_url
                 FROM code_snippets cs
@@ -160,10 +156,8 @@ class CodeSnippetManager(DatabaseManagerBase):
                 content=row["content"],
                 preview=row["preview"] or "",  # Use stored preview
                 snippet_type=row["snippet_type"],
-                start_line=row["start_line"],
-                end_line=row["end_line"],
-                char_start=row["char_start"],
-                char_end=row["char_end"],
+                line_count=row["line_count"] or 0,
+                char_count=row["char_count"] or 0,
                 metadata=parse_metadata(row["metadata"]),
                 # Document context fields
                 document_title=row["document_title"],

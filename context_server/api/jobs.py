@@ -36,8 +36,19 @@ async def get_job_status(
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Return structured job status response
-    return JobStatusResponse(**job_data)
+    # Convert JobDBResponse to JobStatusResponse
+    return JobStatusResponse(
+        id=job_data.id,
+        type=job_data.type,
+        context_id=job_data.context_id,
+        status=job_data.status,
+        progress=job_data.progress,
+        started_at=job_data.started_at,
+        updated_at=job_data.updated_at,
+        completed_at=job_data.completed_at,
+        error_message=job_data.error_message,
+        metadata=job_data.metadata,
+    )
 
 
 @router.get("/jobs/active", response_model=ActiveJobsResponse)

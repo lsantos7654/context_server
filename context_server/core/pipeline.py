@@ -493,10 +493,10 @@ class DocumentProcessor:
                         code_snippet = CodeSnippet(
                             content=snippet_info.content,
                             embedding=embedding,
+                            line_count=snippet_info.line_count,
+                            char_count=snippet_info.char_count,
                             metadata={
                                 "snippet_type": snippet_info.type,
-                                "char_count": snippet_info.char_count,
-                                "line_count": snippet_info.line_count,
                                 # Store original match info for placeholder creation
                                 "start_pos": snippet_info.start_pos,
                                 "end_pos": snippet_info.end_pos,

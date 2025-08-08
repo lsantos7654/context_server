@@ -174,31 +174,33 @@ def _merge_search_results(
 
     # Add vector results with weight
     for result in vector_results:
-        chunk_id = result["id"]
+        chunk_id = result.id
+        result_dict = result.model_dump() if hasattr(result, 'model_dump') else result
         result_map[chunk_id] = {
-            **result,
-            "vector_score": result["score"],
+            **result_dict,
+            "vector_score": result.score,
             "fulltext_score": 0.0,
-            "hybrid_score": result["score"] * 0.7,  # Weight vector results at 70%
+            "hybrid_score": result.score * 0.7,  # Weight vector results at 70%
         }
 
     # Add/update with full-text results
     for result in fulltext_results:
-        chunk_id = result["id"]
+        chunk_id = result.id
         if chunk_id in result_map:
             # Combine scores
-            result_map[chunk_id]["fulltext_score"] = result["score"]
+            result_map[chunk_id]["fulltext_score"] = result.score
             result_map[chunk_id]["hybrid_score"] = (
                 result_map[chunk_id]["vector_score"] * 0.7
-                + result["score"] * 0.3  # Weight full-text at 30%
+                + result.score * 0.3  # Weight full-text at 30%
             )
         else:
             # New result from full-text only
+            result_dict = result.model_dump() if hasattr(result, 'model_dump') else result
             result_map[chunk_id] = {
-                **result,
+                **result_dict,
                 "vector_score": 0.0,
-                "fulltext_score": result["score"],
-                "hybrid_score": result["score"] * 0.3,  # Only full-text score
+                "fulltext_score": result.score,
+                "hybrid_score": result.score * 0.3,  # Only full-text score
             }
 
     # Sort by hybrid score and return top results

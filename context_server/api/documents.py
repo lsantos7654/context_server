@@ -94,7 +94,7 @@ async def _process_document_background(
         async def _check_cancellation():
             """Check if job has been cancelled"""
             job_status = await db.get_job_status(job_id)
-            return job_status and job_status.get("status") == "cancelled"
+            return job_status and job_status.status == "cancelled"
 
         async def _process_with_cancellation_checks():
             # Check for cancellation before starting
@@ -115,7 +115,7 @@ async def _process_document_background(
             )
 
             logger.info(
-                f"Processing document: {document_data.source} for context {context['name']}"
+                f"Processing document: {document_data.source} for context {context.name}"
             )
 
             # Update job to processing status
@@ -210,10 +210,8 @@ async def _process_document_background(
                             content=snippet.content,
                             embedding=snippet.embedding,
                             metadata=snippet.metadata,
-                            start_line=snippet.start_line,
-                            end_line=snippet.end_line,
-                            char_start=snippet.char_start,
-                            char_end=snippet.char_end,
+                            line_count=snippet.line_count,
+                            char_count=snippet.char_count,
                             preview=preview,
                             snippet_type=snippet.metadata.get(
                                 "snippet_type", "code_block"
@@ -454,7 +452,7 @@ async def get_document_raw(
             raise HTTPException(status_code=404, detail="Document not found")
 
         # Handle pagination
-        full_content = document.get("content", "")
+        full_content = document.content
         full_content_length = len(full_content)
 
         # Calculate pagination
@@ -474,10 +472,15 @@ async def get_document_raw(
                 detail=f"Page {page_number} not found. Document has {total_pages} pages.",
             )
 
-        # Create paginated response
+        # Create paginated response - map indexed_at to created_at for DocumentContentResponse
+        document_dict = document.model_dump()
         paginated_document = {
-            **document,
+            "id": document_dict["id"],
+            "title": document_dict["title"],
+            "url": document_dict["url"],
             "content": page_content,
+            "document_type": document_dict.get("document_type", "cleaned"),
+            "created_at": document_dict["indexed_at"],  # Map indexed_at to created_at
             "full_content_length": full_content_length,
             "pagination": {
                 "page_number": page_number,
@@ -519,7 +522,7 @@ async def list_document_code_snippets(
         snippets = await db.get_code_snippets_by_document(doc_id, context.id)
 
         return CodeSnippetsResponse(
-            snippets=[CodeSnippetResponse(**snippet) for snippet in snippets],
+            snippets=[CodeSnippetResponse(**snippet.model_dump()) for snippet in snippets],
             total=len(snippets),
             document_id=doc_id,
         )
@@ -552,7 +555,7 @@ async def get_code_snippet(
         if not snippet:
             raise HTTPException(status_code=404, detail="Code snippet not found")
 
-        return CodeSnippetResponse(**snippet)
+        return CodeSnippetResponse(**snippet.model_dump())
 
     except HTTPException:
         raise
@@ -579,7 +582,7 @@ async def get_chunk(
         if not chunk:
             raise HTTPException(status_code=404, detail="Chunk not found")
 
-        return ChunkResponse(**chunk)
+        return ChunkResponse(**chunk.model_dump())
 
     except HTTPException:
         raise

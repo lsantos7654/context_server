@@ -12,7 +12,7 @@ class ProcessedDocument(BaseModel):
     url: str
     title: str
     content: str = Field(description="Original content")
-    cleaned_content: str = Field(description="Content with code snippet placeholders")
+    cleaned_content: str | None = Field(default=None, description="Content with code snippet placeholders")
     chunks: list[ProcessedChunk] = Field(default_factory=list)
     code_snippets: list[CodeSnippet] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)

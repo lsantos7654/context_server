@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 import httpx
-from pydantic import BaseModel, get_config
+from pydantic import BaseModel
 from rich.console import Console
 from rich.table import Table
 

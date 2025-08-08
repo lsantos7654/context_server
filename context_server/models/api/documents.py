@@ -89,11 +89,9 @@ class CodeSnippetResponse(BaseModel):
     id: str
     document_id: str | None = None
     content: str
-    start_line: int | None = None
-    end_line: int | None = None
-    char_start: int | None = None
-    char_end: int | None = None
     snippet_type: str = "code_block"
+    line_count: int = Field(default=0, description="Number of lines in the code snippet")
+    char_count: int = Field(default=0, description="Number of characters in the code snippet")
     document_title: str | None = None
     document_url: str | None = None
 

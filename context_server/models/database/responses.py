@@ -73,11 +73,9 @@ class CodeSnippetDBResponse(BaseModel):
     document_id: str | UUID
     context_id: str | UUID
     content: str
-    start_line: int | None = None
-    end_line: int | None = None
-    char_start: int | None = None
-    char_end: int | None = None
     snippet_type: str = "code_block"
+    line_count: int = Field(default=0, description="Number of lines in the code snippet")
+    char_count: int = Field(default=0, description="Number of characters in the code snippet")
     preview: str | None = None
     metadata: dict = Field(default_factory=dict)
     document_title: str | None = None
@@ -215,11 +213,9 @@ class CodeSnippetWithDocumentDBResponse(BaseModel):
     document_id: str | UUID
     context_id: str | UUID
     content: str
-    start_line: int | None = None
-    end_line: int | None = None
-    char_start: int | None = None
-    char_end: int | None = None
     snippet_type: str = "code_block"
+    line_count: int = Field(default=0, description="Number of lines in the code snippet")
+    char_count: int = Field(default=0, description="Number of characters in the code snippet")
     preview: str | None = None
     metadata: dict = Field(default_factory=dict)
 

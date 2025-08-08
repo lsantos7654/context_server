@@ -95,11 +95,9 @@ class SchemaManager:
                     content TEXT NOT NULL,
                     embedding halfvec(2048),  -- voyage-code-3 dimension
                     metadata JSONB DEFAULT '{}',
-                    start_line INTEGER,
-                    end_line INTEGER,
-                    char_start INTEGER,
-                    char_end INTEGER,
                     snippet_type VARCHAR(20) DEFAULT 'code_block',  -- 'code_block' or 'inline_code'
+                    line_count INTEGER NOT NULL DEFAULT 0,  -- Number of lines in code snippet
+                    char_count INTEGER NOT NULL DEFAULT 0,  -- Number of characters in code snippet
                     preview TEXT,  -- Meaningful code preview for display
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
@@ -124,6 +122,22 @@ class SchemaManager:
                 )
             """
             )
+
+            # Migration: Update code_snippets table structure if needed
+            await conn.execute("""
+                ALTER TABLE code_snippets 
+                ADD COLUMN IF NOT EXISTS line_count INTEGER DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS char_count INTEGER DEFAULT 0
+            """)
+            
+            # Migration: Remove unused columns if they exist
+            try:
+                await conn.execute("ALTER TABLE code_snippets DROP COLUMN IF EXISTS start_line")
+                await conn.execute("ALTER TABLE code_snippets DROP COLUMN IF EXISTS end_line") 
+                await conn.execute("ALTER TABLE code_snippets DROP COLUMN IF EXISTS char_start")
+                await conn.execute("ALTER TABLE code_snippets DROP COLUMN IF EXISTS char_end")
+            except Exception as e:
+                logger.warning(f"Migration warning (expected): {e}")
 
             # Create indexes for performance
             await conn.execute(
