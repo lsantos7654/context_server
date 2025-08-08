@@ -223,6 +223,8 @@ async def _process_document_background(
                             **snippet.metadata,
                             "content": snippet.content,
                             "uuid": real_snippet_id,
+                            "char_count": snippet.char_count,
+                            "line_count": snippet.line_count,
                         }
                         code_snippets_with_uuids.append(snippet_with_uuid)
 

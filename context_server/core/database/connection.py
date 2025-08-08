@@ -255,11 +255,9 @@ class DatabaseManager:
         content: str,
         embedding: list[float],
         metadata: dict = None,
-        start_line: int = None,
-        end_line: int = None,
-        char_start: int = None,
-        char_end: int = None,
         snippet_type: str = "code_block",
+        line_count: int = 0,
+        char_count: int = 0,
         preview: str = None,
     ) -> str:
         """Create a new code snippet with embedding and line tracking."""
@@ -269,11 +267,9 @@ class DatabaseManager:
             content,
             embedding,
             metadata,
-            start_line,
-            end_line,
-            char_start,
-            char_end,
             snippet_type,
+            line_count,
+            char_count,
             preview,
         )
 
