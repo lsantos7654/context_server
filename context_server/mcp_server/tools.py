@@ -1,9 +1,34 @@
 """MCP tools for Context Server integration."""
 
 import logging
-from typing import Any
 
 from context_server.mcp_server.client import ContextServerClient, ContextServerError
+from context_server.models.api.contexts import (
+    ContextDeleteResponse,
+    ContextListResponse,
+    ContextResponse,
+)
+from context_server.models.api.documents import (
+    ChunkResponse,
+    CodeSnippetResponse,
+    CodeSnippetsResponse,
+    DirectoryExtractionResponse,
+    DocumentContentResponse,
+    DocumentDeleteResponse,
+    DocumentsResponse,
+    FileProcessingResult,
+)
+from context_server.models.api.search import (
+    CompactCodeSearchResponse,
+    CompactSearchResponse,
+)
+from context_server.models.api.system import (
+    ActiveJobsResponse,
+    JobCancelResponse,
+    JobCleanupResponse,
+    JobCreateResponse,
+    JobStatusResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +47,7 @@ class ContextServerTools:
         name: str,
         description: str = "",
         embedding_model: str = "text-embedding-3-large",
-    ) -> dict[str, Any]:
+    ) -> ContextResponse:
         """Create a new context for storing documentation.
 
         Args:
@@ -31,7 +56,7 @@ class ContextServerTools:
             embedding_model: Embedding model to use for vector search
 
         Returns:
-            Dictionary with context information including ID, creation time, etc.
+            ContextResponse with context information including ID, creation time, etc.
 
         Raises:
             ContextServerError: If context creation fails or name already exists
@@ -49,35 +74,51 @@ class ContextServerTools:
 
             result = await self.client.post("/api/contexts", data)
             logger.info(f"Created context: {name}")
-            return result
+            # Client now returns typed response, so we can use it directly
+            if isinstance(result, ContextResponse):
+                return result
+            else:
+                # Fallback for unexpected response format
+                return ContextResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 409:
                 raise ContextServerError(f"Context '{name}' already exists")
             raise
 
-    async def list_contexts(self) -> list[dict[str, Any]]:
+    async def list_contexts(self) -> ContextListResponse:
         """List all available contexts.
 
         Returns:
-            List of context dictionaries with metadata
+            ContextListResponse with list of contexts and metadata
         """
         try:
             result = await self.client.get("/api/contexts")
-            logger.info(f"Listed {len(result)} contexts")
-            return result
+            # Client now returns typed response, so we can use it directly
+            if isinstance(result, ContextListResponse):
+                logger.info(f"Listed {len(result.contexts)} contexts")
+                return result
+            else:
+                # Fallback for unexpected response format
+                contexts = (
+                    [ContextResponse(**ctx) for ctx in result]
+                    if isinstance(result, list)
+                    else []
+                )
+                logger.info(f"Listed {len(contexts)} contexts")
+                return ContextListResponse(contexts=contexts, total=len(contexts))
 
         except ContextServerError:
             raise
 
-    async def get_context(self, context_name: str) -> dict[str, Any]:
+    async def get_context(self, context_name: str) -> ContextResponse:
         """Get detailed information about a specific context.
 
         Args:
             context_name: Name of the context to retrieve
 
         Returns:
-            Dictionary with context details including document count, size, etc.
+            ContextResponse with context details including document count, size, etc.
 
         Raises:
             ContextServerError: If context not found
@@ -85,21 +126,26 @@ class ContextServerTools:
         try:
             result = await self.client.get(f"/api/contexts/{context_name}")
             logger.info(f"Retrieved context: {context_name}")
-            return result
+            # Client now returns typed response, so we can use it directly
+            if isinstance(result, ContextResponse):
+                return result
+            else:
+                # Fallback for unexpected response format
+                return ContextResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
-    async def delete_context(self, context_name: str) -> dict[str, Any]:
+    async def delete_context(self, context_name: str) -> ContextDeleteResponse:
         """Delete a context and all its data.
 
         Args:
             context_name: Name of the context to delete
 
         Returns:
-            Dictionary indicating success
+            ContextDeleteResponse indicating success
 
         Raises:
             ContextServerError: If context not found or deletion fails
@@ -107,10 +153,15 @@ class ContextServerTools:
         try:
             result = await self.client.delete(f"/api/contexts/{context_name}")
             logger.info(f"Deleted context: {context_name}")
-            return result or {
-                "success": True,
-                "message": f"Context '{context_name}' deleted",
-            }
+
+            # Client now returns typed response, so we can use it directly
+            if isinstance(result, ContextDeleteResponse):
+                return result
+            else:
+                # Fallback for unexpected response format
+                return ContextDeleteResponse(
+                    success=True, message=f"Context '{context_name}' deleted"
+                )
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -121,7 +172,7 @@ class ContextServerTools:
 
     async def extract_url(
         self, context_name: str, url: str, max_pages: int = 50
-    ) -> dict[str, Any]:
+    ) -> JobCreateResponse:
         """Extract and index documentation from a website URL.
 
         Args:
@@ -130,7 +181,7 @@ class ContextServerTools:
             max_pages: Maximum number of pages to crawl
 
         Returns:
-            Dictionary with job information including job_id and status
+            JobCreateResponse with job information including job_id and status
 
         Raises:
             ContextServerError: If context not found or extraction fails
@@ -146,14 +197,16 @@ class ContextServerTools:
                 f"/api/contexts/{context_name}/documents", data
             )
             logger.info(f"Started URL extraction: {url} -> {context_name}")
-            return result
+            return JobCreateResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
                 raise ContextServerError(f"Context '{context_name}' not found")
             raise
 
-    async def extract_file(self, context_name: str, file_path: str) -> dict[str, Any]:
+    async def extract_file(
+        self, context_name: str, file_path: str
+    ) -> JobCreateResponse:
         """Extract and index content from a local file.
 
         Args:
@@ -161,7 +214,7 @@ class ContextServerTools:
             file_path: Path to local file (txt, md, rst supported)
 
         Returns:
-            Dictionary with job information including job_id and status
+            JobCreateResponse with job information including job_id and status
 
         Raises:
             ContextServerError: If context not found or file processing fails
@@ -173,7 +226,7 @@ class ContextServerTools:
                 f"/api/contexts/{context_name}/documents", data
             )
             logger.info(f"Started file extraction: {file_path} -> {context_name}")
-            return result
+            return JobCreateResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -187,7 +240,7 @@ class ContextServerTools:
         include_patterns: list[str] = None,
         exclude_patterns: list[str] = None,
         max_files: int = 100,
-    ) -> dict[str, Any]:
+    ) -> DirectoryExtractionResponse:
         """Extract and index content from a local directory.
 
         Args:
@@ -279,13 +332,15 @@ class ContextServerTools:
                             break
 
             if not files_to_process:
-                return {
-                    "success": True,
-                    "message": "No files found matching the criteria",
-                    "processed_files": 0,
-                    "failed_files": 0,
-                    "files": [],
-                }
+                return DirectoryExtractionResponse(
+                    success=True,
+                    message="No files found matching the criteria",
+                    processed_files=0,
+                    failed_files=0,
+                    total_files=0,
+                    directory_path=directory_path,
+                    files=[],
+                )
 
             logger.info(
                 f"Found {len(files_to_process)} files to process in {directory_path}"
@@ -308,11 +363,11 @@ class ContextServerTools:
                             logger.warning(f"Skipping binary file: {file_path}")
                             failed_files += 1
                             file_results.append(
-                                {
-                                    "file": str(file_path),
-                                    "status": "skipped",
-                                    "error": "Binary file",
-                                }
+                                FileProcessingResult(
+                                    file=str(file_path),
+                                    status="skipped",
+                                    error="Binary file",
+                                )
                             )
                             continue
 
@@ -333,11 +388,11 @@ class ContextServerTools:
 
                     processed_files += 1
                     file_results.append(
-                        {
-                            "file": str(file_path.relative_to(source_path)),
-                            "status": "processed",
-                            "job_id": result.get("job_id"),
-                        }
+                        FileProcessingResult(
+                            file=str(file_path.relative_to(source_path)),
+                            status="processed",
+                            job_id=result.get("job_id"),
+                        )
                     )
 
                     logger.debug(
@@ -347,11 +402,11 @@ class ContextServerTools:
                 except Exception as e:
                     failed_files += 1
                     file_results.append(
-                        {
-                            "file": str(file_path.relative_to(source_path)),
-                            "status": "failed",
-                            "error": str(e),
-                        }
+                        FileProcessingResult(
+                            file=str(file_path.relative_to(source_path)),
+                            status="failed",
+                            error=str(e),
+                        )
                     )
                     logger.error(f"Failed to process {file_path}: {e}")
 
@@ -359,15 +414,15 @@ class ContextServerTools:
                 f"Directory extraction completed: {processed_files} processed, {failed_files} failed"
             )
 
-            return {
-                "success": True,
-                "message": f"Processed {processed_files} files from directory",
-                "processed_files": processed_files,
-                "failed_files": failed_files,
-                "total_files": len(files_to_process),
-                "directory_path": directory_path,
-                "files": file_results,
-            }
+            return DirectoryExtractionResponse(
+                success=True,
+                message=f"Processed {processed_files} files from directory",
+                processed_files=processed_files,
+                failed_files=failed_files,
+                total_files=len(files_to_process),
+                directory_path=directory_path,
+                files=file_results,
+            )
 
         except ContextServerError:
             raise
@@ -379,7 +434,7 @@ class ContextServerTools:
 
     async def search_context(
         self, context_name: str, query: str, mode: str = "hybrid", limit: int = 10
-    ) -> dict[str, Any]:
+    ) -> CompactSearchResponse:
         """Search for content within a context with compact summaries.
 
         Args:
@@ -389,7 +444,7 @@ class ContextServerTools:
             limit: Maximum number of results to return
 
         Returns:
-            Dictionary with compact search results optimized for MCP responses
+            CompactSearchResponse with compact search results optimized for MCP responses
 
         Raises:
             ContextServerError: If context not found or search fails
@@ -405,7 +460,7 @@ class ContextServerTools:
             logger.info(
                 f"MCP search completed: {len(result.get('results', []))} compact results for '{query}' in {context_name}"
             )
-            return result
+            return CompactSearchResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -418,7 +473,7 @@ class ContextServerTools:
         doc_id: str,
         page_number: int = 1,
         page_size: int = 20000,
-    ) -> dict[str, Any]:
+    ) -> DocumentContentResponse:
         """Get raw content of a specific document with pagination support.
 
         Args:
@@ -474,7 +529,7 @@ class ContextServerTools:
             logger.info(
                 f"Retrieved document page {page_number}/{total_pages}: {doc_id} from {context_name}"
             )
-            return paginated_result
+            return DocumentContentResponse(**paginated_result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -486,7 +541,9 @@ class ContextServerTools:
                     )
             raise
 
-    async def get_code_snippets(self, context_name: str, doc_id: str) -> dict[str, Any]:
+    async def get_code_snippets(
+        self, context_name: str, doc_id: str
+    ) -> CodeSnippetsResponse:
         """Get all code snippets from a specific document.
 
         Args:
@@ -494,7 +551,7 @@ class ContextServerTools:
             doc_id: ID of the document
 
         Returns:
-            Dictionary with list of code snippets and metadata
+            CodeSnippetsResponse with list of code snippets and metadata
 
         Raises:
             ContextServerError: If context or document not found
@@ -507,7 +564,12 @@ class ContextServerTools:
             logger.info(
                 f"Retrieved {snippet_count} code snippets from document {doc_id} in {context_name}"
             )
-            return result
+            # Ensure result has required fields
+            if "total" not in result:
+                result["total"] = snippet_count
+            if "document_id" not in result:
+                result["document_id"] = doc_id
+            return CodeSnippetsResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -521,7 +583,7 @@ class ContextServerTools:
 
     async def get_code_snippet(
         self, context_name: str, snippet_id: str
-    ) -> dict[str, Any]:
+    ) -> CodeSnippetResponse:
         """Get a specific code snippet by ID.
 
         Args:
@@ -529,7 +591,7 @@ class ContextServerTools:
             snippet_id: ID of the code snippet to retrieve
 
         Returns:
-            Dictionary with code snippet content and metadata
+            CodeSnippetResponse with code snippet content and metadata
 
         Raises:
             ContextServerError: If context or snippet not found
@@ -539,7 +601,7 @@ class ContextServerTools:
                 f"/api/contexts/{context_name}/code-snippets/{snippet_id}"
             )
             logger.info(f"Retrieved code snippet: {snippet_id} from {context_name}")
-            return result
+            return CodeSnippetResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -551,7 +613,7 @@ class ContextServerTools:
                     )
             raise
 
-    async def get_chunk(self, context_name: str, chunk_id: str) -> dict[str, Any]:
+    async def get_chunk(self, context_name: str, chunk_id: str) -> ChunkResponse:
         """Get a specific chunk by ID with full content and metadata.
 
         Args:
@@ -559,7 +621,7 @@ class ContextServerTools:
             chunk_id: ID of the chunk to retrieve
 
         Returns:
-            Dictionary with chunk content and metadata
+            ChunkResponse with chunk content and metadata
 
         Raises:
             ContextServerError: If context or chunk not found
@@ -569,7 +631,7 @@ class ContextServerTools:
                 f"/api/contexts/{context_name}/chunks/{chunk_id}"
             )
             logger.info(f"Retrieved chunk: {chunk_id} from {context_name}")
-            return result
+            return ChunkResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -583,7 +645,7 @@ class ContextServerTools:
 
     async def search_code(
         self, context_name: str, query: str, language: str = None, limit: int = 10
-    ) -> dict[str, Any]:
+    ) -> CompactCodeSearchResponse:
         """Search for code snippets within a context using code-optimized embeddings.
 
         Args:
@@ -593,7 +655,7 @@ class ContextServerTools:
             limit: Maximum number of results to return
 
         Returns:
-            Dictionary with code search results optimized for development
+            CompactCodeSearchResponse with code search results optimized for development
 
         Raises:
             ContextServerError: If context not found or search fails
@@ -622,7 +684,7 @@ class ContextServerTools:
             logger.info(
                 f"Code search completed: {len(result.get('results', []))} results for '{query}' in {context_name}"
             )
-            return result
+            return CompactCodeSearchResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -631,14 +693,14 @@ class ContextServerTools:
 
     # Job Management Tools
 
-    async def get_job_status(self, job_id: str) -> dict[str, Any]:
+    async def get_job_status(self, job_id: str) -> JobStatusResponse:
         """Get the status of a document extraction job.
 
         Args:
             job_id: ID of the job to check (returned from extract_url or extract_file)
 
         Returns:
-            Dictionary with job status, progress, and metadata including current phase
+            JobStatusResponse with job status, progress, and metadata including current phase
 
         Raises:
             ContextServerError: If job not found
@@ -648,21 +710,21 @@ class ContextServerTools:
             logger.info(
                 f"Retrieved job status: {job_id} - {result.get('status', 'unknown')}"
             )
-            return result
+            return JobStatusResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
                 raise ContextServerError(f"Job '{job_id}' not found")
             raise
 
-    async def cancel_job(self, job_id: str) -> dict[str, Any]:
+    async def cancel_job(self, job_id: str) -> JobCancelResponse:
         """Cancel a running document extraction job.
 
         Args:
             job_id: ID of the job to cancel
 
         Returns:
-            Dictionary indicating cancellation success
+            JobCancelResponse indicating cancellation success
 
         Raises:
             ContextServerError: If job not found or cannot be cancelled
@@ -670,7 +732,7 @@ class ContextServerTools:
         try:
             result = await self.client.delete(f"/api/jobs/{job_id}")
             logger.info(f"Cancelled job: {job_id}")
-            return result
+            return JobCancelResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -679,14 +741,14 @@ class ContextServerTools:
                 raise ContextServerError(f"Cannot cancel job: {e.message}")
             raise
 
-    async def cleanup_completed_jobs(self, days: int = 7) -> dict[str, Any]:
+    async def cleanup_completed_jobs(self, days: int = 7) -> JobCleanupResponse:
         """Clean up completed/failed jobs older than specified days.
 
         Args:
             days: Remove jobs completed/failed more than this many days ago
 
         Returns:
-            Dictionary with cleanup statistics
+            JobCleanupResponse with cleanup statistics
 
         Raises:
             ContextServerError: If cleanup fails
@@ -696,19 +758,19 @@ class ContextServerTools:
             result = await self.client.post("/api/admin/jobs/cleanup", data)
             cleaned_count = result.get("deleted_count", 0)
             logger.info(f"Cleaned up {cleaned_count} old jobs")
-            return result
+            return JobCleanupResponse(**result)
 
         except ContextServerError:
             raise
 
-    async def get_active_jobs(self, context_id: str = None) -> dict[str, Any]:
+    async def get_active_jobs(self, context_id: str = None) -> ActiveJobsResponse:
         """Get all active jobs, optionally filtered by context.
 
         Args:
             context_id: Optional context ID to filter jobs
 
         Returns:
-            Dictionary with list of active jobs and total count
+            ActiveJobsResponse with list of active jobs and total count
 
         Raises:
             ContextServerError: If request fails
@@ -721,7 +783,7 @@ class ContextServerTools:
             result = await self.client.get("/api/jobs/active", params)
             active_count = len(result.get("active_jobs", []))
             logger.info(f"Retrieved {active_count} active jobs")
-            return result
+            return ActiveJobsResponse(**result)
 
         except ContextServerError:
             raise
@@ -730,7 +792,7 @@ class ContextServerTools:
 
     async def list_documents(
         self, context_name: str, limit: int = 50, offset: int = 0
-    ) -> dict[str, Any]:
+    ) -> DocumentsResponse:
         """List documents in a context.
 
         Args:
@@ -739,7 +801,7 @@ class ContextServerTools:
             offset: Number of documents to skip (for pagination)
 
         Returns:
-            Dictionary with list of documents and pagination info
+            DocumentsResponse with list of documents and pagination info
 
         Raises:
             ContextServerError: If context not found
@@ -751,7 +813,7 @@ class ContextServerTools:
             )
             doc_count = len(result.get("documents", []))
             logger.info(f"Listed {doc_count} documents from {context_name}")
-            return result
+            return DocumentsResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:
@@ -760,7 +822,7 @@ class ContextServerTools:
 
     async def delete_documents(
         self, context_name: str, document_ids: list[str]
-    ) -> dict[str, Any]:
+    ) -> DocumentDeleteResponse:
         """Delete specific documents from a context.
 
         Args:
@@ -768,7 +830,7 @@ class ContextServerTools:
             document_ids: List of document IDs to delete
 
         Returns:
-            Dictionary with deletion result and count
+            DocumentDeleteResponse with deletion result and count
 
         Raises:
             ContextServerError: If context not found or deletion fails
@@ -788,7 +850,16 @@ class ContextServerTools:
 
             deleted_count = result.get("deleted_count", len(document_ids))
             logger.info(f"Deleted {deleted_count} documents from {context_name}")
-            return result
+
+            # Ensure all required fields are present
+            if "message" not in result:
+                result["message"] = f"Deleted {deleted_count} documents"
+            if "context_name" not in result:
+                result["context_name"] = context_name
+            if "deleted_count" not in result:
+                result["deleted_count"] = deleted_count
+
+            return DocumentDeleteResponse(**result)
 
         except ContextServerError as e:
             if e.status_code == 404:

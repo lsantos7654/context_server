@@ -9,36 +9,36 @@ import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
+from pydantic import BaseModel, Field
 
 from context_server.core.services.extraction.utils import URLUtils
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class URLInfo:
+class URLInfo(BaseModel):
     """Information about a discovered URL."""
 
     url: str
-    priority: float = 1.0
+    priority: float = Field(default=1.0, ge=0.0, le=1.0)
     last_modified: datetime | None = None
     change_frequency: str | None = None
-    source: str = "unknown"  # "sitemap", "robots", "crawl"
-    relevance_score: float = 1.0
+    source: str = Field(
+        default="unknown", description="Source: sitemap, robots, or crawl"
+    )
+    relevance_score: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
-@dataclass
-class SitemapInfo:
+class SitemapInfo(BaseModel):
     """Information about a discovered sitemap."""
 
     url: str
     last_modified: datetime | None = None
-    urls_count: int = 0
+    urls_count: int = Field(default=0, ge=0)
 
 
 class RobotsTxtParser:

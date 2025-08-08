@@ -25,7 +25,7 @@ console = Console()
 
 @click.group()
 @rich_help_option("-h", "--help")
-def context():
+def context() -> None:
     """Manage documentation contexts and their documents.
 
     Contexts are containers that group related documents together.
@@ -46,7 +46,7 @@ def context():
 @click.argument("name")
 @click.option("--description", "-d", default="", help="Context description")
 @rich_help_option("-h", "--help")
-def create(name, description):
+def create(name, description) -> None:
     """Create a new documentation context.
 
     Creates a new context container for organizing and indexing
@@ -58,9 +58,9 @@ def create(name, description):
         description: Optional description for the context
     """
 
-    async def create_context():
+    async def create_context() -> None:
         client = APIClient()
-        success, response = await client.post(
+        success, response = await client.post_typed(
             "contexts",
             {
                 "name": name,
@@ -76,10 +76,18 @@ def create(name, description):
             table.add_column("Property")
             table.add_column("Value")
 
-            table.add_row("ID", response["id"])
-            table.add_row("Name", response["name"])
-            table.add_row("Description", response["description"] or "None")
-            table.add_row("Created", str(response["created_at"]))
+            # Handle both typed and raw responses for backward compatibility
+            if hasattr(response, "id"):
+                table.add_row("ID", response.id)
+                table.add_row("Name", response.name)
+                table.add_row("Description", response.description or "None")
+                table.add_row("Created", str(response.created_at))
+            else:
+                # Fallback for raw dict response
+                table.add_row("ID", response["id"])
+                table.add_row("Name", response["name"])
+                table.add_row("Description", response["description"] or "None")
+                table.add_row("Created", str(response["created_at"]))
 
             console.print(table)
         else:
@@ -101,7 +109,7 @@ def create(name, description):
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def list(output_format):
+def list(output_format) -> None:
     """List all available contexts.
 
     Displays all contexts with their document counts, descriptions,
@@ -111,12 +119,17 @@ def list(output_format):
         output_format: Output format (table or json)
     """
 
-    async def list_contexts():
+    async def list_contexts() -> None:
         client = APIClient()
-        success, response = await client.get("contexts")
+        success, response = await client.get_typed("contexts")
 
         if success:
-            contexts = response
+            # Handle both typed and raw responses for backward compatibility
+            if hasattr(response, "contexts"):
+                contexts = response.contexts
+            else:
+                # Fallback for raw list response
+                contexts = response
 
             if output_format == "json":
                 console.print(contexts)
@@ -134,13 +147,24 @@ def list(output_format):
                 table.add_column("Created")
 
                 for ctx in contexts:
-                    table.add_row(
-                        ctx["name"],
-                        ctx["description"] or "-",
-                        str(ctx["document_count"]),
-                        ctx["embedding_model"],
-                        str(ctx["created_at"])[:19],  # Truncate timestamp
-                    )
+                    # Handle both typed and raw contexts
+                    if hasattr(ctx, "name"):
+                        table.add_row(
+                            ctx.name,
+                            ctx.description or "-",
+                            str(ctx.document_count),
+                            ctx.embedding_model,
+                            str(ctx.created_at)[:19],  # Truncate timestamp
+                        )
+                    else:
+                        # Fallback for raw dict context
+                        table.add_row(
+                            ctx["name"],
+                            ctx["description"] or "-",
+                            str(ctx["document_count"]),
+                            ctx["embedding_model"],
+                            str(ctx["created_at"])[:19],  # Truncate timestamp
+                        )
 
                 console.print(table)
         else:
@@ -159,7 +183,7 @@ def list(output_format):
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
-def info(name, output_format):
+def info(name, output_format) -> None:
     """Show detailed information about a context.
 
     Displays comprehensive context metadata including document count,
@@ -170,7 +194,7 @@ def info(name, output_format):
         output_format: Output format (table or json)
     """
 
-    async def get_context_info():
+    async def get_context_info() -> None:
         client = APIClient()
         success, response = await client.get(f"contexts/{name}")
 
@@ -208,7 +232,7 @@ def info(name, output_format):
 @click.argument("name", shell_complete=complete_context_name)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 @rich_help_option("-h", "--help")
-def delete(name, force):
+def delete(name, force) -> None:
     """Delete a context and all its documents.
 
     Permanently removes the context and all associated documents,
@@ -225,7 +249,7 @@ def delete(name, force):
         echo_info("Context deletion cancelled")
         return
 
-    async def delete_context():
+    async def delete_context() -> None:
         client = APIClient()
         success, response = await client.delete(f"contexts/{name}")
 
@@ -244,7 +268,7 @@ def delete(name, force):
 @context.command()
 @click.argument("context_name", shell_complete=complete_context_name)
 @click.option("--output-file", "-o", type=click.Path(), help="Output file path")
-def export(context_name, output_file):
+def export(context_name, output_file) -> None:
     """Export context data to a file.
 
     Args:
@@ -255,7 +279,7 @@ def export(context_name, output_file):
     import json
     from pathlib import Path
 
-    async def export_context():
+    async def export_context() -> None:
         client = APIClient()
         success, response = await client.get(f"contexts/{context_name}/export")
 
@@ -281,7 +305,7 @@ def export(context_name, output_file):
 @context.command()
 @click.argument("import_file", type=click.Path(exists=True))
 @click.option("--force", is_flag=True, help="Overwrite existing context")
-def import_context(import_file, force):
+def import_context(import_file, force) -> None:
     """Import context data from a file.
 
     Args:
@@ -291,7 +315,7 @@ def import_context(import_file, force):
     import asyncio
     import json
 
-    async def import_context_data():
+    async def import_context_data() -> None:
         # Read import file
         try:
             with open(import_file, "r") as f:
@@ -325,7 +349,7 @@ def import_context(import_file, force):
     default="merge",
     help="Merge strategy",
 )
-def merge(source_context, target_context, strategy):
+def merge(source_context, target_context, strategy) -> None:
     """Merge one context into another.
 
     Args:
@@ -335,7 +359,7 @@ def merge(source_context, target_context, strategy):
     """
     import asyncio
 
-    async def merge_contexts():
+    async def merge_contexts() -> None:
         client = APIClient()
         merge_data = {
             "source_context_name": source_context,
@@ -367,7 +391,7 @@ def merge(source_context, target_context, strategy):
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def documents(context_name, offset, limit, output_format):
+def documents(context_name, offset, limit, output_format) -> None:
     """List documents in a context.
 
     Args:
@@ -377,7 +401,7 @@ def documents(context_name, offset, limit, output_format):
         output_format: Output format (table or json)
     """
 
-    async def list_documents():
+    async def list_documents() -> None:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(

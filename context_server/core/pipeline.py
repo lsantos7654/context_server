@@ -19,11 +19,11 @@ from context_server.core.services.extraction import Crawl4aiExtractor
 from context_server.core.services.llm import SummarizationService
 from context_server.core.text import TextChunker
 from context_server.models.domain.documents import (
-    CodeSnippet,
     ProcessedChunk,
     ProcessedDocument,
     ProcessingResult,
 )
+from context_server.models.domain.snippets import CodeSnippet, ExtractedCodeSnippet
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,11 @@ class CodeSnippetExtractor:
             r"(?:^|\n)((?:    .*(?:\n|$))+)", re.MULTILINE
         )
 
-    def extract_code_snippets(self, text: str) -> list[dict]:
+    def extract_code_snippets(self, text: str) -> list[ExtractedCodeSnippet]:
         """Extract code snippets from text content.
 
         Returns:
-            list[dict]: Code snippet info without IDs (IDs will be assigned after DB storage)
+            list[ExtractedCodeSnippet]: Typed code snippet models without embeddings
         """
         code_snippets = []
 
@@ -59,19 +59,19 @@ class CodeSnippetExtractor:
             code_content = match.group(2).strip()
 
             if self._is_valid_code_snippet(code_content):
-                snippet_info = {
-                    "content": code_content,
-                    "type": "code_block",
-                    "start_pos": match.start(),
-                    "end_pos": match.end(),
-                    "char_count": len(code_content),
-                    "line_count": len(code_content.split("\n")),
-                    "original_match": match.group(
+                snippet = ExtractedCodeSnippet(
+                    content=code_content,
+                    type="code_block",
+                    start_pos=match.start(),
+                    end_pos=match.end(),
+                    char_count=len(code_content),
+                    line_count=len(code_content.split("\n")),
+                    original_match=match.group(
                         0
                     ),  # Store original text for replacement
-                }
+                )
 
-                code_snippets.append(snippet_info)
+                code_snippets.append(snippet)
 
         # Extract inline code (only if significant)
         for match in self.inline_code_pattern.finditer(text):
@@ -79,19 +79,19 @@ class CodeSnippetExtractor:
 
             # Only extract inline code that looks substantial
             if len(code_content) > 20 and self._is_valid_code_snippet(code_content):
-                snippet_info = {
-                    "content": code_content,
-                    "type": "inline_code",
-                    "start_pos": match.start(),
-                    "end_pos": match.end(),
-                    "char_count": len(code_content),
-                    "line_count": 1,
-                    "original_match": match.group(
+                snippet = ExtractedCodeSnippet(
+                    content=code_content,
+                    type="inline_code",
+                    start_pos=match.start(),
+                    end_pos=match.end(),
+                    char_count=len(code_content),
+                    line_count=1,
+                    original_match=match.group(
                         0
                     ),  # Store original text for replacement
-                }
+                )
 
-                code_snippets.append(snippet_info)
+                code_snippets.append(snippet)
 
         logger.debug(f"Extracted {len(code_snippets)} code snippets")
         return code_snippets
@@ -481,7 +481,7 @@ class DocumentProcessor:
                     },
                 )
 
-            code_contents = [snippet["content"] for snippet in code_snippets_info]
+            code_contents = [snippet.content for snippet in code_snippets_info]
 
             try:
                 code_embeddings = await self.code_embedding_service.embed_batch(
@@ -491,16 +491,16 @@ class DocumentProcessor:
                 for snippet_info, embedding in zip(code_snippets_info, code_embeddings):
                     if embedding:  # Only include if embedding was successful
                         code_snippet = CodeSnippet(
-                            content=snippet_info["content"],
+                            content=snippet_info.content,
                             embedding=embedding,
                             metadata={
-                                "snippet_type": snippet_info["type"],
-                                "char_count": snippet_info["char_count"],
-                                "line_count": snippet_info["line_count"],
+                                "snippet_type": snippet_info.type,
+                                "char_count": snippet_info.char_count,
+                                "line_count": snippet_info.line_count,
                                 # Store original match info for placeholder creation
-                                "start_pos": snippet_info["start_pos"],
-                                "end_pos": snippet_info["end_pos"],
-                                "original_match": snippet_info["original_match"],
+                                "start_pos": snippet_info.start_pos,
+                                "end_pos": snippet_info.end_pos,
+                                "original_match": snippet_info.original_match,
                             },
                         )
                         code_snippets.append(code_snippet)
@@ -637,7 +637,7 @@ class DocumentProcessor:
         return processed_document
 
     def _create_temp_cleaned_content(
-        self, original_content: str, code_snippets_info: list[dict]
+        self, original_content: str, code_snippets_info: list[ExtractedCodeSnippet]
     ) -> str:
         """Create cleaned content with temporary placeholders for chunking purposes.
 
@@ -651,22 +651,22 @@ class DocumentProcessor:
 
         # Sort code snippets by start position in reverse order to avoid position shifts
         sorted_snippets = sorted(
-            code_snippets_info, key=lambda x: x.get("start_pos", 0), reverse=True
+            code_snippets_info, key=lambda x: x.start_pos, reverse=True
         )
 
         # Replace each code snippet with a temporary placeholder
         for i, snippet_info in enumerate(sorted_snippets):
-            original_match = snippet_info.get("original_match", "")
+            original_match = snippet_info.original_match
             if original_match and original_match in processed_text:
                 # Create temporary placeholder (will be replaced with real UUID later)
                 temp_id = f"temp_snippet_{i}"
                 preview = self.code_extractor._generate_code_preview(
-                    snippet_info["content"]
+                    snippet_info.content
                 )
 
                 placeholder = (
                     f"[CODE_SNIPPET: "
-                    f"size={snippet_info['char_count']}_chars, "
+                    f"size={snippet_info.char_count}_chars, "
                     f'preview="{preview}", '
                     f"snippet_id={temp_id}]"
                 )
@@ -675,7 +675,7 @@ class DocumentProcessor:
         return processed_text
 
     def _find_code_snippets_in_chunk(
-        self, chunk_content: str, code_snippets_info: list[dict]
+        self, chunk_content: str, code_snippets_info: list[ExtractedCodeSnippet]
     ) -> list[str]:
         """Find which code snippets are referenced in a chunk."""
         referenced_snippet_ids = []

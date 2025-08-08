@@ -57,7 +57,7 @@ def extract(
     output_path,
     include_patterns,
     exclude_patterns,
-):
+) -> None:
     """Extract documents from a source into a context.
 
     Processes documents from URLs, files, or local directories
@@ -102,7 +102,7 @@ def extract(
         )
         return
 
-    async def extract_document():
+    async def extract_document() -> None:
         try:
             echo_info(f"Extracting {source_type}: {source}")
             echo_info(f"Target context: {context_name}")
@@ -149,7 +149,7 @@ def extract(
 
 async def wait_for_extraction(
     job_id: str, check_interval: float = 2.0, timeout: int = 3600
-):
+) -> None:
     """Wait for extraction job to complete by polling job status API.
 
     Args:
@@ -419,7 +419,7 @@ async def handle_local_extraction(
     output_path: str = None,
     include_patterns: tuple = None,
     exclude_patterns: tuple = None,
-):
+) -> None:
     """Handle local directory extraction.
 
     Args:

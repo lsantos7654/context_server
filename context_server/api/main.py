@@ -3,19 +3,23 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from context_server.models.api.system import HealthResponse
-
+from context_server.models.api.system import (
+    DatabaseReinitializeResponse,
+    HealthResponse,
+    RootResponse,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
     # Startup
     logger.info("Starting Context Server API")
@@ -59,7 +63,7 @@ app.add_middleware(
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
+async def global_exception_handler(request, exc) -> JSONResponse:
     """Global exception handler."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
@@ -91,19 +95,21 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
 
-@app.get("/")
+@app.get("/", response_model=RootResponse)
 async def root():
     """Root endpoint."""
-    return {"message": "Context Server API", "version": "0.1.0", "docs": "/docs"}
+    return RootResponse(message="Context Server API", version="0.1.0", docs="/docs")
 
 
-@app.post("/admin/reinitialize-db")
+@app.post("/admin/reinitialize-db", response_model=DatabaseReinitializeResponse)
 async def reinitialize_database():
     """Reinitialize database schema (admin endpoint)."""
     try:
         if hasattr(app.state, "db_manager"):
             await app.state.db_manager.initialize()
-            return {"message": "Database reinitialized successfully"}
+            return DatabaseReinitializeResponse(
+                message="Database reinitialized successfully"
+            )
         else:
             raise HTTPException(
                 status_code=503, detail="Database manager not available"

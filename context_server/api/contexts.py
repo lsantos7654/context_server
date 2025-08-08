@@ -48,8 +48,8 @@ async def create_context(
         embedding_model=context_data.embedding_model,
     )
 
-    logger.info(f"Created context: {context['name']} (ID: {context['id']})")
-    return ContextResponse(**context)
+    logger.info(f"Created context: {context.name} (ID: {context.id})")
+    return ContextResponse(**context.model_dump())
 
 
 @router.get("", response_model=list[ContextResponse])
@@ -57,7 +57,7 @@ async def create_context(
 async def list_contexts(db: DatabaseManager = Depends(get_db_manager)):
     """List all contexts."""
     contexts = await db.get_contexts()
-    return [ContextResponse(**ctx) for ctx in contexts]
+    return [ContextResponse(**ctx.model_dump()) for ctx in contexts]
 
 
 @router.get("/{context_name}", response_model=ContextResponse)
@@ -68,7 +68,7 @@ async def get_context(context_name: str, db: DatabaseManager = Depends(get_db_ma
     if not context:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    return ContextResponse(**context)
+    return ContextResponse(**context.model_dump())
 
 
 @router.delete("/{context_name}", status_code=204)
@@ -82,7 +82,7 @@ async def delete_context(
     if not context:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    success = await db.delete_context(context["id"])
+    success = await db.delete_context(context.id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete context")
 
@@ -111,7 +111,7 @@ async def merge_contexts(
         logger.info(
             f"Merged contexts: {merge_data.source_contexts} -> {merge_data.target_context} ({merge_data.mode})"
         )
-        return ContextMergeResponse(**result)
+        return ContextMergeResponse(**result.model_dump())
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -134,7 +134,7 @@ async def export_context(
         export_data = await db.export_context(context_name)
 
         logger.info(f"Exported context: {context_name}")
-        return ContextExport(**export_data)
+        return ContextExport(**export_data.model_dump())
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -156,13 +156,13 @@ async def import_context(
     try:
         result = await db.import_context(
             {
-                "context_data": import_request.context_data.dict(),
+                "context_data": import_request.context_data.model_dump(),
                 "overwrite_existing": import_request.overwrite_existing,
             }
         )
 
-        logger.info(f"Imported context: {result['context_name']}")
-        return ContextImportResponse(**result)
+        logger.info(f"Imported context: {result.context_name}")
+        return ContextImportResponse(**result.model_dump())
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

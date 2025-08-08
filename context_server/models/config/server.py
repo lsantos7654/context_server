@@ -29,6 +29,7 @@ class ServerConfig(BaseModel):
 
     class Config:
         """Pydantic config."""
+
         extra = "forbid"
 
 

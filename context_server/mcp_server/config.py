@@ -1,7 +1,6 @@
 """Configuration for the MCP server."""
 
 import logging
-from typing import Any
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -16,7 +15,7 @@ DEFAULT_CONFIG = {
 class Config:
     """MCP server configuration."""
 
-    def __init__(self, **overrides: Any):
+    def __init__(self, **overrides: str | int | float):
         """Initialize configuration with optional overrides."""
         self.context_server_url = overrides.get(
             "context_server_url", DEFAULT_CONFIG["context_server_url"]

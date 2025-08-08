@@ -17,6 +17,20 @@ from context_server.core.database.models import (
 from context_server.core.database.operations import OperationsManager
 from context_server.core.database.schema import SchemaManager
 from context_server.core.database.search import SearchManager
+from context_server.models.database.responses import (
+    ChunkWithDocumentDBResponse,
+    CodeSearchResultDBResponse,
+    CodeSnippetDBResponse,
+    CodeSnippetWithDocumentDBResponse,
+    ContextDBResponse,
+    DocumentDBResponse,
+    DocumentsListDBResponse,
+    ExportDataDBResponse,
+    ImportResultDBResponse,
+    JobDBResponse,
+    MergeResultDBResponse,
+    SearchResultDBResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,15 +133,15 @@ class DatabaseManager:
         name: str,
         description: str = "",
         embedding_model: str = "text-embedding-3-large",
-    ) -> dict:
+    ) -> "ContextDBResponse":
         """Create a new context."""
         return await self.contexts.create_context(name, description, embedding_model)
 
-    async def get_contexts(self) -> list[dict]:
+    async def get_contexts(self) -> list["ContextDBResponse"]:
         """Get all contexts."""
         return await self.contexts.get_contexts()
 
-    async def get_context_by_name(self, name: str) -> dict | None:
+    async def get_context_by_name(self, name: str) -> "ContextDBResponse | None":
         """Get context by name."""
         return await self.contexts.get_context_by_name(name)
 
@@ -159,7 +173,7 @@ class DatabaseManager:
 
     async def get_documents(
         self, context_id: str, offset: int = 0, limit: int = 50
-    ) -> dict:
+    ) -> DocumentsListDBResponse:
         """Get documents in a context."""
         return await self.documents.get_documents(context_id, offset, limit)
 
@@ -169,11 +183,13 @@ class DatabaseManager:
 
     async def get_document_by_id(
         self, context_id: str, document_id: str, raw: bool = False
-    ) -> dict | None:
+    ) -> DocumentDBResponse | None:
         """Get document content by ID (cleaned by default, raw if requested)."""
         return await self.documents.get_document_by_id(context_id, document_id, raw)
 
-    async def get_document_content_by_id(self, document_id: str) -> dict | None:
+    async def get_document_content_by_id(
+        self, document_id: str
+    ) -> DocumentDBResponse | None:
         """Get document content by ID only (for expansion service)."""
         return await self.documents.get_document_content_by_id(document_id)
 
@@ -224,7 +240,7 @@ class DatabaseManager:
 
     async def get_chunk_by_id(
         self, chunk_id: str, context_id: str = None
-    ) -> dict | None:
+    ) -> ChunkWithDocumentDBResponse | None:
         """Get a specific chunk by ID with full content and metadata."""
         return await self.chunks.get_chunk_by_id(chunk_id, context_id)
 
@@ -263,7 +279,7 @@ class DatabaseManager:
 
     async def get_code_snippets_by_document(
         self, document_id: str, context_id: str = None
-    ) -> list[dict]:
+    ) -> list[CodeSnippetDBResponse]:
         """Get all code snippets for a document."""
         return await self.code_snippets.get_code_snippets_by_document(
             document_id, context_id
@@ -271,7 +287,7 @@ class DatabaseManager:
 
     async def get_code_snippet_by_id(
         self, snippet_id: str, context_id: str = None
-    ) -> dict | None:
+    ) -> CodeSnippetWithDocumentDBResponse | None:
         """Get a specific code snippet by ID."""
         return await self.code_snippets.get_code_snippet_by_id(snippet_id, context_id)
 
@@ -302,7 +318,7 @@ class DatabaseManager:
             job_id, progress, status, metadata, error_message
         )
 
-    async def get_job_status(self, job_id: str) -> dict | None:
+    async def get_job_status(self, job_id: str) -> "JobDBResponse | None":
         """Get job status and details."""
         return await self.jobs.get_job_status(job_id)
 
@@ -315,7 +331,9 @@ class DatabaseManager:
         """Mark job as completed or failed."""
         return await self.jobs.complete_job(job_id, result_data, error_message)
 
-    async def get_active_jobs(self, context_id: str | None = None) -> list[dict]:
+    async def get_active_jobs(
+        self, context_id: str | None = None
+    ) -> list["JobDBResponse"]:
         """Get all active (non-completed) jobs."""
         return await self.jobs.get_active_jobs(context_id)
 
@@ -334,7 +352,7 @@ class DatabaseManager:
         limit: int = 10,
         min_similarity: float = 0.7,
         embedding_type: str = "text",
-    ) -> list[dict]:
+    ) -> list[SearchResultDBResponse]:
         """Perform vector similarity search on text or code embeddings."""
         return await self.search.vector_search(
             context_id, query_embedding, limit, min_similarity, embedding_type
@@ -342,7 +360,7 @@ class DatabaseManager:
 
     async def fulltext_search(
         self, context_id: str, query: str, limit: int = 10
-    ) -> list[dict]:
+    ) -> list[SearchResultDBResponse]:
         """Perform full-text search."""
         return await self.search.fulltext_search(context_id, query, limit)
 
@@ -352,7 +370,7 @@ class DatabaseManager:
         query_embedding: list[float],
         limit: int = 10,
         min_similarity: float = 0.7,
-    ) -> list[dict]:
+    ) -> list[CodeSearchResultDBResponse]:
         """Perform vector similarity search on code snippets."""
         return await self.search.vector_search_code_snippets(
             context_id, query_embedding, limit, min_similarity
@@ -360,7 +378,7 @@ class DatabaseManager:
 
     async def fulltext_search_code_snippets(
         self, context_id: str, query: str, limit: int = 10
-    ) -> list[dict]:
+    ) -> list[CodeSearchResultDBResponse]:
         """Perform full-text search on code snippets."""
         return await self.search.fulltext_search_code_snippets(context_id, query, limit)
 
@@ -393,15 +411,15 @@ class DatabaseManager:
         )
 
     # Context Export/Import/Merge Operations
-    async def export_context(self, context_name: str) -> dict:
+    async def export_context(self, context_name: str) -> ExportDataDBResponse:
         """Export complete context data for backup/migration."""
         context = await self.get_context_by_name(context_name)
         if not context:
             raise ValueError(f"Context '{context_name}' not found")
 
-        return await self.contexts.export_context_data(context["id"])
+        return await self.contexts.export_context_data(context.id)
 
-    async def import_context(self, import_request: dict) -> dict:
+    async def import_context(self, import_request: dict) -> ImportResultDBResponse:
         """Import context data from export."""
         context_data = import_request["context_data"]
         overwrite_existing = import_request.get("overwrite_existing", False)
@@ -410,7 +428,7 @@ class DatabaseManager:
 
     async def merge_contexts(
         self, source_contexts: list[str], target_context: str, mode: str
-    ) -> dict:
+    ) -> MergeResultDBResponse:
         """Merge multiple contexts into a target context."""
         # Get source context IDs
         source_context_ids = []
@@ -418,7 +436,7 @@ class DatabaseManager:
             context = await self.get_context_by_name(source_name)
             if not context:
                 raise ValueError(f"Source context '{source_name}' not found")
-            source_context_ids.append(context["id"])
+            source_context_ids.append(context.id)
 
         # Get or create target context
         target_context_data = await self.get_context_by_name(target_context)
@@ -429,7 +447,7 @@ class DatabaseManager:
             )
 
         return await self.contexts.merge_contexts(
-            source_context_ids, target_context_data["id"], mode
+            source_context_ids, target_context_data.id, mode
         )
 
 

@@ -1,9 +1,53 @@
 """Export and import API models for context data."""
 
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class ExportedContext(BaseModel):
+    """Exported context metadata."""
+
+    id: str
+    name: str
+    description: str
+    embedding_model: str
+    created_at: datetime
+    # Allow additional fields for raw export data
+    model_config = {"extra": "allow"}
+
+
+class ExportedDocument(BaseModel):
+    """Exported document data."""
+
+    id: str
+    url: str
+    title: str
+    content: str
+    indexed_at: datetime
+    # Allow additional fields for raw export data
+    model_config = {"extra": "allow"}
+
+
+class ExportedChunk(BaseModel):
+    """Exported chunk data."""
+
+    id: str
+    document_id: str
+    content: str
+    chunk_index: int
+    # Allow additional fields including embeddings
+    model_config = {"extra": "allow"}
+
+
+class ExportedCodeSnippet(BaseModel):
+    """Exported code snippet data."""
+
+    id: str
+    document_id: str
+    content: str
+    # Allow additional fields including embeddings
+    model_config = {"extra": "allow"}
 
 
 class ContextExport(BaseModel):
@@ -12,14 +56,14 @@ class ContextExport(BaseModel):
     schema_version: str = Field(
         "1.0", description="Export schema version for compatibility"
     )
-    context: dict[str, Any] = Field(
+    context: ExportedContext = Field(
         ..., description="Context metadata and configuration"
     )
-    documents: list[dict[str, Any]] = Field(
+    documents: list[ExportedDocument] = Field(
         ..., description="All documents with metadata"
     )
-    chunks: list[dict[str, Any]] = Field(..., description="All chunks with embeddings")
-    code_snippets: list[dict[str, Any]] = Field(
+    chunks: list[ExportedChunk] = Field(..., description="All chunks with embeddings")
+    code_snippets: list[ExportedCodeSnippet] = Field(
         ..., description="All code snippets with embeddings"
     )
     exported_at: datetime = Field(..., description="Timestamp when export was created")
@@ -78,6 +122,10 @@ class ContextMergeResponse(BaseModel):
 
 
 __all__ = [
+    "ExportedContext",
+    "ExportedDocument",
+    "ExportedChunk",
+    "ExportedCodeSnippet",
     "ContextExport",
     "ContextImportRequest",
     "ContextImportResponse",

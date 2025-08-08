@@ -18,7 +18,7 @@ console = Console()
 
 @click.group()
 @rich_help_option("-h", "--help")
-def job():
+def job() -> None:
     """Manage extraction and processing jobs.
 
     Monitor ongoing extractions, check job status, and clean up completed jobs.
@@ -35,10 +35,10 @@ def job():
 @job.command()
 @click.option("--context", help="Filter jobs by context name")
 @rich_help_option("-h", "--help")
-def list(context):
+def list(context) -> None:
     """List all active jobs."""
 
-    async def list_jobs():
+    async def list_jobs() -> None:
         try:
             params = {}
             if context:
@@ -119,10 +119,10 @@ def list(context):
 @click.argument("job_id")
 @click.option("--watch", "-w", is_flag=True, help="Watch job progress continuously")
 @rich_help_option("-h", "--help")
-def status(job_id, watch):
+def status(job_id, watch) -> None:
     """Get detailed status of a specific job."""
 
-    async def get_job_status():
+    async def get_job_status() -> None:
         try:
             if watch:
                 with Progress(
@@ -298,10 +298,10 @@ def status(job_id, watch):
     "--force", "-f", is_flag=True, help="Force cancellation without confirmation"
 )
 @rich_help_option("-h", "--help")
-def cancel(job_id, force):
+def cancel(job_id, force) -> None:
     """Cancel a running job."""
 
-    async def cancel_job():
+    async def cancel_job() -> None:
         try:
             if not force:
                 if not click.confirm(f"Are you sure you want to cancel job {job_id}?"):
@@ -340,10 +340,10 @@ def cancel(job_id, force):
 )
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
 @rich_help_option("-h", "--help")
-def cleanup(days, force):
+def cleanup(days, force) -> None:
     """Clean up old completed and failed jobs."""
 
-    async def cleanup_jobs():
+    async def cleanup_jobs() -> None:
         try:
             if not force:
                 if not click.confirm(

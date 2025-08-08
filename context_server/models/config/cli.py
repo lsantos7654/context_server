@@ -79,10 +79,10 @@ class CLIConfig(BaseSettings):
 
         # Convert to dict for YAML serialization
         config_dict = self.model_dump()
-        
+
         # Handle nested Pydantic models
-        if "server" in config_dict and hasattr(config_dict["server"], "dict"):
-            config_dict["server"] = config_dict["server"].dict()
+        if "server" in config_dict and hasattr(config_dict["server"], "model_dump"):
+            config_dict["server"] = config_dict["server"].model_dump()
 
         # Handle Path objects
         if isinstance(config_dict.get("config_dir"), Path):

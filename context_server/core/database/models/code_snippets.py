@@ -10,6 +10,10 @@ from context_server.core.database.utils import (
     parse_metadata,
     parse_uuid,
 )
+from context_server.models.database.responses import (
+    CodeSnippetDBResponse,
+    CodeSnippetWithDocumentDBResponse,
+)
 
 
 class CodeSnippetManager(DatabaseManagerBase):
@@ -72,7 +76,7 @@ class CodeSnippetManager(DatabaseManagerBase):
 
     async def get_code_snippets_by_document(
         self, document_id: str, context_id: str = None
-    ) -> list[dict]:
+    ) -> list[CodeSnippetDBResponse]:
         """Get all code snippets for a document."""
         async with self.pool.acquire() as conn:
             query = """
@@ -101,26 +105,31 @@ class CodeSnippetManager(DatabaseManagerBase):
                 line_count = len([line for line in lines if line.strip()])
 
                 result.append(
-                    {
-                        "id": format_uuid(row["id"]),
-                        "content": row["content"],
-                        "preview": row["preview"] or "",  # Use stored preview
-                        "type": row["snippet_type"],
-                        "start_line": row["start_line"],
-                        "end_line": row["end_line"],
-                        "char_start": row["char_start"],
-                        "char_end": row["char_end"],
-                        "metadata": parse_metadata(row["metadata"]),
-                        "created_at": row["created_at"],
-                        "line_count": line_count,
-                    }
+                    CodeSnippetDBResponse(
+                        id=format_uuid(row["id"]),
+                        document_id=uuid.UUID(
+                            document_id
+                        ),  # Use the passed document_id
+                        context_id=row.get("context_id") or context_id,
+                        content=row["content"],
+                        preview=row["preview"] or "",  # Use stored preview
+                        snippet_type=row["snippet_type"],
+                        start_line=row["start_line"],
+                        end_line=row["end_line"],
+                        char_start=row["char_start"],
+                        char_end=row["char_end"],
+                        metadata=parse_metadata(row["metadata"]),
+                        # Extra fields for compatibility
+                        created_at=row["created_at"],
+                        line_count=line_count,
+                    )
                 )
 
             return result
 
     async def get_code_snippet_by_id(
         self, snippet_id: str, context_id: str = None
-    ) -> dict | None:
+    ) -> CodeSnippetWithDocumentDBResponse | None:
         """Get a specific code snippet by ID."""
         async with self.pool.acquire() as conn:
             query = """
@@ -144,21 +153,24 @@ class CodeSnippetManager(DatabaseManagerBase):
             if not row:
                 return None
 
-            return {
-                "id": format_uuid(row["id"]),
-                "document_id": format_uuid(row["document_id"]),
-                "content": row["content"],
-                "preview": row["preview"] or "",  # Use stored preview
-                "type": row["snippet_type"],
-                "start_line": row["start_line"],
-                "end_line": row["end_line"],
-                "char_start": row["char_start"],
-                "char_end": row["char_end"],
-                "metadata": parse_metadata(row["metadata"]),
-                "created_at": row["created_at"],
-                "document_title": row["document_title"],
-                "document_url": row["document_url"],
-            }
+            return CodeSnippetWithDocumentDBResponse(
+                id=format_uuid(row["id"]),
+                document_id=format_uuid(row["document_id"]),
+                context_id=row.get("context_id") or context_id,
+                content=row["content"],
+                preview=row["preview"] or "",  # Use stored preview
+                snippet_type=row["snippet_type"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                char_start=row["char_start"],
+                char_end=row["char_end"],
+                metadata=parse_metadata(row["metadata"]),
+                # Document context fields
+                document_title=row["document_title"],
+                document_url=row["document_url"],
+                # Extra fields for compatibility
+                created_at=row["created_at"],
+            )
 
 
 __all__ = ["CodeSnippetManager"]

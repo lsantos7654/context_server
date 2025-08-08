@@ -42,7 +42,7 @@ POSTGRES_CONTAINER = "context_server-postgres-1"
 
 @click.group()
 @rich_help_option("-h", "--help")
-def server():
+def server() -> None:
     """Manage Context Server Docker services and database.
 
     Commands for controlling the lifecycle of Context Server services
@@ -59,7 +59,7 @@ def server():
 
 @server.command()
 @rich_help_option("-h", "--help")
-def up():
+def up() -> None:
     """Start the Context Server services.
 
     Starts PostgreSQL database and FastAPI server containers with fresh builds.
@@ -109,7 +109,7 @@ def up():
 
 @server.command()
 @rich_help_option("-h", "--help")
-def down():
+def down() -> None:
     """Stop the Context Server services.
 
     Stops all running Docker containers for the Context Server.
@@ -145,7 +145,7 @@ def down():
 
 @server.command()
 @rich_help_option("-h", "--help")
-def restart():
+def restart() -> None:
     """Restart the Context Server services.
 
     Stops and then starts all services with fresh builds.
@@ -197,7 +197,7 @@ def restart():
     "--tail", default=100, help="Number of lines to show from the end of logs"
 )
 @rich_help_option("-h", "--help")
-def logs(service, follow, tail):
+def logs(service, follow, tail) -> None:
     """Show service logs.
 
     Args:
@@ -250,7 +250,7 @@ def logs(service, follow, tail):
 @server.command()
 @click.option("--wait", is_flag=True, help="Wait for services to be ready")
 @rich_help_option("-h", "--help")
-def status(wait):
+def status(wait) -> None:
     """Check server status and health.
 
     Shows status of Context Server, Docker services, and MCP server.
@@ -285,7 +285,7 @@ def status(wait):
             echo_error("API failed to become ready")
     else:
 
-        async def check_health():
+        async def check_health() -> None:
             healthy, error = await check_api_health()
             if healthy:
                 echo_success("API is healthy")
@@ -322,7 +322,7 @@ def status(wait):
 @server.command()
 @click.option("--database", default="context_server", help="Database name")
 @click.option("--user", default="context_user", help="Database user")
-def shell(database, user):
+def shell(database, user) -> None:
     """Connect to the PostgreSQL database shell.
 
     Args:

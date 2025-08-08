@@ -6,10 +6,22 @@ from pathlib import Path
 
 import click
 import httpx
+from pydantic import BaseModel, get_config
 from rich.console import Console
 from rich.table import Table
 
-from context_server.cli.config import get_api_url, get_config
+from context_server.cli.config import get_api_url
+from context_server.models.api.contexts import ContextListResponse, ContextResponse
+from context_server.models.api.documents import (
+    DocumentContentResponse,
+    DocumentsResponse,
+)
+from context_server.models.api.search import (
+    CodeSearchResponse,
+    CompactCodeSearchResponse,
+    CompactSearchResponse,
+    SearchResponse,
+)
 
 console = Console()
 
@@ -215,6 +227,80 @@ class APIClient:
         except Exception as e:
             return False, f"Request failed: {e}"
 
+    def parse_response(
+        self, endpoint: str, method: str, raw_response: dict | list
+    ) -> BaseModel | dict | list:
+        """Parse raw HTTP response into appropriate Pydantic model based on endpoint."""
+        try:
+            # Handle list responses (mainly for contexts)
+            if isinstance(raw_response, list):
+                if "contexts" in endpoint:
+                    contexts = [ContextResponse(**ctx) for ctx in raw_response]
+                    return ContextListResponse(contexts=contexts, total=len(contexts))
+                return raw_response  # Fallback for other lists
+
+            # Handle dict responses based on endpoint patterns
+            if not isinstance(raw_response, dict):
+                return raw_response
+
+            # Context endpoints
+            if "contexts" in endpoint:
+                if method == "POST":
+                    return ContextResponse(**raw_response)
+                elif method == "GET" and not endpoint.endswith("contexts"):
+                    return ContextResponse(**raw_response)
+                elif method == "DELETE":
+                    # Return the raw response for delete operations (typically success messages)
+                    return raw_response
+
+            # Document endpoints
+            elif "documents" in endpoint:
+                if method == "GET":
+                    if "documents" in endpoint and endpoint.endswith("documents"):
+                        return DocumentsResponse(**raw_response)
+                    else:
+                        return DocumentContentResponse(**raw_response)
+
+            # Search endpoints
+            elif "search" in endpoint:
+                if "/code" in endpoint:
+                    # Check if compact format was requested
+                    if "format=compact" in str(endpoint):
+                        return CompactCodeSearchResponse(**raw_response)
+                    return CodeSearchResponse(**raw_response)
+                else:
+                    # Check if compact format was requested
+                    if "format=compact" in str(endpoint):
+                        return CompactSearchResponse(**raw_response)
+                    return SearchResponse(**raw_response)
+
+            # Fallback to raw response for unknown endpoints
+            return raw_response
+
+        except Exception as e:
+            # Return raw response as fallback if parsing fails
+            return raw_response
+
+    async def get_typed(
+        self, endpoint: str, params: dict = None
+    ) -> tuple[bool, BaseModel | dict | list | str]:
+        """Make GET request and return typed Pydantic model when possible."""
+        success, response = await self.get(endpoint, params)
+        if success and isinstance(response, (dict, list)):
+            parsed = self.parse_response(endpoint, "GET", response)
+            return success, parsed
+        return success, response
+
+    async def post_typed(
+        self, endpoint: str, data: dict = None
+    ) -> tuple[bool, BaseModel | dict | list | str]:
+        """Make POST request and return typed Pydantic model when possible."""
+        success, response = await self.post(endpoint, data)
+        if success and isinstance(response, (dict, list)):
+            parsed = self.parse_response(endpoint, "POST", response)
+            return success, parsed
+        return success, response
+
     async def delete(
         self, endpoint: str, data: dict = None
     ) -> tuple[bool, dict | list | str]:
@@ -242,6 +328,16 @@ class APIClient:
         except Exception as e:
             return False, f"Request failed: {e}"
 
+    async def delete_typed(
+        self, endpoint: str, data: dict = None
+    ) -> tuple[bool, BaseModel | dict | list | str]:
+        """Make DELETE request and return typed Pydantic model when possible."""
+        success, response = await self.delete(endpoint, data)
+        if success and isinstance(response, (dict, list)):
+            parsed = self.parse_response(endpoint, "DELETE", response)
+            return success, parsed
+        return success, response
+
 
 async def get_context_names() -> list[str]:
     """Get list of available context names from the server."""
@@ -263,7 +359,7 @@ def get_context_names_sync() -> list[str]:
         return []
 
 
-def complete_context_name(ctx, param, incomplete):
+def complete_context_name(ctx, param, incomplete) -> list[str]:
     """Complete context names by fetching from server."""
     context_names = get_context_names_sync()
     return [name for name in context_names if name.startswith(incomplete)]

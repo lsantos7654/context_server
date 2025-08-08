@@ -9,6 +9,7 @@ This package contains all Pydantic models organized by domain:
 # Export all models for convenient importing
 from context_server.models.api.contexts import *
 from context_server.models.api.documents import *
+from context_server.models.api.export import *
 from context_server.models.api.search import *
 from context_server.models.api.system import *
 from context_server.models.config.cli import *
@@ -26,16 +27,37 @@ __all__ = [
     "DocumentResponse",
     "DocumentsResponse",
     "DocumentDelete",
+    "DocumentContentResponse",
+    "ChunkResponse",
+    "CodeSnippetResponse",
+    "CodeSnippetsResponse",
+    "DocumentDeleteResponse",
     "SearchRequest",
     "SearchResult",
     "CodeSearchResult",
     "SearchResponse",
     "CodeSearchResponse",
+    "LogLevel",
     "LogEntry",
     "LogsResponse",
     "JobStatus",
+    "JobCreateResponse",
+    "JobCancelResponse",
+    "JobCleanupResponse",
+    "ActiveJobsResponse",
+    "JobStatusResponse",
     "SystemStatus",
     "HealthResponse",
+    "RootResponse",
+    "DatabaseReinitializeResponse",
+    "ExportedContext",
+    "ExportedDocument",
+    "ExportedChunk",
+    "ExportedCodeSnippet",
+    "ContextExport",
+    "ContextImportRequest",
+    "ContextImportResponse",
+    "ContextMergeResponse",
     "SourceType",
     "SearchMode",
     "MergeMode",
@@ -43,6 +65,7 @@ __all__ = [
     "TextChunk",
     "ProcessedChunk",
     "CodeSnippet",
+    "ExtractedCodeSnippet",
     "ProcessedDocument",
     "ProcessingResult",
     "DocumentStats",

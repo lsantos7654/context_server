@@ -53,6 +53,39 @@ class CodeSearchResult(BaseModel):
         exclude_none = True
 
 
+class CodeSnippetInfo(BaseModel):
+    """Information about a code snippet in compact search results."""
+
+    id: str
+    lines: int
+    chars: int
+    preview: str
+
+
+class CompactSearchResultItem(BaseModel):
+    """Individual compact search result item."""
+
+    id: str | None = None
+    document_id: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    score: float | None = None
+    url: str | None = None
+    code_snippets_count: int = 0
+    code_snippet_ids: list[CodeSnippetInfo] = Field(default_factory=list)
+
+
+class CompactCodeSearchResultItem(BaseModel):
+    """Individual compact code search result item."""
+
+    id: str | None = None
+    document_id: str | None = None
+    content: str | None = None
+    score: float | None = None
+    url: str | None = None
+    line_count: int = 0
+
+
 class SearchResponse(BaseModel):
     """Response model for search results."""
 
@@ -73,6 +106,29 @@ class CodeSearchResponse(BaseModel):
     execution_time_ms: int
 
 
+class CompactSearchResponse(BaseModel):
+    """Response model for compact search results (MCP format)."""
+
+    results: list[CompactSearchResultItem]
+    total: int
+    query: str
+    mode: str
+    execution_time_ms: int
+    note: str | None = None
+
+
+class CompactCodeSearchResponse(BaseModel):
+    """Response model for compact code search results (MCP format)."""
+
+    results: list[CompactCodeSearchResultItem]
+    total: int
+    query: str
+    execution_time_ms: int
+    mode: str = "hybrid"
+    language_filter: str | None = None
+    note: str | None = None
+
+
 __all__ = [
     "SearchMode",
     "SearchRequest",
@@ -80,4 +136,9 @@ __all__ = [
     "CodeSearchResult",
     "SearchResponse",
     "CodeSearchResponse",
+    "CodeSnippetInfo",
+    "CompactSearchResultItem",
+    "CompactCodeSearchResultItem",
+    "CompactSearchResponse",
+    "CompactCodeSearchResponse",
 ]

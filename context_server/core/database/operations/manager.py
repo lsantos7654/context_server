@@ -1,6 +1,15 @@
 """Operations manager for metadata filtering and result transformation."""
 
 from context_server.core.services.transformation import get_transformation_service
+from context_server.models.api.search import (
+    CompactCodeSearchResponse,
+    CompactSearchResponse,
+)
+from context_server.models.database.responses import (
+    CodeSearchResultDBResponse,
+    FilteredMetadataDBResponse,
+    SearchResultDBResponse,
+)
 
 
 class OperationsManager:
@@ -10,22 +19,22 @@ class OperationsManager:
         self.pool = None
         self.summarization_service = summarization_service
 
-    def filter_metadata_for_search(self, metadata: dict) -> dict:
+    def filter_metadata_for_search(self, metadata: dict) -> FilteredMetadataDBResponse:
         """Filter and organize metadata into clean, grouped structure for search results."""
-        # For now, return simplified metadata to avoid breaking the system
-        return {
-            "document": metadata.get("document", {}),
-            "chunk": metadata.get("chunk", {}),
-            "code_snippets": metadata.get("code_snippets", []),
-        }
+        # Return structured metadata using Pydantic model
+        return FilteredMetadataDBResponse(
+            document=metadata.get("document", {}),
+            chunk=metadata.get("chunk", {}),
+            code_snippets=metadata.get("code_snippets", []),
+        )
 
     async def transform_to_compact_format(
         self,
-        results: list[dict],
+        results: list[SearchResultDBResponse | dict],
         query: str = "",
         mode: str = "hybrid",
         execution_time_ms: int = 0,
-    ) -> dict:
+    ) -> CompactSearchResponse:
         """Transform full search results to compact MCP format.
 
         This method now delegates to the centralized transformation service.
@@ -36,8 +45,11 @@ class OperationsManager:
         )
 
     def transform_code_to_compact_format(
-        self, results: list[dict], query: str = "", execution_time_ms: int = 0
-    ) -> dict:
+        self,
+        results: list[CodeSearchResultDBResponse | dict],
+        query: str = "",
+        execution_time_ms: int = 0,
+    ) -> CompactCodeSearchResponse:
         """Transform code search results to compact MCP format.
 
         This method now delegates to the centralized transformation service.

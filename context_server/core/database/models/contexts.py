@@ -12,6 +12,12 @@ from context_server.core.database.utils import (
     parse_metadata,
     parse_uuid,
 )
+from context_server.models.database.responses import (
+    ContextDBResponse,
+    ExportDataDBResponse,
+    ImportResultDBResponse,
+    MergeResultDBResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +30,7 @@ class ContextManager(DatabaseManagerBase):
         name: str,
         description: str = "",
         embedding_model: str = "text-embedding-3-large",
-    ) -> dict:
+    ) -> ContextDBResponse:
         """Create a new context."""
         row = await self.fetch_one(
             """
@@ -37,18 +43,18 @@ class ContextManager(DatabaseManagerBase):
             embedding_model,
         )
 
-        return {
-            "id": format_uuid(row["id"]),
-            "name": row["name"],
-            "description": row["description"],
-            "embedding_model": row["embedding_model"],
-            "created_at": row["created_at"],
-            "document_count": 0,
-            "size_mb": 0.0,
-            "last_updated": row["updated_at"],
-        }
+        return ContextDBResponse(
+            id=format_uuid(row["id"]),
+            name=row["name"],
+            description=row["description"],
+            embedding_model=row["embedding_model"],
+            created_at=row["created_at"],
+            document_count=0,
+            size_mb=0.0,
+            last_updated=row["updated_at"],
+        )
 
-    async def get_contexts(self) -> list[dict]:
+    async def get_contexts(self) -> list[ContextDBResponse]:
         """Get all contexts."""
         rows = await self.fetch_many(
             """
@@ -62,20 +68,20 @@ class ContextManager(DatabaseManagerBase):
         )
 
         return [
-            {
-                "id": format_uuid(row["id"]),
-                "name": row["name"],
-                "description": row["description"],
-                "embedding_model": row["embedding_model"],
-                "created_at": row["created_at"],
-                "document_count": row["document_count"],
-                "size_mb": 0.0,
-                "last_updated": row["updated_at"],
-            }
+            ContextDBResponse(
+                id=format_uuid(row["id"]),
+                name=row["name"],
+                description=row["description"],
+                embedding_model=row["embedding_model"],
+                created_at=row["created_at"],
+                document_count=row["document_count"],
+                size_mb=0.0,
+                last_updated=row["updated_at"],
+            )
             for row in rows
         ]
 
-    async def get_context_by_name(self, name: str) -> dict | None:
+    async def get_context_by_name(self, name: str) -> ContextDBResponse | None:
         """Get context by name."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -89,16 +95,16 @@ class ContextManager(DatabaseManagerBase):
             if not row:
                 return None
 
-            return {
-                "id": format_uuid(row["id"]),
-                "name": row["name"],
-                "description": row["description"],
-                "embedding_model": row["embedding_model"],
-                "created_at": row["created_at"],
-                "document_count": row["document_count"],
-                "size_mb": 0.0,
-                "last_updated": row["updated_at"],
-            }
+            return ContextDBResponse(
+                id=format_uuid(row["id"]),
+                name=row["name"],
+                description=row["description"],
+                embedding_model=row["embedding_model"],
+                created_at=row["created_at"],
+                document_count=row["document_count"],
+                size_mb=0.0,
+                last_updated=row["updated_at"],
+            )
 
     async def delete_context(self, context_id: str) -> bool:
         """Delete a context and all its data."""
@@ -108,7 +114,7 @@ class ContextManager(DatabaseManagerBase):
             )
             return result == "DELETE 1"
 
-    async def export_context_data(self, context_id: str) -> dict:
+    async def export_context_data(self, context_id: str) -> ExportDataDBResponse:
         """Export all context data for backup/migration."""
         async with self.pool.acquire() as conn:
             # Get context metadata
@@ -248,21 +254,22 @@ class ContextManager(DatabaseManagerBase):
                     }
                 )
 
-            return {
-                "schema_version": "1.0",
-                "context": context_data,
-                "documents": documents,
-                "chunks": chunks,
-                "code_snippets": code_snippets,
-                "exported_at": datetime.utcnow(),
-                "total_documents": len(documents),
-                "total_chunks": len(chunks),
-                "total_code_snippets": len(code_snippets),
-            }
+            return ExportDataDBResponse(
+                context=context_data,
+                documents=documents,
+                chunks=chunks,
+                code_snippets=code_snippets,
+                export_timestamp=datetime.utcnow(),
+                total_documents=len(documents),
+                total_chunks=len(chunks),
+                total_code_snippets=len(code_snippets),
+                # Extra fields for compatibility
+                schema_version="1.0",
+            )
 
     async def import_context_data(
         self, export_data: dict, overwrite_existing: bool = False
-    ) -> dict:
+    ) -> ImportResultDBResponse:
         """Import context data from export."""
         context_data = export_data["context"]
         documents_data = export_data["documents"]
@@ -407,19 +414,22 @@ class ContextManager(DatabaseManagerBase):
                     context_id,
                 )
 
-                return {
-                    "success": True,
-                    "context_id": str(context_id),
-                    "context_name": context_data["name"],
-                    "imported_documents": len(documents_data),
-                    "imported_chunks": len(chunks_data),
-                    "imported_code_snippets": len(code_snippets_data),
-                    "message": f"Successfully imported context '{context_data['name']}'",
-                }
+                return ImportResultDBResponse(
+                    context_name=context_data["name"],
+                    context_id=str(context_id),
+                    success=True,
+                    documents_imported=len(documents_data),
+                    chunks_imported=len(chunks_data),
+                    code_snippets_imported=len(code_snippets_data),
+                    conflicts_resolved=0,  # This would need tracking if needed
+                    import_timestamp=datetime.utcnow(),
+                    # Extra fields for compatibility
+                    message=f"Successfully imported context '{context_data['name']}'",
+                )
 
     async def merge_contexts(
         self, source_context_ids: list[str], target_context_id: str, mode: str
-    ) -> dict:
+    ) -> MergeResultDBResponse:
         """Merge multiple contexts into a target context."""
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -613,16 +623,21 @@ class ContextManager(DatabaseManagerBase):
                     uuid.UUID(target_context_id),
                 )
 
-                return {
-                    "success": True,
-                    "target_context_id": target_context_id,
-                    "target_context_name": target_context["name"],
-                    "merged_documents": len(documents_to_merge),
-                    "merged_chunks": total_chunks,
-                    "merged_code_snippets": total_code_snippets,
-                    "source_contexts_processed": len(source_context_ids),
-                    "message": f"Successfully merged {len(source_context_ids)} contexts into '{target_context['name']}' using {mode} mode",
-                }
+                return MergeResultDBResponse(
+                    target_context_name=target_context["name"],
+                    target_context_id=target_context_id,
+                    source_contexts=[str(ctx_id) for ctx_id in source_context_ids],
+                    merge_mode=mode,
+                    success=True,
+                    documents_merged=len(documents_to_merge),
+                    chunks_merged=total_chunks,
+                    code_snippets_merged=total_code_snippets,
+                    duplicates_handled=0,  # This would need tracking if needed
+                    merge_timestamp=datetime.utcnow(),
+                    # Extra fields for compatibility
+                    source_contexts_processed=len(source_context_ids),
+                    message=f"Successfully merged {len(source_context_ids)} contexts into '{target_context['name']}' using {mode} mode",
+                )
 
 
 __all__ = ["ContextManager"]

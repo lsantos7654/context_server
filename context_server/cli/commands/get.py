@@ -24,7 +24,7 @@ console = Console()
 
 @click.group()
 @rich_help_option("-h", "--help")
-def get():
+def get() -> None:
     """Retrieve individual items (chunks, code snippets, documents) from contexts.
 
     Commands for accessing specific items by their IDs.
@@ -49,7 +49,7 @@ def get():
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def chunk(context_name, chunk_id, output_format):
+def chunk(context_name, chunk_id, output_format) -> None:
     """Get a specific chunk by ID with full content and metadata.
 
     Retrieves a single chunk with its complete content, summary,
@@ -61,7 +61,7 @@ def chunk(context_name, chunk_id, output_format):
         output_format: Output format (card, json, or raw)
     """
 
-    async def get_chunk():
+    async def get_chunk() -> None:
         try:
             client = APIClient()
             success, response = await client.get(
@@ -101,7 +101,7 @@ def chunk(context_name, chunk_id, output_format):
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def code(context_name, snippet_id, output_format):
+def code(context_name, snippet_id, output_format) -> None:
     """Get a specific code snippet by ID.
 
     Retrieves a single code snippet with its full content, metadata,
@@ -113,7 +113,7 @@ def code(context_name, snippet_id, output_format):
         output_format: Output format (card, json, or raw)
     """
 
-    async def get_code_snippet():
+    async def get_code_snippet() -> None:
         try:
             client = APIClient()
             success, response = await client.get(
@@ -153,7 +153,7 @@ def code(context_name, snippet_id, output_format):
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def document(context_name, document_id, output_format):
+def document(context_name, document_id, output_format) -> None:
     """Get a specific document by ID.
 
     Retrieves a full document with its content and metadata.
@@ -164,7 +164,7 @@ def document(context_name, document_id, output_format):
         output_format: Output format (card, json, or raw)
     """
 
-    async def get_document():
+    async def get_document() -> None:
         try:
             client = APIClient()
 
@@ -199,7 +199,7 @@ def document(context_name, document_id, output_format):
     asyncio.run(get_document())
 
 
-def _display_chunk_card(chunk):
+def _display_chunk_card(chunk) -> None:
     """Display a single chunk as a rich card."""
     # Extract metadata
     chunk_id = chunk.get("id", "N/A")
@@ -284,7 +284,7 @@ def _display_chunk_card(chunk):
     console.print()  # Empty line
 
 
-def _display_code_snippet_card(snippet):
+def _display_code_snippet_card(snippet) -> None:
     """Display a single code snippet as a rich card."""
     # Extract metadata
     snippet_id = snippet.get("id", "N/A")
@@ -354,7 +354,7 @@ def _display_code_snippet_card(snippet):
     console.print()  # Empty line
 
 
-def _display_document_card(document, show_full_content=False, raw_format=False):
+def _display_document_card(document, show_full_content=False, raw_format=False) -> None:
     """Display a document as a rich card."""
     # Extract metadata
     doc_id = document.get("id", "N/A")

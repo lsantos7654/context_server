@@ -14,7 +14,7 @@ console = Console()
 
 @click.group()
 @rich_help_option("-h", "--help")
-def completion():
+def completion() -> None:
     """Shell completion setup commands.
 
     Commands for installing shell completion for bash, zsh, and fish.
@@ -35,7 +35,7 @@ def completion():
 )
 @click.option("--force", is_flag=True, help="Overwrite existing completion files")
 @rich_help_option("-h", "--help")
-def install(shell, force):
+def install(shell, force) -> None:
     """Install shell completion for context-server and ctx commands.
 
     Args:
@@ -72,7 +72,7 @@ def install(shell, force):
     type=click.Choice(["bash", "zsh", "fish"]),
     help="Shell to uninstall completion for",
 )
-def uninstall(shell):
+def uninstall(shell) -> None:
     """Uninstall shell completion.
 
     Args:
@@ -107,7 +107,7 @@ def uninstall(shell):
     type=click.Choice(["bash", "zsh", "fish"]),
     help="Shell to show completion for",
 )
-def show(shell):
+def show(shell) -> None:
     """Show completion script for manual installation.
 
     Args:
@@ -151,7 +151,7 @@ def detect_shell() -> str:
     return ""
 
 
-def install_bash_completion(force: bool = False):
+def install_bash_completion(force: bool = False) -> None:
     """Install bash completion."""
     home = Path.home()
     bashrc = home / ".bashrc"
@@ -173,7 +173,7 @@ def install_bash_completion(force: bool = False):
         f.write("\n")
 
 
-def install_zsh_completion(force: bool = False):
+def install_zsh_completion(force: bool = False) -> None:
     """Install zsh completion."""
     home = Path.home()
     zshrc = home / ".zshrc"
@@ -195,7 +195,7 @@ def install_zsh_completion(force: bool = False):
         f.write("\n")
 
 
-def install_fish_completion(force: bool = False):
+def install_fish_completion(force: bool = False) -> None:
     """Install fish completion."""
     home = Path.home()
     fish_config_dir = home / ".config" / "fish"
@@ -219,7 +219,7 @@ def install_fish_completion(force: bool = False):
     ctx_completion.write_text(fish_script.replace("context-server", "ctx"))
 
 
-def uninstall_bash_completion():
+def uninstall_bash_completion() -> None:
     """Uninstall bash completion."""
     home = Path.home()
     bashrc = home / ".bashrc"
@@ -247,7 +247,7 @@ def uninstall_bash_completion():
     bashrc.write_text("\n".join(filtered_lines))
 
 
-def uninstall_zsh_completion():
+def uninstall_zsh_completion() -> None:
     """Uninstall zsh completion."""
     home = Path.home()
     zshrc = home / ".zshrc"
@@ -275,7 +275,7 @@ def uninstall_zsh_completion():
     zshrc.write_text("\n".join(filtered_lines))
 
 
-def uninstall_fish_completion():
+def uninstall_fish_completion() -> None:
     """Uninstall fish completion."""
     home = Path.home()
     completions_dir = home / ".config" / "fish" / "completions"
@@ -327,7 +327,7 @@ end"""
 
 @completion.command()
 @rich_help_option("-h", "--help")
-def status():
+def status() -> None:
     """Show completion installation status."""
     echo_info("Checking completion installation status...")
 

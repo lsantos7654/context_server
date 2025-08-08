@@ -14,6 +14,8 @@ from context_server.core.services.embeddings import (
 from context_server.core.services.transformation import get_transformation_service
 from context_server.models.api.search import (
     CodeSearchResponse,
+    CompactCodeSearchResponse,
+    CompactSearchResponse,
     SearchRequest,
     SearchResponse,
 )
@@ -58,7 +60,7 @@ async def search_context(
     if not context:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    context_id = context["id"]
+    context_id = context.id
     results = []
 
     if search_request.mode.value == "vector":
@@ -232,7 +234,7 @@ async def search_code_snippets(
     if not context:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    context_id = context["id"]
+    context_id = context.id
     results = []
 
     if search_request.mode.value == "vector":

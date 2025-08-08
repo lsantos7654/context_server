@@ -1,50 +1,39 @@
 """Document-related domain models."""
 
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field
 
 from context_server.models.domain.chunks import ProcessedChunk
 from context_server.models.domain.snippets import CodeSnippet
-from context_server.models.validation import validate_range_fields
 
 
-@dataclass
-class ProcessedDocument:
+class ProcessedDocument(BaseModel):
     """A processed document with chunks and code snippets."""
 
     url: str
     title: str
-    content: str  # Original content
-    cleaned_content: str  # Content with code snippet placeholders
-    chunks: list[ProcessedChunk] = field(default_factory=list)
-    code_snippets: list[CodeSnippet] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
+    content: str = Field(description="Original content")
+    cleaned_content: str = Field(description="Content with code snippet placeholders")
+    chunks: list[ProcessedChunk] = Field(default_factory=list)
+    code_snippets: list[CodeSnippet] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
 
 
-@dataclass
-class ProcessingResult:
+class ProcessingResult(BaseModel):
     """Result of document processing operation."""
 
     success: bool
-    documents: list[ProcessedDocument] = field(default_factory=list)
+    documents: list[ProcessedDocument] = Field(default_factory=list)
     error: str | None = None
 
 
-@dataclass
-class DocumentStats:
+class DocumentStats(BaseModel):
     """Statistics about document processing."""
 
-    total_documents: int
-    total_chunks: int
-    total_code_snippets: int
-    total_tokens: int
-    processing_time_seconds: float
-
-    def __post_init__(self):
-        """Validate fields after initialization."""
-        validate_range_fields(self, [
-            "total_documents", "total_chunks", "total_code_snippets", 
-            "total_tokens", "processing_time_seconds"
-        ])
+    total_documents: int = Field(ge=0)
+    total_chunks: int = Field(ge=0)
+    total_code_snippets: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    processing_time_seconds: float = Field(ge=0.0)
 
 
 __all__ = ["ProcessedDocument", "ProcessingResult", "DocumentStats"]

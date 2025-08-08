@@ -1,12 +1,13 @@
 """Common validation utilities for domain models."""
 
+
 def validate_non_negative(value, field_name: str) -> None:
     """Validate that a numeric value is non-negative.
-    
+
     Args:
         value: The value to validate (can be None)
         field_name: Name of the field for error messages
-        
+
     Raises:
         ValueError: If value is not None and is negative
     """
@@ -16,11 +17,11 @@ def validate_non_negative(value, field_name: str) -> None:
 
 def validate_range_fields(obj, fields: list[str]) -> None:
     """Validate multiple range-related fields are non-negative.
-    
+
     Args:
         obj: Object containing the fields to validate
         fields: List of field names to validate
-        
+
     Raises:
         ValueError: If any field is negative
     """

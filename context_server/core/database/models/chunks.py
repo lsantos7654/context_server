@@ -10,6 +10,7 @@ from context_server.core.database.utils import (
     parse_metadata,
     parse_uuid,
 )
+from context_server.models.database.responses import ChunkWithDocumentDBResponse
 
 
 class ChunkManager(DatabaseManagerBase):
@@ -93,7 +94,7 @@ class ChunkManager(DatabaseManagerBase):
 
     async def get_chunk_by_id(
         self, chunk_id: str, context_id: str = None
-    ) -> dict | None:
+    ) -> ChunkWithDocumentDBResponse | None:
         """Get a specific chunk by ID with full content and metadata."""
         async with self.pool.acquire() as conn:
             query = """
@@ -144,29 +145,32 @@ class ChunkManager(DatabaseManagerBase):
                         }
                     )
 
-            return {
-                "id": format_uuid(row["id"]),
-                "document_id": format_uuid(row["document_id"]),
-                "content": row["content"],
-                "title": row["title"],  # Chunk title
-                "summary": row["summary"],
-                "summary_model": row["summary_model"],
-                "doc_title": row["doc_title"],  # Document title
-                "url": row["url"],
-                "chunk_index": row["chunk_index"],
-                "tokens": row["tokens"],
-                "start_line": row["start_line"],
-                "end_line": row["end_line"],
-                "char_start": row["char_start"],
-                "char_end": row["char_end"],
-                "created_at": row["created_at"],
-                "code_snippet_ids": [format_uuid(sid) for sid in code_snippet_ids],
-                "code_snippets": code_snippets_data,
-                "metadata": parse_metadata(row["chunk_metadata"]),
-                "doc_metadata": parse_metadata(row["doc_metadata"]),
-                "parent_page_size": row["parent_page_size"],
-                "parent_total_chunks": row["parent_total_chunks"],
-            }
+            return ChunkWithDocumentDBResponse(
+                id=format_uuid(row["id"]),
+                document_id=format_uuid(row["document_id"]),
+                context_id=format_uuid(row["context_id"]),
+                content=row["content"],
+                title=row["title"],  # Chunk title
+                summary=row["summary"],
+                summary_model=row["summary_model"],
+                chunk_index=row["chunk_index"],
+                tokens=row["tokens"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                char_start=row["char_start"],
+                char_end=row["char_end"],
+                created_at=row["created_at"],
+                code_snippet_ids=[format_uuid(sid) for sid in code_snippet_ids],
+                metadata=parse_metadata(row["chunk_metadata"]),
+                # Document context fields
+                doc_title=row["doc_title"],
+                doc_url=row["url"],
+                doc_metadata=parse_metadata(row["doc_metadata"]),
+                parent_page_size=row["parent_page_size"],
+                parent_total_chunks=row["parent_total_chunks"],
+                # Extra fields for backward compatibility
+                code_snippets=code_snippets_data,
+            )
 
 
 __all__ = ["ChunkManager"]

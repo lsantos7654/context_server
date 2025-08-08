@@ -5,6 +5,10 @@ import uuid
 
 from context_server.core.database.base import DatabaseManagerBase
 from context_server.core.database.utils import format_uuid, parse_metadata, parse_uuid
+from context_server.models.database.responses import (
+    DocumentDBResponse,
+    DocumentsListDBResponse,
+)
 
 
 class DocumentManager(DatabaseManagerBase):
@@ -88,7 +92,7 @@ class DocumentManager(DatabaseManagerBase):
 
     async def get_documents(
         self, context_id: str, offset: int = 0, limit: int = 50
-    ) -> dict:
+    ) -> DocumentsListDBResponse:
         """Get documents in a context with pagination."""
         async with self.pool.acquire() as conn:
             # Get total count
@@ -114,23 +118,25 @@ class DocumentManager(DatabaseManagerBase):
             )
 
             documents = [
-                {
-                    "id": format_uuid(row["id"]),
-                    "url": row["url"],
-                    "title": row["title"],
-                    "indexed_at": row["indexed_at"],
-                    "chunks": row["chunk_count"] or 0,
-                    "metadata": parse_metadata(row["metadata"]),
-                }
+                DocumentDBResponse(
+                    id=format_uuid(row["id"]),
+                    context_id=context_id,
+                    url=row["url"],
+                    title=row["title"],
+                    content="",  # Not loaded in list view
+                    indexed_at=row["indexed_at"],
+                    chunks=row["chunk_count"] or 0,
+                    metadata=parse_metadata(row["metadata"]),
+                )
                 for row in rows
             ]
 
-            return {
-                "documents": documents,
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-            }
+            return DocumentsListDBResponse(
+                documents=documents,
+                total=total,
+                offset=offset,
+                limit=limit,
+            )
 
     async def delete_documents(self, context_id: str, document_ids: list[str]) -> int:
         """Delete documents from a context with transaction safety."""
@@ -163,7 +169,7 @@ class DocumentManager(DatabaseManagerBase):
 
     async def get_document_by_id(
         self, context_id: str, document_id: str, raw: bool = False
-    ) -> dict | None:
+    ) -> DocumentDBResponse | None:
         """Get document content by ID (cleaned by default, raw if requested)."""
         async with self.pool.acquire() as conn:
             if raw:
@@ -197,21 +203,23 @@ class DocumentManager(DatabaseManagerBase):
             if not row:
                 return None
 
-            return {
-                "id": format_uuid(row["id"]),
-                "title": row["title"],
-                "url": row["url"],
-                "content": row["content"] or "",
-                "metadata": parse_metadata(row["metadata"]),
-                "created_at": (
-                    row["indexed_at"].isoformat() if row["indexed_at"] else None
-                ),
-                "source_type": row["source_type"],
-                "chunk_count": row["chunk_count"] or 0,
-                "document_type": "raw" if raw else "cleaned",
-            }
+            return DocumentDBResponse(
+                id=format_uuid(row["id"]),
+                context_id=context_id,
+                title=row["title"],
+                url=row["url"],
+                content=row["content"] or "",
+                metadata=parse_metadata(row["metadata"]),
+                indexed_at=row["indexed_at"],
+                source_type=row["source_type"],
+                chunks=row["chunk_count"] or 0,
+                # Extra fields for backward compatibility
+                document_type="raw" if raw else "cleaned",
+            )
 
-    async def get_document_content_by_id(self, document_id: str) -> dict | None:
+    async def get_document_content_by_id(
+        self, document_id: str
+    ) -> DocumentDBResponse | None:
         """Get document content by ID only (for expansion service)."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -228,18 +236,17 @@ class DocumentManager(DatabaseManagerBase):
             if not row:
                 return None
 
-            return {
-                "id": format_uuid(row["id"]),
-                "title": row["title"],
-                "url": row["url"],
-                "content": row["content"],
-                "metadata": parse_metadata(row["metadata"]),
-                "created_at": (
-                    row["indexed_at"].isoformat() if row["indexed_at"] else None
-                ),
-                "source_type": row["source_type"],
-                "chunk_count": row["chunk_count"] or 0,
-            }
+            return DocumentDBResponse(
+                id=format_uuid(row["id"]),
+                context_id="",  # Not available in this query - could be enhanced if needed
+                title=row["title"],
+                url=row["url"],
+                content=row["content"],
+                metadata=parse_metadata(row["metadata"]),
+                indexed_at=row["indexed_at"],
+                source_type=row["source_type"],
+                chunks=row["chunk_count"] or 0,
+            )
 
 
 __all__ = ["DocumentManager"]

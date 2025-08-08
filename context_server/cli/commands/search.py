@@ -27,7 +27,7 @@ console = Console()
 
 @click.group()
 @rich_help_option("-h", "--help")
-def search():
+def search() -> None:
     """Search documents in contexts using vector, full-text, or hybrid modes.
 
     Search your documentation contexts using different algorithms:
@@ -78,7 +78,7 @@ def query(
     limit,
     output_format,
     show_content,
-):
+) -> None:
     """Search for documents in a context.
 
     Performs semantic or text-based search within a specific context.
@@ -94,12 +94,12 @@ def query(
         show_content: Whether to display content snippets
     """
 
-    async def search_documents():
+    async def search_documents() -> None:
         echo_info(f"Searching '{context_name}' for: {query}")
         echo_info(f"Search mode: {mode}")
 
         client = APIClient(timeout=60.0)  # Search can take a while
-        success, response = await client.post(
+        success, response = await client.post_typed(
             f"contexts/{context_name}/search",
             {
                 "query": query,
@@ -109,9 +109,16 @@ def query(
         )
 
         if success:
-            results = response["results"]
-            total = response["total"]
-            execution_time = response["execution_time_ms"]
+            # Handle both typed and raw responses for backward compatibility
+            if hasattr(response, "results"):
+                results = response.results
+                total = response.total
+                execution_time = response.execution_time_ms
+            else:
+                # Fallback for raw dict response
+                results = response["results"]
+                total = response["total"]
+                execution_time = response["execution_time_ms"]
 
             if not results:
                 echo_info("No results found")
@@ -127,7 +134,9 @@ def query(
 
             if output_format == "mcp_json":
                 # Use the centralized transformation service
-                from context_server.core.services.transformation import get_transformation_service
+                from context_server.core.services.transformation import (
+                    get_transformation_service,
+                )
 
                 transformation_service = get_transformation_service()
                 compact_response = transformation_service.transform_to_compact_format(
@@ -162,7 +171,7 @@ def query(
     help="Output format",
 )
 @rich_help_option("-h", "--help")
-def code(query, context_name, limit, output_format):
+def code(query, context_name, limit, output_format) -> None:
     """Search for code snippets in a context using code-optimized embeddings.
 
     Uses voyage-code-3 embeddings specifically designed for code search.
@@ -175,11 +184,11 @@ def code(query, context_name, limit, output_format):
         output_format: Display format (cards, json, mcp_json)
     """
 
-    async def search_code():
+    async def search_code() -> None:
         echo_info(f"Searching code in '{context_name}' for: {query}")
 
         client = APIClient(timeout=60.0)
-        success, response = await client.post(
+        success, response = await client.post_typed(
             f"contexts/{context_name}/search/code",
             {
                 "query": query,
@@ -189,9 +198,16 @@ def code(query, context_name, limit, output_format):
         )
 
         if success:
-            results = response["results"]
-            total = response["total"]
-            execution_time = response["execution_time_ms"]
+            # Handle both typed and raw responses for backward compatibility
+            if hasattr(response, "results"):
+                results = response.results
+                total = response.total
+                execution_time = response.execution_time_ms
+            else:
+                # Fallback for raw dict response
+                results = response["results"]
+                total = response["total"]
+                execution_time = response["execution_time_ms"]
 
             if output_format == "json":
                 console.print(response)
@@ -210,7 +226,9 @@ def code(query, context_name, limit, output_format):
             # Display code results
             if output_format == "mcp_json":
                 # Use the centralized transformation service
-                from context_server.core.services.transformation import get_transformation_service
+                from context_server.core.services.transformation import (
+                    get_transformation_service,
+                )
 
                 transformation_service = get_transformation_service()
                 compact_response = (
@@ -236,7 +254,7 @@ def code(query, context_name, limit, output_format):
 @search.command()
 @click.argument("context_name", shell_complete=complete_context_name)
 @rich_help_option("-h", "--help")
-def interactive(context_name):
+def interactive(context_name) -> None:
     """Start an interactive search session.
 
     Provides a continuous search interface where you can enter
@@ -263,9 +281,9 @@ def interactive(context_name):
                 continue
 
             # Perform search using shared client
-            async def search_documents():
+            async def search_documents() -> None:
                 client = APIClient(timeout=60.0)
-                success, response = await client.post(
+                success, response = await client.post_typed(
                     f"contexts/{context_name}/search",
                     {
                         "query": query,
@@ -275,9 +293,16 @@ def interactive(context_name):
                 )
 
                 if success:
-                    results = response["results"]
-                    total = response["total"]
-                    execution_time = response["execution_time_ms"]
+                    # Handle both typed and raw responses for backward compatibility
+                    if hasattr(response, "results"):
+                        results = response.results
+                        total = response.total
+                        execution_time = response.execution_time_ms
+                    else:
+                        # Fallback for raw dict response
+                        results = response["results"]
+                        total = response["total"]
+                        execution_time = response["execution_time_ms"]
 
                     if not results:
                         echo_info("No results found")
@@ -306,7 +331,9 @@ def interactive(context_name):
             break
 
 
-def display_results_cards(results: list, show_content: bool = True, query: str = ""):
+def display_results_cards(
+    results: list, show_content: bool = True, query: str = ""
+) -> None:
     """Display search results in card format with all metadata from MCP format."""
     for i, result in enumerate(results, 1):
         # Create simple card header
@@ -419,7 +446,7 @@ def display_results_cards(results: list, show_content: bool = True, query: str =
         console.print()  # Empty line between cards
 
 
-def display_results_table(results: list, show_content: bool = True):
+def display_results_table(results: list, show_content: bool = True) -> None:
     """Display search results in table format (legacy)."""
     table = Table(title="Search Results")
     table.add_column("Score", style="bold green", width=8)
@@ -465,7 +492,7 @@ def display_results_table(results: list, show_content: bool = True):
 
 def display_results_rich(
     results: list, query: str, show_content: bool = True, verbose: bool = False
-):
+) -> None:
     """Display search results in rich format with highlighting."""
     for i, result in enumerate(results, 1):
         score = result["score"]
@@ -682,7 +709,7 @@ def highlight_query_terms(text: str, query: str) -> str:
     return highlighted
 
 
-def display_code_results_cards(results: list):
+def display_code_results_cards(results: list) -> None:
     """Display code search results in card format with syntax highlighting."""
     for i, result in enumerate(results, 1):
         # Create card header
@@ -769,7 +796,7 @@ def display_code_results_cards(results: list):
         console.print()  # Empty line between cards
 
 
-def display_code_results_table(results: list):
+def display_code_results_table(results: list) -> None:
     """Display code search results in table format (legacy)."""
     from rich.syntax import Syntax
 

@@ -11,11 +11,16 @@ from context_server.api.error_handlers import handle_document_errors
 from context_server.core.database import DatabaseManager
 from context_server.core.pipeline import DocumentProcessor
 from context_server.models.api.documents import (
+    ChunkResponse,
+    CodeSnippetResponse,
+    CodeSnippetsResponse,
+    DocumentContentResponse,
     DocumentDelete,
+    DocumentDeleteResponse,
     DocumentIngest,
     DocumentsResponse,
 )
-from context_server.models.api.system import JobStatus
+from context_server.models.api.system import JobCreateResponse, JobStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,7 +38,11 @@ def get_processor(request: Request) -> DocumentProcessor:
     return request.app.state.processor
 
 
-@router.post("/contexts/{context_name}/documents", status_code=202)
+@router.post(
+    "/contexts/{context_name}/documents",
+    status_code=202,
+    response_model=JobCreateResponse,
+)
 @handle_document_errors("ingest")
 async def ingest_document(
     context_name: str,
@@ -63,11 +72,11 @@ async def ingest_document(
 
     logger.info(f"Started document ingestion job: {job_id}")
 
-    return {
-        "job_id": job_id,
-        "status": "processing",
-        "message": f"Document ingestion started for {document_data.source}",
-    }
+    return JobCreateResponse(
+        job_id=job_id,
+        status="processing",
+        message=f"Document ingestion started for {document_data.source}",
+    )
 
 
 async def _process_document_background(
@@ -97,7 +106,7 @@ async def _process_document_background(
             await db.create_job(
                 job_id=job_id,
                 job_type="document_extraction",
-                context_id=context["id"],
+                context_id=context.id,
                 metadata={
                     "source": document_data.source,
                     "source_type": document_data.source_type.value,
@@ -176,7 +185,7 @@ async def _process_document_background(
                     # 1. Store main document with temporary original content
                     doc_id = await asyncio.wait_for(
                         db.create_document(
-                            context_id=context["id"],
+                            context_id=context.id,
                             url=doc.url,
                             title=doc.title,
                             content=doc.content,  # Temporary - original content
@@ -197,7 +206,7 @@ async def _process_document_background(
                         # Store code snippet with real document_id
                         real_snippet_id = await db.create_code_snippet(
                             document_id=doc_id,
-                            context_id=context["id"],
+                            context_id=context.id,
                             content=snippet.content,
                             embedding=snippet.embedding,
                             metadata=snippet.metadata,
@@ -274,7 +283,7 @@ async def _process_document_background(
 
                         await db.create_chunk(
                             document_id=doc_id,  # Link chunks to main document
-                            context_id=context["id"],
+                            context_id=context.id,
                             content=chunk_content,
                             embedding=chunk.embedding,
                             chunk_index=i,
@@ -383,11 +392,13 @@ async def list_documents(
         raise HTTPException(status_code=404, detail="Context not found")
 
     # Get documents
-    result = await db.get_documents(context["id"], offset=offset, limit=limit)
+    result = await db.get_documents(context.id, offset=offset, limit=limit)
     return DocumentsResponse(**result)
 
 
-@router.delete("/contexts/{context_name}/documents", status_code=200)
+@router.delete(
+    "/contexts/{context_name}/documents", response_model=DocumentDeleteResponse
+)
 async def delete_documents(
     context_name: str,
     delete_data: DocumentDelete,
@@ -401,16 +412,15 @@ async def delete_documents(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Delete documents
-        deleted_count = await db.delete_documents(
-            context["id"], delete_data.document_ids
-        )
+        deleted_count = await db.delete_documents(context.id, delete_data.document_ids)
 
         logger.info(f"Deleted {deleted_count} documents from context {context_name}")
 
-        return {
-            "deleted_count": deleted_count,
-            "message": f"Deleted {deleted_count} documents",
-        }
+        return DocumentDeleteResponse(
+            deleted_count=deleted_count,
+            message=f"Deleted {deleted_count} documents",
+            context_name=context_name,
+        )
 
     except HTTPException:
         raise
@@ -419,7 +429,10 @@ async def delete_documents(
         raise HTTPException(status_code=500, detail="Failed to delete documents")
 
 
-@router.get("/contexts/{context_name}/documents/{doc_id}/raw")
+@router.get(
+    "/contexts/{context_name}/documents/{doc_id}/raw",
+    response_model=DocumentContentResponse,
+)
 async def get_document_raw(
     context_name: str,
     doc_id: str,
@@ -436,7 +449,7 @@ async def get_document_raw(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Get document
-        document = await db.get_document_by_id(context["id"], doc_id, raw)
+        document = await db.get_document_by_id(context.id, doc_id, raw)
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -477,7 +490,7 @@ async def get_document_raw(
             },
         }
 
-        return paginated_document
+        return DocumentContentResponse(**paginated_document)
 
     except HTTPException:
         raise
@@ -488,7 +501,10 @@ async def get_document_raw(
         raise HTTPException(status_code=500, detail="Failed to get document")
 
 
-@router.get("/contexts/{context_name}/documents/{doc_id}/code-snippets")
+@router.get(
+    "/contexts/{context_name}/documents/{doc_id}/code-snippets",
+    response_model=CodeSnippetsResponse,
+)
 async def list_document_code_snippets(
     context_name: str, doc_id: str, db: DatabaseManager = Depends(get_db_manager)
 ):
@@ -500,14 +516,13 @@ async def list_document_code_snippets(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Get code snippets
-        snippets = await db.get_code_snippets_by_document(doc_id, context["id"])
+        snippets = await db.get_code_snippets_by_document(doc_id, context.id)
 
-        return {
-            "snippets": snippets,
-            "total": len(snippets),
-            "document_id": doc_id,
-            "context_name": context_name,
-        }
+        return CodeSnippetsResponse(
+            snippets=[CodeSnippetResponse(**snippet) for snippet in snippets],
+            total=len(snippets),
+            document_id=doc_id,
+        )
 
     except HTTPException:
         raise
@@ -518,7 +533,10 @@ async def list_document_code_snippets(
         raise HTTPException(status_code=500, detail="Failed to get code snippets")
 
 
-@router.get("/contexts/{context_name}/code-snippets/{snippet_id}")
+@router.get(
+    "/contexts/{context_name}/code-snippets/{snippet_id}",
+    response_model=CodeSnippetResponse,
+)
 async def get_code_snippet(
     context_name: str, snippet_id: str, db: DatabaseManager = Depends(get_db_manager)
 ):
@@ -530,11 +548,11 @@ async def get_code_snippet(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Get code snippet
-        snippet = await db.get_code_snippet_by_id(snippet_id, context["id"])
+        snippet = await db.get_code_snippet_by_id(snippet_id, context.id)
         if not snippet:
             raise HTTPException(status_code=404, detail="Code snippet not found")
 
-        return snippet
+        return CodeSnippetResponse(**snippet)
 
     except HTTPException:
         raise
@@ -545,7 +563,7 @@ async def get_code_snippet(
         raise HTTPException(status_code=500, detail="Failed to get code snippet")
 
 
-@router.get("/contexts/{context_name}/chunks/{chunk_id}")
+@router.get("/contexts/{context_name}/chunks/{chunk_id}", response_model=ChunkResponse)
 async def get_chunk(
     context_name: str, chunk_id: str, db: DatabaseManager = Depends(get_db_manager)
 ):
@@ -557,11 +575,11 @@ async def get_chunk(
             raise HTTPException(status_code=404, detail="Context not found")
 
         # Get chunk
-        chunk = await db.get_chunk_by_id(chunk_id, context["id"])
+        chunk = await db.get_chunk_by_id(chunk_id, context.id)
         if not chunk:
             raise HTTPException(status_code=404, detail="Chunk not found")
 
-        return chunk
+        return ChunkResponse(**chunk)
 
     except HTTPException:
         raise

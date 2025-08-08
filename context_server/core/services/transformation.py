@@ -6,7 +6,18 @@ source of truth for result formatting and field standardization.
 """
 
 import logging
-from typing import Any
+
+from context_server.models.api.search import (
+    CodeSnippetInfo,
+    CompactCodeSearchResponse,
+    CompactCodeSearchResultItem,
+    CompactSearchResponse,
+    CompactSearchResultItem,
+)
+from context_server.models.database.responses import (
+    CodeSearchResultDBResponse,
+    SearchResultDBResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +35,11 @@ class TransformationService:
 
     def transform_to_compact_format(
         self,
-        results: list[dict[str, Any]],
+        results: list[SearchResultDBResponse | dict],
         query: str = "",
         mode: str = "hybrid",
         execution_time_ms: int = 0,
-    ) -> dict[str, Any]:
+    ) -> CompactSearchResponse:
         """Transform full search results to compact MCP format.
 
         This is the single source of truth for transforming search results
@@ -46,17 +57,23 @@ class TransformationService:
         compact_results = []
 
         for result in results:
+            # Handle both Pydantic models and dict objects
+            if hasattr(result, "model_dump"):
+                result_dict = result.model_dump()
+            else:
+                result_dict = result
+
             # Use summary if available, otherwise truncate content
-            display_content = result.get("summary", "")
+            display_content = result_dict.get("summary", "")
             if not display_content:
-                content = result.get("content", "")
+                content = result_dict.get("content", "")
                 display_content = (
                     content[:150] + "..." if len(content) > 150 else content
                 )
             # No truncation for summaries - they're already AI-generated and meaningful
 
             # Get code snippets count and IDs from metadata
-            metadata = result.get("metadata", {})
+            metadata = result_dict.get("metadata", {})
             code_snippets = metadata.get("code_snippets", [])
             code_snippets_count = len(code_snippets) if code_snippets else 0
 
@@ -80,39 +97,41 @@ class TransformationService:
                             line_count = 0
                             char_count = 0
 
-                        snippet_obj = {
-                            "id": snippet_id,
-                            "lines": line_count,
-                            "chars": char_count,
-                            "preview": preview,
-                        }
+                        snippet_obj = CodeSnippetInfo(
+                            id=snippet_id,
+                            lines=line_count,
+                            chars=char_count,
+                            preview=preview,
+                        )
                         code_snippet_ids.append(snippet_obj)
 
-            compact_result = {
-                "id": result.get("id"),
-                "document_id": result.get("document_id"),
-                "title": result.get("title"),
-                "summary": display_content,
-                "score": result.get("score"),
-                "url": result.get("url"),
-                "code_snippets_count": code_snippets_count,
-                "code_snippet_ids": code_snippet_ids,
-                # Note: content_type field removed as it was causing inconsistencies
-            }
+            compact_result = CompactSearchResultItem(
+                id=result_dict.get("id"),
+                document_id=result_dict.get("document_id"),
+                title=result_dict.get("title"),
+                summary=display_content,
+                score=result_dict.get("score"),
+                url=result_dict.get("url"),
+                code_snippets_count=code_snippets_count,
+                code_snippet_ids=code_snippet_ids,
+            )
             compact_results.append(compact_result)
 
-        return {
-            "results": compact_results,
-            "total": len(compact_results),
-            "query": query,
-            "mode": mode,
-            "execution_time_ms": execution_time_ms,
-            "note": "Content summarized for quick scanning. Use get_document for full content.",
-        }
+        return CompactSearchResponse(
+            results=compact_results,
+            total=len(compact_results),
+            query=query,
+            mode=mode,
+            execution_time_ms=execution_time_ms,
+            note="Content summarized for quick scanning. Use get_document for full content.",
+        )
 
     def transform_code_to_compact_format(
-        self, results: list[dict[str, Any]], query: str = "", execution_time_ms: int = 0
-    ) -> dict[str, Any]:
+        self,
+        results: list[CodeSearchResultDBResponse | dict],
+        query: str = "",
+        execution_time_ms: int = 0,
+    ) -> CompactCodeSearchResponse:
         """Transform code search results to compact MCP format.
 
         This is the single source of truth for transforming code search results
@@ -129,8 +148,14 @@ class TransformationService:
         compact_results = []
 
         for result in results:
+            # Handle both Pydantic models and dict objects
+            if hasattr(result, "model_dump"):
+                result_dict = result.model_dump()
+            else:
+                result_dict = result
+
             # Use content directly since code snippets are already concise
-            display_content = result.get("content", "")
+            display_content = result_dict.get("content", "")
 
             # Truncate very long code snippets
             if len(display_content) > 500:
@@ -139,27 +164,26 @@ class TransformationService:
             # Calculate line count from content
             line_count = len(display_content.split("\n")) if display_content else 0
 
-            compact_result = {
-                "id": result.get("id"),
-                "document_id": result.get("document_id"),
-                "content": display_content,
-                "score": result.get("score"),
-                "url": result.get("url"),
-                "line_count": line_count,
-                # Note: All problematic fields (snippet_type, content_type, title) removed
-            }
+            compact_result = CompactCodeSearchResultItem(
+                id=result_dict.get("id"),
+                document_id=result_dict.get("document_id"),
+                content=display_content,
+                score=result_dict.get("score"),
+                url=result_dict.get("url"),
+                line_count=line_count,
+            )
             compact_results.append(compact_result)
 
-        return {
-            "results": compact_results,
-            "total": len(compact_results),
-            "query": query,
-            "mode": "hybrid",
-            "execution_time_ms": execution_time_ms,
-            "note": "Code search using voyage-code-3 embeddings for enhanced code understanding.",
-        }
+        return CompactCodeSearchResponse(
+            results=compact_results,
+            total=len(compact_results),
+            query=query,
+            mode="hybrid",
+            execution_time_ms=execution_time_ms,
+            note="Code search using voyage-code-3 embeddings for enhanced code understanding.",
+        )
 
-    def clean_search_result_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+    def clean_search_result_metadata(self, metadata: dict) -> dict:
         """Clean and organize metadata into consistent structure for search results.
 
         Args:
@@ -175,9 +199,7 @@ class TransformationService:
             "code_snippets": metadata.get("code_snippets", []),
         }
 
-    def standardize_search_result_fields(
-        self, result: dict[str, Any]
-    ) -> dict[str, Any]:
+    def standardize_search_result_fields(self, result: dict) -> dict:
         """Standardize field names and structures across all search results.
 
         Args:
@@ -203,9 +225,7 @@ class TransformationService:
 
         return standardized
 
-    def standardize_code_search_result_fields(
-        self, result: dict[str, Any]
-    ) -> dict[str, Any]:
+    def standardize_code_search_result_fields(self, result: dict) -> dict:
         """Standardize field names and structures for code search results.
 
         Args:

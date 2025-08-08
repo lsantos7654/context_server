@@ -7,16 +7,15 @@ advanced filtering, URL scoring, and real-time processing capabilities.
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
 from crawl4ai.deep_crawling import BestFirstCrawlingStrategy, BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import FilterChain, SEOFilter, URLPatternFilter
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
+from pydantic import BaseModel, Field
 
 from context_server.core.services.extraction.utils import FileUtils, URLUtils
 from context_server.core.text.cleaning import MarkdownCleaner
@@ -25,21 +24,22 @@ from context_server.core.text.cleaning import MarkdownCleaner
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class DeepCrawlConfig:
+class DeepCrawlConfig(BaseModel):
     """Configuration for intelligent deep crawling."""
 
     # Strategy selection
-    strategy_type: str = "best_first"  # "bfs", "dfs", "best_first"
-    max_depth: int = 3
-    max_pages: int = 50
+    strategy_type: str = Field(
+        default="best_first", description="Crawling strategy: bfs, dfs, or best_first"
+    )
+    max_depth: int = Field(default=3, ge=1, le=10)
+    max_pages: int = Field(default=50, ge=1, le=1000)
     include_external: bool = False
 
     # Intelligent features
-    keywords: list[str] = field(default_factory=list)
-    url_patterns: list[str] = field(default_factory=list)
-    seo_threshold: float = 0.5
-    content_threshold: float = 0.7
+    keywords: list[str] = Field(default_factory=list)
+    url_patterns: list[str] = Field(default_factory=list)
+    seo_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    content_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
 
     # Performance settings
     streaming: bool = True
@@ -47,16 +47,14 @@ class DeepCrawlConfig:
     enable_filtering: bool = True
 
     # Crawler settings
-    word_count_threshold: int = 15
-    page_timeout: int = 20000
-    excluded_tags: list[str] = field(
+    word_count_threshold: int = Field(default=15, ge=1)
+    page_timeout: int = Field(default=20000, ge=1000)
+    excluded_tags: list[str] = Field(
         default_factory=lambda: ["nav", "footer", "header", "aside", "script", "style"]
     )
 
     @classmethod
-    def for_documentation(
-        cls, keywords: list[str] | None = None
-    ) -> "DeepCrawlConfig":
+    def for_documentation(cls, keywords: list[str] | None = None) -> "DeepCrawlConfig":
         """Optimized configuration for documentation sites."""
         return cls(
             strategy_type="best_first",
@@ -97,35 +95,29 @@ class DeepCrawlConfig:
         )
 
 
-@dataclass
-class PageResult:
+class PageResult(BaseModel):
     """Individual page result from multi-page extraction."""
 
     url: str
     title: str
     content: str
-    metadata: dict
-    relevance_score: float = 1.0
+    metadata: dict = Field(default_factory=dict)
+    relevance_score: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
-class ExtractionResult:
+class ExtractionResult(BaseModel):
     """Result of document extraction operation."""
 
-    def __init__(
-        self,
-        success: bool = True,
-        content: str = "",
-        metadata: dict | None = None,
-        error: str | None = None,
-        extracted_pages: list | None = None,
-        individual_pages: list[PageResult] | None = None,
-    ):
-        self.success = success
-        self.content = content  # Will be empty for multi-page extractions
-        self.metadata = metadata or {}
-        self.error = error
-        self.extracted_pages = extracted_pages or []  # Legacy format
-        self.individual_pages = individual_pages or []  # New individual page format
+    success: bool = True
+    content: str = Field(
+        default="", description="Will be empty for multi-page extractions"
+    )
+    metadata: dict = Field(default_factory=dict)
+    error: str | None = None
+    extracted_pages: list = Field(default_factory=list, description="Legacy format")
+    individual_pages: list[PageResult] = Field(
+        default_factory=list, description="New individual page format"
+    )
 
     @classmethod
     def error(cls, message: str) -> "ExtractionResult":

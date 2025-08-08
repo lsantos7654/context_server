@@ -17,14 +17,20 @@ from context_server.cli.claude_md_template import (
 )
 from context_server.cli.config import get_config
 from context_server.cli.help_formatter import rich_help_option
-from context_server.cli.utils import check_api_health, echo_error, echo_info, echo_success, echo_warning
+from context_server.cli.utils import (
+    check_api_health,
+    echo_error,
+    echo_info,
+    echo_success,
+    echo_warning,
+)
 
 console = Console()
 
 
 @click.group()
 @rich_help_option("-h", "--help")
-def setup():
+def setup() -> None:
     """Setup and configuration commands for Context Server.
 
     Commands for initial setup, configuration management, and shell completion.
@@ -44,7 +50,7 @@ def setup():
     help="Remove existing MCP configuration before adding",
 )
 @rich_help_option("-h", "--help")
-def init(overwrite):
+def init(overwrite) -> None:
     """Initialize Context Server MCP integration for current project.
 
     Sets up Claude Code MCP tools in the current directory, allowing
@@ -61,7 +67,7 @@ def init(overwrite):
     echo_info(f"Setting up MCP integration in: {current_dir}")
 
     # Get MCP server executable path
-    def _get_mcp_executable_path():
+    def _get_mcp_executable_path() -> Path | None:
         uv_tool_path = Path.home() / ".local" / "bin" / "context-server-mcp"
         if uv_tool_path.exists() and uv_tool_path.is_file():
             return uv_tool_path
@@ -190,7 +196,7 @@ def init(overwrite):
 
 @setup.command()
 @click.pass_context
-def config(ctx):
+def config(ctx) -> None:
     """Show current configuration."""
     config = get_config()
 
@@ -212,7 +218,7 @@ def config(ctx):
         config_table.add_row("Voyage API Key", "[red]Not configured[/red]")
 
     # Check server status
-    async def get_status():
+    async def get_status() -> str:
         try:
             healthy, error = await check_api_health()
             return (
@@ -238,7 +244,7 @@ def config(ctx):
 @setup.command()
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 @rich_help_option("-h", "--help")
-def completion(shell):
+def completion(shell) -> None:
     """Shell completion setup commands.
 
     Set up tab completion for the specified shell.

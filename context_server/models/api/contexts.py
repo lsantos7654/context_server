@@ -46,4 +46,25 @@ class ContextMerge(BaseModel):
     mode: MergeMode = Field(MergeMode.UNION, description="Merge mode")
 
 
-__all__ = ["MergeMode", "ContextCreate", "ContextResponse", "ContextMerge"]
+class ContextDeleteResponse(BaseModel):
+    """Response for context deletion."""
+
+    success: bool
+    message: str
+
+
+class ContextListResponse(BaseModel):
+    """Response for listing contexts."""
+
+    contexts: list[ContextResponse]
+    total: int
+
+
+__all__ = [
+    "MergeMode",
+    "ContextCreate",
+    "ContextResponse",
+    "ContextMerge",
+    "ContextDeleteResponse",
+    "ContextListResponse",
+]

@@ -5,6 +5,10 @@ import uuid
 
 from context_server.core.database.base import DatabaseManagerBase
 from context_server.core.database.utils import format_uuid, parse_metadata, parse_uuid
+from context_server.models.database.responses import (
+    CodeSearchResultDBResponse,
+    SearchResultDBResponse,
+)
 
 
 class SearchManager(DatabaseManagerBase):
@@ -21,7 +25,7 @@ class SearchManager(DatabaseManagerBase):
         limit: int = 10,
         min_similarity: float = 0.7,
         embedding_type: str = "text",
-    ) -> list[dict]:
+    ) -> list[SearchResultDBResponse]:
         """Perform vector similarity search on text or code embeddings."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
@@ -92,28 +96,30 @@ class SearchManager(DatabaseManagerBase):
                 chunk_metadata["code_snippets"] = code_snippets_data
 
                 chunk_results.append(
-                    {
-                        "id": format_uuid(row["id"]),
-                        "document_id": str(row["document_id"]),
-                        "content": row["content"],
-                        "summary": row["summary"],
-                        "summary_model": row["summary_model"],
-                        "title": row["title"],
-                        "url": row["url"],
-                        "score": float(row["similarity"]),
-                        "metadata": chunk_metadata,
-                        "start_line": row.get("start_line"),
-                        "end_line": row.get("end_line"),
-                        "char_start": row.get("char_start"),
-                        "char_end": row.get("char_end"),
-                    }
+                    SearchResultDBResponse(
+                        id=format_uuid(row["id"]),
+                        document_id=str(row["document_id"]),
+                        content=row["content"],
+                        summary=row["summary"],
+                        title=row["title"],
+                        url=row["url"],
+                        score=float(row["similarity"]),
+                        metadata=chunk_metadata,
+                        # Extra fields for compatibility
+                        summary_model=row["summary_model"],
+                        start_line=row.get("start_line"),
+                        end_line=row.get("end_line"),
+                        char_start=row.get("char_start"),
+                        char_end=row.get("char_end"),
+                        chunk_index=row.get("chunk_index"),
+                    )
                 )
 
             return chunk_results
 
     async def fulltext_search(
         self, context_id: str, query: str, limit: int = 10
-    ) -> list[dict]:
+    ) -> list[SearchResultDBResponse]:
         """Perform full-text search."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -169,21 +175,23 @@ class SearchManager(DatabaseManagerBase):
                 chunk_metadata["code_snippets"] = code_snippets_data
 
                 chunk_results.append(
-                    {
-                        "id": format_uuid(row["id"]),
-                        "document_id": str(row["document_id"]),
-                        "content": row["content"],
-                        "summary": row["summary"],
-                        "summary_model": row["summary_model"],
-                        "title": row["title"],
-                        "url": row["url"],
-                        "score": float(row["score"]),
-                        "metadata": chunk_metadata,
-                        "start_line": row.get("start_line"),
-                        "end_line": row.get("end_line"),
-                        "char_start": row.get("char_start"),
-                        "char_end": row.get("char_end"),
-                    }
+                    SearchResultDBResponse(
+                        id=format_uuid(row["id"]),
+                        document_id=str(row["document_id"]),
+                        content=row["content"],
+                        summary=row["summary"],
+                        title=row["title"],
+                        url=row["url"],
+                        score=float(row["score"]),
+                        metadata=chunk_metadata,
+                        # Extra fields for compatibility
+                        summary_model=row["summary_model"],
+                        start_line=row.get("start_line"),
+                        end_line=row.get("end_line"),
+                        char_start=row.get("char_start"),
+                        char_end=row.get("char_end"),
+                        chunk_index=row.get("chunk_index"),
+                    )
                 )
 
             return chunk_results
@@ -194,7 +202,7 @@ class SearchManager(DatabaseManagerBase):
         query_embedding: list[float],
         limit: int = 10,
         min_similarity: float = 0.7,
-    ) -> list[dict]:
+    ) -> list[CodeSearchResultDBResponse]:
         """Perform vector similarity search on code snippets."""
         async with self.pool.acquire() as conn:
             # Convert embedding list to PostgreSQL vector format
@@ -221,23 +229,23 @@ class SearchManager(DatabaseManagerBase):
             )
 
             return [
-                {
-                    "id": format_uuid(row["id"]),
-                    "document_id": str(row["document_id"]),
-                    "content": row["content"],
-                    "url": row["url"],
-                    "score": float(row["similarity"]),
-                    "line_count": (
+                CodeSearchResultDBResponse(
+                    id=format_uuid(row["id"]),
+                    document_id=str(row["document_id"]),
+                    content=row["content"],
+                    url=row["url"],
+                    score=float(row["similarity"]),
+                    line_count=(
                         len(row["content"].split("\n")) if row["content"] else 0
                     ),
-                    "metadata": parse_metadata(row["snippet_metadata"]),
-                }
+                    metadata=parse_metadata(row["snippet_metadata"]),
+                )
                 for row in rows
             ]
 
     async def fulltext_search_code_snippets(
         self, context_id: str, query: str, limit: int = 10
-    ) -> list[dict]:
+    ) -> list[CodeSearchResultDBResponse]:
         """Perform full-text search on code snippets."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -260,17 +268,17 @@ class SearchManager(DatabaseManagerBase):
             )
 
             return [
-                {
-                    "id": format_uuid(row["id"]),
-                    "document_id": str(row["document_id"]),
-                    "content": row["content"],
-                    "url": row["url"],
-                    "score": float(row["score"]),
-                    "line_count": (
+                CodeSearchResultDBResponse(
+                    id=format_uuid(row["id"]),
+                    document_id=str(row["document_id"]),
+                    content=row["content"],
+                    url=row["url"],
+                    score=float(row["score"]),
+                    line_count=(
                         len(row["content"].split("\n")) if row["content"] else 0
                     ),
-                    "metadata": parse_metadata(row["snippet_metadata"]),
-                }
+                    metadata=parse_metadata(row["snippet_metadata"]),
+                )
                 for row in rows
             ]
 
